@@ -140,6 +140,48 @@ Returned 2 rows in 0.28 ms | Blocks: 1 scanned, 0 skipped (pruned) | Read: 0.14 
 
 ---
 
+## 📥 SQL & Data Ingestion (İçe Aktarma)
+
+MergenDB, mevcut veritabanlarınızı doğrudan ultra-kompakt `.mgdb` formatına dönüştürebilir:
+
+### 1. SQLite Veritabanını İçe Aktarma
+```python
+import mergendb
+
+# Tüm tabloyu veya özel bir SQL sorgusunun sonucunu dönüştürün:
+table = mergendb.from_sqlite(
+    sqlite_path="legacy.db",
+    table_name="orders",
+    output_mgdb_path="orders.mgdb"
+)
+```
+
+### 2. SQL Dump Dosyasını (`.sql`) İçe Aktarma
+Postgres/MySQL veya standart SQL dump dosyalarını doğrudan aktarın:
+```python
+table = mergendb.from_sql_dump(
+    sql_dump_path="backup.sql",
+    output_mgdb_path="products.mgdb"
+)
+```
+
+### 3. CSV Dosyasını Otomatik Tip Algılama ile Aktarma
+```python
+table = mergendb.from_csv(
+    csv_path="dataset.csv",
+    output_mgdb_path="dataset.mgdb"
+)
+```
+
+### 4. CLI / REPL Üzerinden İçe Aktarma
+```text
+mergen> .import sqlite legacy.db orders orders.mgdb
+mergen> .import sql backup.sql products.mgdb
+mergen> .import csv data.csv data.mgdb
+```
+
+---
+
 ## 💻 Interactive CLI / REPL
 
 Launch the interactive MergenDB terminal shell:
