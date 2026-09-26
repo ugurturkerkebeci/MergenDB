@@ -140,8 +140,8 @@ class DataImporter:
         block_size: int = 1024
     ) -> int:
         """
-        Imports from a standard SQL dump file (.sql) containing CREATE TABLE and INSERT statements.
-        Loads into a temporary in-memory SQLite sandbox and writes to .mgdb.
+        Imports from a standard SQL dump file (.sql), including MySQL / phpMyAdmin dumps.
+        Automatically sanitizes MySQL-specific clauses (ENGINE, AUTO_INCREMENT, CHARSET, LOCK TABLES).
         """
         if not os.path.exists(sql_dump_path):
             raise FileNotFoundError(f"SQL dump file not found: {sql_dump_path}")
@@ -149,6 +149,15 @@ class DataImporter:
         conn = sqlite3.connect(":memory:")
         with open(sql_dump_path, "r", encoding="utf-8", errors="replace") as f:
             script = f.read()
+
+        # Sanitize MySQL / phpMyAdmin specific syntax
+        script = re.sub(r'/\*![\s\S]*?\*/;?', '', script)  # Remove MySQL conditional comments /*!...*/
+        script = re.sub(r'ENGINE\s*=\s*[\w\d]+', '', script, flags=re.IGNORECASE)
+        script = re.sub(r'AUTO_INCREMENT\s*=\s*\d+', '', script, flags=re.IGNORECASE)
+        script = re.sub(r'DEFAULT\s+CHARSET\s*=\s*[\w\d]+', '', script, flags=re.IGNORECASE)
+        script = re.sub(r'COLLATE\s*=\s*[\w\d_]+', '', script, flags=re.IGNORECASE)
+        script = re.sub(r'LOCK\s+TABLES\s+[^;]+;', '', script, flags=re.IGNORECASE)
+        script = re.sub(r'UNLOCK\s+TABLES\s*;', '', script, flags=re.IGNORECASE)
 
         conn.executescript(script)
         cursor = conn.cursor()
