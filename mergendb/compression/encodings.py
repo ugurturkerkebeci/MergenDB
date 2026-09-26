@@ -1,7 +1,8 @@
 import struct
+import array
 from enum import IntEnum
 from typing import List, Any, Tuple, Optional
-from mergendb.core.types import DataType, TYPE_STRUCT_FORMAT
+from mergendb.core.types import DataType, TYPE_STRUCT_FORMAT, TYPE_FIXED_SIZES
 
 class EncodingType(IntEnum):
     RAW = 0
@@ -9,6 +10,14 @@ class EncodingType(IntEnum):
     DICTIONARY = 2
     DELTA = 3
     BIT_PACKED_BOOL = 4
+
+ARRAY_TYPECODES = {
+    DataType.INT32: "i",
+    DataType.INT64: "q",
+    DataType.FLOAT32: "f",
+    DataType.FLOAT64: "d",
+    DataType.TIMESTAMP: "q",
+}
 
 # -------------------------------------------------------------
 # Raw Encoding / Decoding
@@ -27,6 +36,10 @@ def encode_raw(values: List[Any], dtype: DataType) -> bytes:
                 encoded = str(v).encode("utf-8")
                 buf.extend(struct.pack("<i", len(encoded)))
                 buf.extend(encoded)
+    elif dtype in ARRAY_TYPECODES:
+        tc = ARRAY_TYPECODES[dtype]
+        clean_vals = [0 if v is None else v for v in values]
+        buf.extend(array.array(tc, clean_vals).tobytes())
     else:
         fmt = TYPE_STRUCT_FORMAT[dtype]
         default_val = 0 if dtype != DataType.BOOL else False
@@ -53,6 +66,12 @@ def decode_raw(data: bytes, dtype: DataType) -> List[Any]:
                 s = data[offset : offset + length].decode("utf-8")
                 offset += length
                 values.append(s)
+    elif dtype in ARRAY_TYPECODES:
+        tc = ARRAY_TYPECODES[dtype]
+        size = TYPE_FIXED_SIZES[dtype]
+        arr = array.array(tc)
+        arr.frombytes(data[offset : offset + count * size])
+        return arr.tolist()
     else:
         fmt = TYPE_STRUCT_FORMAT[dtype]
         size = struct.calcsize(fmt)
@@ -60,7 +79,6 @@ def decode_raw(data: bytes, dtype: DataType) -> List[Any]:
             val = struct.unpack_from(fmt, data, offset)[0]
             offset += size
             values.append(val)
-
     return values
 
 # -------------------------------------------------------------
@@ -82,6 +100,10 @@ def encode_rle(values: List[Any], dtype: DataType) -> bytes:
             current_val = val
             current_count = 1
     runs.append((current_count, current_val))
+
+    # Early abort if runs ratio is too high (cannot compress effectively)
+    if len(runs) > len(values) * 0.6:
+        return b""
 
     buf = bytearray()
     buf.extend(struct.pack("<II", len(values), len(runs)))
@@ -176,12 +198,10 @@ def encode_dict(values: List[Any], dtype: DataType) -> bytes:
         buf.extend(bytes(val_to_idx[v] for v in values))
     elif dict_size <= 65536:
         buf.extend(struct.pack("<B", 2))
-        for v in values:
-            buf.extend(struct.pack("<H", val_to_idx[v]))
+        buf.extend(array.array("H", (val_to_idx[v] for v in values)).tobytes())
     else:
         buf.extend(struct.pack("<B", 4))
-        for v in values:
-            buf.extend(struct.pack("<I", val_to_idx[v]))
+        buf.extend(array.array("I", (val_to_idx[v] for v in values)).tobytes())
 
     return bytes(buf)
 
@@ -215,23 +235,17 @@ def decode_dict(data: bytes, dtype: DataType) -> List[Any]:
     code_size = struct.unpack_from("<B", data, offset)[0]
     offset += 1
 
-    result = []
     if code_size == 1:
-        for i in range(total_items):
-            code = data[offset + i]
-            result.append(unique_vals[code])
+        raw_codes = data[offset : offset + total_items]
+        return [unique_vals[c] for c in raw_codes]
     elif code_size == 2:
-        for _ in range(total_items):
-            code = struct.unpack_from("<H", data, offset)[0]
-            offset += 2
-            result.append(unique_vals[code])
+        codes = array.array("H")
+        codes.frombytes(data[offset : offset + total_items * 2])
+        return [unique_vals[c] for c in codes]
     else:
-        for _ in range(total_items):
-            code = struct.unpack_from("<I", data, offset)[0]
-            offset += 4
-            result.append(unique_vals[code])
-
-    return result
+        codes = array.array("I")
+        codes.frombytes(data[offset : offset + total_items * 4])
+        return [unique_vals[c] for c in codes]
 
 # -------------------------------------------------------------
 # Delta / Frame-of-Reference (FoR) for Integers
@@ -254,16 +268,13 @@ def encode_delta(values: List[Any], dtype: DataType) -> bytes:
         buf.extend(bytes(deltas))
     elif max_delta < 65536:
         buf.extend(struct.pack("<B", 2))  # 2 bytes per delta
-        for d in deltas:
-            buf.extend(struct.pack("<H", d))
+        buf.extend(array.array("H", deltas).tobytes())
     elif max_delta < 4294967296:
         buf.extend(struct.pack("<B", 4))  # 4 bytes per delta
-        for d in deltas:
-            buf.extend(struct.pack("<I", d))
+        buf.extend(array.array("I", deltas).tobytes())
     else:
         buf.extend(struct.pack("<B", 8))  # 8 bytes per delta
-        for d in deltas:
-            buf.extend(struct.pack("<Q", d))
+        buf.extend(array.array("Q", deltas).tobytes())
 
     return bytes(buf)
 
@@ -274,22 +285,20 @@ def decode_delta(data: bytes, dtype: DataType) -> List[Any]:
     byte_width = struct.unpack_from("<B", data, 12)[0]
     offset = 13
 
-    deltas = []
     if byte_width == 1:
-        for i in range(count):
-            deltas.append(data[offset + i])
+        deltas = data[offset : offset + count]
     elif byte_width == 2:
-        for _ in range(count):
-            deltas.append(struct.unpack_from("<H", data, offset)[0])
-            offset += 2
+        arr = array.array("H")
+        arr.frombytes(data[offset : offset + count * 2])
+        deltas = arr
     elif byte_width == 4:
-        for _ in range(count):
-            deltas.append(struct.unpack_from("<I", data, offset)[0])
-            offset += 4
+        arr = array.array("I")
+        arr.frombytes(data[offset : offset + count * 4])
+        deltas = arr
     else:
-        for _ in range(count):
-            deltas.append(struct.unpack_from("<Q", data, offset)[0])
-            offset += 8
+        arr = array.array("Q")
+        arr.frombytes(data[offset : offset + count * 8])
+        deltas = arr
 
     return [min_val + d for d in deltas]
 

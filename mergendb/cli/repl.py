@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.5 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.6 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -246,17 +246,16 @@ class MergenCLI:
             exported = 0
 
             if fmt == "CSV":
-                with open(out_file, "w", newline="", encoding="utf-8") as f:
+                with open(out_file, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
                     writer = csv.writer(f)
                     writer.writerow(col_names)
                     for batch, _ in reader.scan():
                         cols = batch.columns
-                        for i in range(batch.row_count):
-                            writer.writerow([cols[c][i] for c in col_names])
+                        writer.writerows(zip(*(cols[c] for c in col_names)))
                         exported += batch.row_count
                         pbar.update(exported)
             elif fmt == "SQL":
-                with open(out_file, "w", encoding="utf-8") as f:
+                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                     clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
                     # Write CREATE TABLE DDL
                     col_defs = []
@@ -271,24 +270,23 @@ class MergenCLI:
                         col_defs.append(f"  `{c.name}` {tname}")
                     f.write(f"CREATE TABLE IF NOT EXISTS `{clean_tbl}` (\n" + ",\n".join(col_defs) + "\n);\n\n")
 
-                    chunk_size = 500
+                    chunk_size = 1000
                     chunk = []
                     for batch, _ in reader.scan():
                         cols = batch.columns
-                        for i in range(batch.row_count):
-                            vals = []
-                            for c in col_names:
-                                val = cols[c][i]
+                        for row_vals in zip(*(cols[c] for c in col_names)):
+                            formatted = []
+                            for val in row_vals:
                                 if val is None:
-                                    vals.append("NULL")
+                                    formatted.append("NULL")
                                 elif isinstance(val, (int, float)):
-                                    vals.append(str(val))
+                                    formatted.append(str(val))
                                 elif isinstance(val, bool):
-                                    vals.append("1" if val else "0")
+                                    formatted.append("1" if val else "0")
                                 else:
                                     esc = str(val).replace("\\", "\\\\").replace("'", "''")
-                                    vals.append(f"'{esc}'")
-                            chunk.append("(" + ", ".join(vals) + ")")
+                                    formatted.append(f"'{esc}'")
+                            chunk.append("(" + ", ".join(formatted) + ")")
                             if len(chunk) >= chunk_size:
                                 f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
                                 chunk = []
@@ -297,12 +295,11 @@ class MergenCLI:
                     if chunk:
                         f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
             else: # JSONL
-                with open(out_file, "w", encoding="utf-8") as f:
+                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                     for batch, _ in reader.scan():
                         cols = batch.columns
-                        for i in range(batch.row_count):
-                            row_dict = {c: cols[c][i] for c in col_names}
-                            f.write(json.dumps(row_dict) + "\n")
+                        lines = [json.dumps(dict(zip(col_names, row))) + "\n" for row in zip(*(cols[c] for c in col_names))]
+                        f.writelines(lines)
                         exported += batch.row_count
                         pbar.update(exported)
 
@@ -449,7 +446,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.4.5 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.6 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:

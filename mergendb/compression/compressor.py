@@ -17,27 +17,33 @@ from mergendb.compression.encodings import (
 )
 
 def compute_zone_map(values: List[Any]) -> ZoneMap:
-    """Calculates min, max, null_count, and total count for a vector of values."""
+    """Calculates min, max, null_count, and total count for a vector of values in a single fast pass."""
     if not values:
         return ZoneMap(min_value=None, max_value=None, null_count=0, count=0)
 
-    non_nulls = [v for v in values if v is not None]
-    null_count = len(values) - len(non_nulls)
+    non_null_count = 0
+    min_v = None
+    max_v = None
 
-    if not non_nulls:
-        return ZoneMap(min_value=None, max_value=None, null_count=null_count, count=len(values))
-
-    try:
-        min_v = min(non_nulls)
-        max_v = max(non_nulls)
-    except TypeError:
-        min_v = None
-        max_v = None
+    for v in values:
+        if v is not None:
+            non_null_count += 1
+            if min_v is None:
+                min_v = v
+                max_v = v
+            else:
+                try:
+                    if v < min_v:
+                        min_v = v
+                    elif v > max_v:
+                        max_v = v
+                except TypeError:
+                    pass
 
     return ZoneMap(
         min_value=min_v,
         max_value=max_v,
-        null_count=null_count,
+        null_count=len(values) - non_null_count,
         count=len(values)
     )
 
@@ -60,6 +66,7 @@ class ColumnCompressor:
 
         best_bytes = raw_bytes
         best_enc = EncodingType.RAW
+        n_vals = len(values)
 
         if dtype == DataType.BOOL:
             packed_bytes = encode_bitpacked_bool(values)
@@ -80,38 +87,40 @@ class ColumnCompressor:
             # Check RLE
             try:
                 rle_bytes = encode_rle(values, dtype)
-                if len(rle_bytes) < len(best_bytes):
+                if rle_bytes and len(rle_bytes) < len(best_bytes):
                     best_bytes = rle_bytes
                     best_enc = EncodingType.RLE
             except Exception:
                 pass
 
         elif dtype == DataType.STRING:
-            # Check Dictionary encoding
+            # Check Dictionary encoding: sample first 64 to avoid expensive set() on full column
             try:
-                unique_ratio = len(set(values)) / len(values) if values else 1.0
-                if unique_ratio < 0.6:  # Good candidate for dictionary
-                    dict_bytes = encode_dict(values, dtype)
-                    if len(dict_bytes) < len(best_bytes):
-                        best_bytes = dict_bytes
-                        best_enc = EncodingType.DICTIONARY
+                sample_sz = min(64, n_vals)
+                sample = values[:sample_sz]
+                if len(set(sample)) < sample_sz * 0.8:
+                    unique_ratio = len(set(values)) / n_vals
+                    if unique_ratio < 0.6:
+                        dict_bytes = encode_dict(values, dtype)
+                        if len(dict_bytes) < len(best_bytes):
+                            best_bytes = dict_bytes
+                            best_enc = EncodingType.DICTIONARY
             except Exception:
                 pass
 
-            # Check RLE
+            # Check RLE (encode_rle returns b"" immediately if runs > 60%)
             try:
                 rle_bytes = encode_rle(values, dtype)
-                if len(rle_bytes) < len(best_bytes):
+                if rle_bytes and len(rle_bytes) < len(best_bytes):
                     best_bytes = rle_bytes
                     best_enc = EncodingType.RLE
             except Exception:
                 pass
 
-        # Optional lightweight secondary compression with zlib if it saves > 10%
+        # Optional lightweight secondary compression with zlib (level 1 for maximum throughput)
         if apply_zlib and len(best_bytes) > 64:
-            z_compressed = zlib.compress(best_bytes, level=3) # level 3: fast & good ratio
+            z_compressed = zlib.compress(best_bytes, level=1)
             if len(z_compressed) + 1 < len(best_bytes):
-                # Prefix with 0x01 flag indicating zlib compressed
                 final_bytes = b"\x01" + z_compressed
             else:
                 final_bytes = b"\x00" + best_bytes

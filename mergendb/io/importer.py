@@ -308,7 +308,7 @@ class DataImporter:
         def _safe_str(v):
             if v is None or v == "NULL":
                 return None
-            return str(v)
+            return v if isinstance(v, str) else str(v)
 
         def _build_converters(sch):
             convs = []
@@ -385,10 +385,16 @@ class DataImporter:
                         if close_paren == -1:
                             break
 
-                        # Quote-aware paren matching: verify no unclosed single or double quotes
+                        # Quote-aware paren matching on slice
                         while close_paren != -1:
-                            q_count = combined.count("'", open_paren, close_paren) - combined.count(r"\'", open_paren, close_paren)
-                            if (combined.count('"', open_paren, close_paren) - combined.count(r'\"', open_paren, close_paren)) % 2 != 0 or q_count % 2 != 0:
+                            sub = combined[open_paren + 1:close_paren]
+                            q_count = sub.count("'")
+                            if q_count % 2 != 0 or ('"' in sub and sub.count('"') % 2 != 0):
+                                if "\\" in sub:
+                                    q_count -= sub.count(r"\'")
+                                    d_count = sub.count('"') - sub.count(r'\"')
+                                    if q_count % 2 == 0 and d_count % 2 == 0:
+                                        break
                                 close_paren = combined.find(')', close_paren + 1)
                             else:
                                 break
@@ -400,7 +406,7 @@ class DataImporter:
                         i = close_paren + 1
 
                         quote = "'" if "'" in tuple_str else '"'
-                        reader = csv.reader(io.StringIO(tuple_str), delimiter=',', quotechar=quote, skipinitialspace=True)
+                        reader = csv.reader([tuple_str], delimiter=',', quotechar=quote, skipinitialspace=True)
                         try:
                             raw_row = [c.strip() if c is not None else None for c in next(reader)]
                         except Exception:

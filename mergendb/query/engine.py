@@ -79,9 +79,46 @@ class ExpressionEvaluator:
             return cols[expr.name]
 
         elif isinstance(expr, BinaryOpNode):
+            op = expr.op
+
+            # Fast-path: ColumnRef OP Literal (most common query pattern)
+            if isinstance(expr.left, ColumnRefNode) and isinstance(expr.right, LiteralNode):
+                col_name = expr.left.name
+                if col_name not in cols:
+                    raise KeyError(f"Column '{col_name}' not found during evaluation.")
+                left_vals = cols[col_name]
+                r_val = expr.right.value
+
+                if op in ("==", "="):
+                    return [l == r_val for l in left_vals]
+                elif op in ("!=", "<>"):
+                    return [l != r_val for l in left_vals]
+                elif op == "<":
+                    return [False if l is None or r_val is None else l < r_val for l in left_vals]
+                elif op == "<=":
+                    return [False if l is None or r_val is None else l <= r_val for l in left_vals]
+                elif op == ">":
+                    return [False if l is None or r_val is None else l > r_val for l in left_vals]
+                elif op == ">=":
+                    return [False if l is None or r_val is None else l >= r_val for l in left_vals]
+                elif op == "LIKE":
+                    pat = str(r_val) if r_val is not None else ""
+                    if pat.startswith("%") and pat.endswith("%") and "%" not in pat[1:-1] and "_" not in pat:
+                        sub = pat[1:-1].lower()
+                        return [False if l is None else (sub in str(l).lower()) for l in left_vals]
+                    elif pat.startswith("%") and not pat.endswith("%") and "%" not in pat[1:] and "_" not in pat:
+                        sub = pat[1:].lower()
+                        return [False if l is None else str(l).lower().endswith(sub) for l in left_vals]
+                    elif not pat.startswith("%") and pat.endswith("%") and "%" not in pat[:-1] and "_" not in pat:
+                        sub = pat[:-1].lower()
+                        return [False if l is None else str(l).lower().startswith(sub) for l in left_vals]
+                    else:
+                        import re
+                        regex = re.compile("^" + re.escape(pat).replace("%", ".*").replace("_", ".") + "$", re.IGNORECASE)
+                        return [False if l is None else bool(regex.match(str(l))) for l in left_vals]
+
             left_vals = cls.evaluate(expr.left, cols, row_count)
             right_vals = cls.evaluate(expr.right, cols, row_count)
-            op = expr.op
 
             res = []
             if op == "+":
