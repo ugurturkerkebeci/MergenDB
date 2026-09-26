@@ -2,7 +2,10 @@
 MergenDB: Ultra-compact, columnar embedded database engine for edge and resource-constrained environments.
 """
 
-from mergendb.client import MergenDB, Table, query, create_table, open_table
+from mergendb.client import (
+    MergenDB, Table, query, create_table, open_table,
+    from_sqlite, from_sql_dump, from_csv
+)
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
@@ -14,6 +17,9 @@ __all__ = [
     "query",
     "create_table",
     "open_table",
+    "from_sqlite",
+    "from_sql_dump",
+    "from_csv",
     "Schema",
     "ColumnDef",
     "DataType",

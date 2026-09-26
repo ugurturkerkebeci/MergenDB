@@ -97,6 +97,24 @@ class MergenDB:
         else:
             raise TypeError(f"Unhandled statement type: {type(ast)}")
 
+    @staticmethod
+    def from_sqlite(sqlite_path: str, output_mgdb_path: str, table_name: Optional[str] = None, query: Optional[str] = None, block_size: int = 1024) -> Table:
+        from mergendb.io.importer import DataImporter
+        DataImporter.from_sqlite(sqlite_path, output_mgdb_path, table_name=table_name, query=query, block_size=block_size)
+        return Table(output_mgdb_path)
+
+    @staticmethod
+    def from_sql_dump(sql_dump_path: str, output_mgdb_path: str, table_name: Optional[str] = None, block_size: int = 1024) -> Table:
+        from mergendb.io.importer import DataImporter
+        DataImporter.from_sql_dump(sql_dump_path, output_mgdb_path, table_name=table_name, block_size=block_size)
+        return Table(output_mgdb_path)
+
+    @staticmethod
+    def from_csv(csv_path: str, output_mgdb_path: str, delimiter: str = ",", block_size: int = 1024) -> Table:
+        from mergendb.io.importer import DataImporter
+        DataImporter.from_csv(csv_path, output_mgdb_path, delimiter=delimiter, block_size=block_size)
+        return Table(output_mgdb_path)
+
 def query(sql_or_pipeline: str) -> QueryResult:
     return MergenDB.query(sql_or_pipeline)
 
@@ -105,3 +123,12 @@ def create_table(filepath: str, schema: Schema, block_size: int = 1024) -> Table
 
 def open_table(filepath: str) -> Table:
     return MergenDB.open_table(filepath)
+
+def from_sqlite(sqlite_path: str, output_mgdb_path: str, table_name: Optional[str] = None, query: Optional[str] = None, block_size: int = 1024) -> Table:
+    return MergenDB.from_sqlite(sqlite_path, output_mgdb_path, table_name=table_name, query=query, block_size=block_size)
+
+def from_sql_dump(sql_dump_path: str, output_mgdb_path: str, table_name: Optional[str] = None, block_size: int = 1024) -> Table:
+    return MergenDB.from_sql_dump(sql_dump_path, output_mgdb_path, table_name=table_name, block_size=block_size)
+
+def from_csv(csv_path: str, output_mgdb_path: str, delimiter: str = ",", block_size: int = 1024) -> Table:
+    return MergenDB.from_csv(csv_path, output_mgdb_path, delimiter=delimiter, block_size=block_size)

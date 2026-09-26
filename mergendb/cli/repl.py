@@ -19,10 +19,13 @@ BANNER = r"""
 
 HELP_TEXT = """
 Commands:
-  .help                  - Show this help menu
-  .schema <file.mgdb>    - Display table schema and block metadata
-  .info <file.mgdb>      - Show compression ratio & block stats
-  .exit / .quit          - Exit the REPL
+  .help                                      - Show this help menu
+  .schema <file.mgdb>                        - Display table schema and block metadata
+  .info <file.mgdb>                          - Show compression ratio & block stats
+  .import sqlite <source.db> [tbl] <out.mgdb>- Convert SQLite database/table to MergenDB
+  .import sql <dump.sql> <out.mgdb>          - Import SQL dump file into MergenDB
+  .import csv <source.csv> <out.mgdb>        - Import CSV file into MergenDB
+  .exit / .quit                              - Exit the REPL
 
 Example Query:
   FROM "sensors.mgdb"
@@ -32,6 +35,43 @@ Example Query:
   | SORT temperature DESC
   | LIMIT 10;
 """
+
+def handle_import(args: list):
+    if len(args) < 3:
+        print("Usage: .import <sqlite|sql|csv> <source_file> [options] <out.mgdb>")
+        return
+
+    subcmd = args[1].lower()
+    from mergendb.io.importer import DataImporter
+
+    try:
+        t0 = time.perf_counter()
+        if subcmd == "sqlite":
+            if len(args) == 4:
+                src, tbl, out = args[2], args[3], args[4] if len(args) > 4 else None
+            src = args[2]
+            if len(args) == 4:
+                out = args[3]
+                tbl = None
+            else:
+                tbl = args[3]
+                out = args[4]
+            count = DataImporter.from_sqlite(src, out, table_name=tbl)
+            print(f"Successfully imported {count:,} rows from SQLite into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
+        elif subcmd == "sql":
+            src = args[2]
+            out = args[3]
+            count = DataImporter.from_sql_dump(src, out)
+            print(f"Successfully imported {count:,} rows from SQL dump into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
+        elif subcmd == "csv":
+            src = args[2]
+            out = args[3]
+            count = DataImporter.from_csv(src, out)
+            print(f"Successfully imported {count:,} rows from CSV into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
+        else:
+            print(f"Unknown import type '{subcmd}'. Choose sqlite, sql, or csv.")
+    except Exception as e:
+        print(f"Import failed: {e}")
 
 def print_schema(filepath: str):
     if not os.path.exists(filepath):
@@ -93,6 +133,8 @@ def main():
                     print_schema(parts[1])
                 elif cmd == ".info" and len(parts) > 1:
                     print_info(parts[1])
+                elif cmd == ".import":
+                    handle_import(parts)
                 else:
                     print(f"Unknown command or missing argument: {stripped}")
                 continue

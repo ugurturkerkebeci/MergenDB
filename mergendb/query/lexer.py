@@ -193,8 +193,13 @@ class Lexer:
                         self._advance()
                         escaped = self._advance()
                         if escaped == 'n': str_val.append('\n')
-                        elif escaped == 't': str_val.append('\t')
-                        else: str_val.append(escaped)
+                        elif escaped == 'r': str_val.append('\r')
+                        elif escaped in ('"', "'", '\\'): str_val.append(escaped)
+                        else:
+                            # Preserve backslash for file paths like C:\tables
+                            str_val.append('\\')
+                            if escaped is not None:
+                                str_val.append(escaped)
                     else:
                         str_val.append(self._advance())
                 if self._peek() == quote_char:
