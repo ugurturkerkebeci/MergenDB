@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Dict, Any, Union, Optional
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
@@ -80,8 +81,36 @@ class MergenDB:
         return Table(filepath)
 
     @staticmethod
+    def _convert_sql_to_pipeline(sql: str) -> str:
+        sql = sql.strip().rstrip(";")
+        m = re.match(r"SELECT\s+(.+?)\s+FROM\s+([^\s;]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", sql, re.IGNORECASE)
+        if not m:
+            return sql
+
+        cols, tbl, where_clause, order_by, limit_val = m.groups()
+        tbl = tbl.strip().strip("'\"`")
+        if not tbl.endswith(".mgdb") and not os.path.exists(tbl):
+            tbl += ".mgdb"
+        pipe = [f'FROM "{tbl}"']
+
+        if where_clause:
+            pipe.append(f"| WHERE {where_clause}")
+        if cols.strip() != "*":
+            pipe.append(f"| SELECT {cols}")
+        if order_by:
+            pipe.append(f"| SORT {order_by}")
+        if limit_val:
+            pipe.append(f"| LIMIT {limit_val}")
+
+        return "\n".join(pipe)
+
+    @staticmethod
     def query(sql_or_pipeline: str) -> QueryResult:
-        tokens = Lexer(sql_or_pipeline).tokenize()
+        query_str = sql_or_pipeline.strip().rstrip(";")
+        if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
+            query_str = MergenDB._convert_sql_to_pipeline(query_str)
+
+        tokens = Lexer(query_str).tokenize()
         ast = Parser(tokens).parse()
 
         if isinstance(ast, QueryPlan):

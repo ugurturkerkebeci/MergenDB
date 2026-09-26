@@ -2,6 +2,7 @@ import os
 import csv
 import sqlite3
 import re
+import io
 from typing import List, Dict, Any, Optional, Union
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
@@ -140,55 +141,191 @@ class DataImporter:
         block_size: int = 1024
     ) -> int:
         """
-        Imports from a standard SQL dump file (.sql), including MySQL / phpMyAdmin dumps.
-        Automatically sanitizes MySQL-specific clauses (ENGINE, AUTO_INCREMENT, CHARSET, LOCK TABLES).
+        Imports from a standard SQL dump file (.sql), including MySQL / phpMyAdmin dumps,
+        raw tuple values dumps, and partial insert fragments.
+        Automatically sanitizes MySQL-specific clauses and gracefully handles missing CREATE TABLE statements.
         """
+        # Resolve path: current dir or Desktop if user typed filename without full path
         if not os.path.exists(sql_dump_path):
-            raise FileNotFoundError(f"SQL dump file not found: {sql_dump_path}")
+            desktop_try = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(sql_dump_path))
+            if os.path.exists(desktop_try):
+                sql_dump_path = desktop_try
+            else:
+                raise FileNotFoundError(f"SQL dump file not found: {sql_dump_path}")
 
-        conn = sqlite3.connect(":memory:")
-        with open(sql_dump_path, "r", encoding="utf-8", errors="replace") as f:
-            script = f.read()
+        # Read file with encoding fallback (UTF-8, Turkish CP1254, Latin-1)
+        raw_bytes = None
+        with open(sql_dump_path, "rb") as f:
+            raw_bytes = f.read()
 
-        # Sanitize MySQL / phpMyAdmin specific syntax
-        script = re.sub(r'/\*![\s\S]*?\*/;?', '', script)  # Remove MySQL conditional comments /*!...*/
-        script = re.sub(r'ENGINE\s*=\s*[\w\d]+', '', script, flags=re.IGNORECASE)
-        script = re.sub(r'AUTO_INCREMENT\s*=\s*\d+', '', script, flags=re.IGNORECASE)
-        script = re.sub(r'DEFAULT\s+CHARSET\s*=\s*[\w\d]+', '', script, flags=re.IGNORECASE)
-        script = re.sub(r'COLLATE\s*=\s*[\w\d_]+', '', script, flags=re.IGNORECASE)
-        script = re.sub(r'LOCK\s+TABLES\s+[^;]+;', '', script, flags=re.IGNORECASE)
-        script = re.sub(r'UNLOCK\s+TABLES\s*;', '', script, flags=re.IGNORECASE)
+        script = None
+        for enc in ("utf-8", "cp1254", "iso-8859-9", "latin-1"):
+            try:
+                script = raw_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        if script is None:
+            script = raw_bytes.decode("utf-8", errors="replace")
 
-        conn.executescript(script)
-        cursor = conn.cursor()
+        # Check if the script contains a CREATE TABLE statement
+        has_create_table = bool(re.search(r'CREATE\s+TABLE', script, re.IGNORECASE))
+
+        if has_create_table:
+            try:
+                # Sanitize MySQL / phpMyAdmin specific syntax for SQLite in-memory execution
+                sanitized = re.sub(r'/\*![\s\S]*?\*/;?', '', script)
+                sanitized = re.sub(r'/\*[\s\S]*?\*/;?', '', sanitized)
+                sanitized = re.sub(r'--.*?\n', '\n', sanitized)
+                sanitized = re.sub(r'ENGINE\s*=\s*[\w\d]+', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r'AUTO_INCREMENT\s*=\s*\d+', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r'DEFAULT\s+CHARSET\s*=\s*[\w\d]+', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r'COLLATE\s*=\s*[\w\d_]+', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r'LOCK\s+TABLES\s+[^;]+;', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r'UNLOCK\s+TABLES\s*;', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r',\s*(?:KEY|INDEX|UNIQUE KEY)\s*[\w\d_`]*\s*\([^)]+\)', '', sanitized, flags=re.IGNORECASE)
+                sanitized = re.sub(r',\s*CONSTRAINT\s*[\w\d_`]*\s*FOREIGN KEY\s*\([^)]+\)\s*REFERENCES\s*[^)]+\)', '', sanitized, flags=re.IGNORECASE)
+
+                conn = sqlite3.connect(":memory:")
+                conn.executescript(sanitized)
+                cursor = conn.cursor()
+                try:
+                    if not table_name:
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+                        tables = cursor.fetchall()
+                        if tables:
+                            table_name = tables[0][0]
+                    if table_name:
+                        cursor.execute(f"PRAGMA table_info({table_name});")
+                        table_info = cursor.fetchall()
+                        columns = [ColumnDef(row[1], _map_sqlite_type(row[2])) for row in table_info]
+                        schema = Schema(columns)
+
+                        cursor.execute(f"SELECT * FROM {table_name}")
+                        total_imported = 0
+                        with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
+                            while True:
+                                rows = cursor.fetchmany(block_size)
+                                if not rows:
+                                    break
+                                writer.write_rows(rows)
+                                total_imported += len(rows)
+                        return total_imported
+                finally:
+                    cursor.close()
+                    conn.close()
+            except Exception:
+                # Fallback to native raw tuple parser
+                pass
+
+        # Native Direct Tuple & Values Parser (Handles partial dumps like medeni.sql, raw VALUES fragments, etc.)
+        return cls._import_raw_tuples(script, output_mgdb_path, block_size=block_size)
+
+    @classmethod
+    def _import_raw_tuples(
+        cls,
+        text: str,
+        output_mgdb_path: str,
+        block_size: int = 1024
+    ) -> int:
+        pattern = re.compile(r'\(([\s\S]*?)\)(?:,|\s*;)', re.DOTALL)
+
+        batch = []
+        schema = None
+        writer = None
+        total_imported = 0
+
+        # Turkish Mernis / Medeni standard 18-column names
+        MERNIS_COLS = [
+            "tc", "ad", "soyad", "baba_adi", "anne_adi", "cinsiyet",
+            "dogum_tarihi", "dogum_yeri", "medeni_hal", "il", "ilce",
+            "mahalle", "cilt_no", "aile_sira_no", "birey_sira_no",
+            "kimlik_tipi", "seri", "no"
+        ]
+
+        def _infer_schema(sample_rows):
+            col_count = len(sample_rows[0])
+            if col_count == 18:
+                col_names = MERNIS_COLS
+            else:
+                col_names = [f"col_{i+1}" for i in range(col_count)]
+
+            columns = []
+            for i, col_name in enumerate(col_names):
+                non_empty = [r[i] for r in sample_rows if i < len(r) and r[i] is not None and str(r[i]).strip() != ""]
+                dtype = DataType.STRING
+                if non_empty:
+                    if all(re.match(r'^-?\d+$', str(v).strip()) for v in non_empty[:50]):
+                        dtype = DataType.INT64
+                    elif all(re.match(r'^-?\d+\.\d+$', str(v).strip()) for v in non_empty[:50]):
+                        dtype = DataType.FLOAT64
+                    elif all(str(v).lower() in ('true', 'false', '0', '1') for v in non_empty[:50]):
+                        dtype = DataType.BOOL
+                columns.append(ColumnDef(col_name, dtype))
+            return Schema(columns)
+
+        def _convert_row(raw_row, sch):
+            converted = []
+            for i, col_def in enumerate(sch.columns):
+                val = raw_row[i] if i < len(raw_row) else None
+                if val is None or val == "":
+                    converted.append(None)
+                elif col_def.data_type == DataType.INT64:
+                    try:
+                        converted.append(int(val))
+                    except ValueError:
+                        converted.append(None)
+                elif col_def.data_type == DataType.FLOAT64:
+                    try:
+                        converted.append(float(val))
+                    except ValueError:
+                        converted.append(None)
+                elif col_def.data_type == DataType.BOOL:
+                    converted.append(str(val).lower() in ("true", "1", "t"))
+                else:
+                    converted.append(str(val))
+            return converted
 
         try:
-            if not table_name:
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-                tables = cursor.fetchall()
-                if not tables:
-                    raise ValueError(f"No tables found in SQL dump: {sql_dump_path}")
-                table_name = tables[0][0]
+            for m in pattern.finditer(text):
+                raw_tuple = m.group(1).strip()
+                raw_tuple = raw_tuple.replace('\r\n', ' ').replace('\n', ' ')
+                reader = csv.reader(io.StringIO(raw_tuple), delimiter=',', quotechar='"', skipinitialspace=True)
+                try:
+                    row = [c.strip() for c in next(reader)]
+                except Exception:
+                    continue
 
-            cursor.execute(f"PRAGMA table_info({table_name});")
-            table_info = cursor.fetchall()
-            columns = [ColumnDef(row[1], _map_sqlite_type(row[2])) for row in table_info]
-            schema = Schema(columns)
+                if not row:
+                    continue
 
-            cursor.execute(f"SELECT * FROM {table_name}")
-            total_imported = 0
-            with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
-                while True:
-                    rows = cursor.fetchmany(block_size)
-                    if not rows:
-                        break
-                    writer.write_rows(rows)
-                    total_imported += len(rows)
+                batch.append(row)
+
+                if schema is None and len(batch) >= 10:
+                    schema = _infer_schema(batch)
+                    writer = FileWriter(output_mgdb_path, schema, block_size=block_size)
+                    writer.__enter__()
+
+                if schema and len(batch) >= block_size:
+                    converted_rows = [_convert_row(r, schema) for r in batch]
+                    writer.write_rows(converted_rows)
+                    total_imported += len(converted_rows)
+                    batch = []
+
+            # Flush remaining batch
+            if batch:
+                if schema is None:
+                    schema = _infer_schema(batch)
+                    writer = FileWriter(output_mgdb_path, schema, block_size=block_size)
+                    writer.__enter__()
+                converted_rows = [_convert_row(r, schema) for r in batch]
+                writer.write_rows(converted_rows)
+                total_imported += len(converted_rows)
 
             return total_imported
         finally:
-            cursor.close()
-            conn.close()
+            if writer:
+                writer.__exit__(None, None, None)
 
     @classmethod
     def from_csv(

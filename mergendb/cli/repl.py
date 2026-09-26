@@ -440,6 +440,11 @@ class MergenCLI:
         return "\n".join(pipe)
 
     def run(self):
+        if hasattr(sys.stdout, "reconfigure"):
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
         print(BANNER)
         buffer = []
 
@@ -466,7 +471,10 @@ class MergenCLI:
                 if stripped.endswith(";"):
                     full_cmd = "\n".join(buffer)
                     buffer = []
-                    self.execute_command(full_cmd)
+                    try:
+                        self.execute_command(full_cmd)
+                    except Exception as e:
+                        print(f"Error: {e}")
 
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting.")
