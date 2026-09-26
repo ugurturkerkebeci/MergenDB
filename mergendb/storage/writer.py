@@ -65,9 +65,78 @@ class FileWriter:
         if self._buffered_count >= self.block_size:
             self._flush_block()
 
+    def write_columns(self, col_data_map: Dict[str, List[Any]], count: int):
+        """
+        Writes data directly in columnar format for maximum throughput.
+        col_data_map: mapping from column_name -> list of pre-cast values.
+        count: number of rows represented.
+        """
+        if self._closed:
+            raise RuntimeError("Cannot write to a closed FileWriter.")
+        if count <= 0:
+            return
+
+        col_names = [col.name for col in self.schema.columns]
+        for name in col_names:
+            if name in col_data_map:
+                self._current_buffer[name].extend(col_data_map[name])
+
+        self._buffered_count += count
+        self._total_rows += count
+
+        while self._buffered_count >= self.block_size:
+            excess = self._buffered_count - self.block_size
+            if excess == 0:
+                self._flush_block()
+            else:
+                saved = {}
+                for name in col_names:
+                    buf = self._current_buffer[name]
+                    saved[name] = buf[self.block_size:]
+                    self._current_buffer[name] = buf[:self.block_size]
+                self._buffered_count = self.block_size
+                self._flush_block()
+                self._current_buffer = saved
+                self._buffered_count = excess
+
     def write_rows(self, rows: List[Any]):
-        for row in rows:
-            self.write_row(row)
+        if not rows:
+            return
+        if self._closed:
+            raise RuntimeError("Cannot write to a closed FileWriter.")
+
+        first = rows[0]
+        if isinstance(first, (list, tuple)):
+            col_names = [col.name for col in self.schema.columns]
+            num_cols = len(col_names)
+            cols_data = list(zip(*rows))
+            for i in range(min(num_cols, len(cols_data))):
+                col_def = self.schema.columns[i]
+                vals = cols_data[i]
+                cast_vals = [cast_value(v, col_def.data_type) for v in vals]
+                self._current_buffer[col_names[i]].extend(cast_vals)
+
+            n = len(rows)
+            self._buffered_count += n
+            self._total_rows += n
+
+            while self._buffered_count >= self.block_size:
+                excess = self._buffered_count - self.block_size
+                if excess == 0:
+                    self._flush_block()
+                else:
+                    saved = {}
+                    for name in col_names:
+                        buf = self._current_buffer[name]
+                        saved[name] = buf[self.block_size:]
+                        self._current_buffer[name] = buf[:self.block_size]
+                    self._buffered_count = self.block_size
+                    self._flush_block()
+                    self._current_buffer = saved
+                    self._buffered_count = excess
+        else:
+            for row in rows:
+                self.write_row(row)
 
     def _flush_block(self):
         if self._buffered_count == 0:

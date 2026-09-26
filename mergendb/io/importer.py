@@ -1,4 +1,6 @@
 import os
+import sys
+import time
 import csv
 import sqlite3
 import re
@@ -172,12 +174,13 @@ class DataImporter:
         sql_dump_path: str,
         output_mgdb_path: str,
         table_name: Optional[str] = None,
-        block_size: int = 2048
+        block_size: int = 8192
     ) -> int:
         """
         Pure streaming importer for SQL dumps of any size (1 GB, 50 GB, 500 GB).
         Streams line-by-line with constant O(1) memory (~15 MB RAM) to completely prevent OOM.
         Handles phpMyAdmin dumps, MySQL DDL, partial dumps, and raw tuple fragments.
+        Uses high-speed columnar conversion and displays a live real-time progress bar.
         """
         # Resolve path
         if not os.path.exists(sql_dump_path):
@@ -186,6 +189,8 @@ class DataImporter:
                 sql_dump_path = desktop_try
             else:
                 raise FileNotFoundError(f"SQL dump file not found: {sql_dump_path}")
+
+        total_bytes = os.path.getsize(sql_dump_path)
 
         # Step 1: Detect encoding by peeking first 64 KB
         with open(sql_dump_path, "rb") as f:
@@ -210,10 +215,25 @@ class DataImporter:
                     break
                 clean = line.strip()
                 if not in_create:
-                    m = re.match(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?[\w\d_]+`?\.)?`?([\w\d_]+)`?\s*\(", clean, re.IGNORECASE)
+                    m = re.match(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?[\w\d_]+`?\.)?`?([\w\d_]+)`?\s*\((.*)", clean, re.IGNORECASE)
                     if m:
                         table_name = m.group(1)
-                        in_create = True
+                        rest = m.group(2).strip()
+                        if rest.endswith(");") or rest.endswith(")") or ");" in rest:
+                            inner = rest[:rest.rfind(")")]
+                            for item in inner.split(","):
+                                item_clean = item.strip()
+                                if not item_clean or re.match(r"^(?:PRIMARY\s+KEY|KEY|INDEX|UNIQUE|CONSTRAINT)", item_clean, re.IGNORECASE):
+                                    continue
+                                col_match = re.match(r"^`?([\w\d_]+)`?\s+([a-zA-Z]+)", item_clean)
+                                if col_match:
+                                    cname = col_match.group(1)
+                                    ctype_raw = col_match.group(2).lower()
+                                    dtype = MYSQL_TYPE_MAP.get(ctype_raw, DataType.STRING)
+                                    columns.append(ColumnDef(cname, dtype))
+                            break
+                        else:
+                            in_create = True
                 else:
                     if clean.startswith(")") or clean.startswith("ENGINE=") or clean.startswith(");"):
                         in_create = False
@@ -230,32 +250,63 @@ class DataImporter:
             if columns:
                 schema = Schema(columns)
 
-        # Step 3: Stream rows line-by-line with constant memory
+        # Step 3: Stream rows line-by-line with constant memory and fast columnar transposition
+        def _safe_int(v):
+            if v is None or v == "" or v == "NULL":
+                return None
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_float(v):
+            if v is None or v == "" or v == "NULL":
+                return None
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_bool(v):
+            if v is None or v == "" or v == "NULL":
+                return None
+            return str(v).lower() in ("true", "1", "t")
+
+        def _safe_str(v):
+            if v is None or v == "NULL":
+                return None
+            return str(v)
+
+        def _build_converters(sch):
+            convs = []
+            for col in sch.columns:
+                dt = col.data_type
+                if dt in (DataType.INT64, DataType.INT32):
+                    convs.append(lambda vals: [_safe_int(v) for v in vals])
+                elif dt == DataType.FLOAT64:
+                    convs.append(lambda vals: [_safe_float(v) for v in vals])
+                elif dt == DataType.BOOL:
+                    convs.append(lambda vals: [_safe_bool(v) for v in vals])
+                else:
+                    convs.append(lambda vals: [_safe_str(v) for v in vals])
+            return convs
+
+        def _write_columnar_batch(wr, sch, convs, b):
+            cols_transposed = list(zip(*b))
+            col_map = {}
+            for idx, col in enumerate(sch.columns):
+                if idx < len(cols_transposed):
+                    col_map[col.name] = convs[idx](cols_transposed[idx])
+                else:
+                    col_map[col.name] = [None] * len(b)
+            wr.write_columns(col_map, len(b))
+
         total_imported = 0
         batch = []
         writer = None
-
-        def _convert_row(raw_row, sch):
-            converted = []
-            for i, col_def in enumerate(sch.columns):
-                val = raw_row[i] if i < len(raw_row) else None
-                if val is None or val == "" or val == "NULL":
-                    converted.append(None)
-                elif col_def.data_type in (DataType.INT64, DataType.INT32):
-                    try:
-                        converted.append(int(val))
-                    except ValueError:
-                        converted.append(None)
-                elif col_def.data_type == DataType.FLOAT64:
-                    try:
-                        converted.append(float(val))
-                    except ValueError:
-                        converted.append(None)
-                elif col_def.data_type == DataType.BOOL:
-                    converted.append(str(val).lower() in ("true", "1", "t"))
-                else:
-                    converted.append(str(val))
-            return converted
+        converters = _build_converters(schema) if schema else None
+        start_time = time.time()
+        last_progress_time = 0.0
 
         with open(sql_dump_path, "r", encoding=encoding, errors="replace", buffering=1024*1024) as f:
             try:
@@ -276,22 +327,39 @@ class DataImporter:
                         continue
 
                     # Extract tuples from line
-                    start_pos = 0
-                    while True:
-                        open_paren = s.find("(", start_pos)
+                    v_idx = s.find("VALUES")
+                    if v_idx == -1:
+                        v_idx = s.find("values")
+                    i = v_idx + 6 if v_idx != -1 else 0
+                    n = len(s)
+
+                    while i < n:
+                        open_paren = s.find('(', i)
                         if open_paren == -1:
                             break
-                        close_paren = s.find(")", open_paren + 1)
+                        close_paren = s.find(')', open_paren + 1)
+                        if close_paren == -1:
+                            break
+
+                        # Quote-aware paren matching: verify no unclosed single or double quotes
+                        while close_paren != -1:
+                            q_count = s.count("'", open_paren, close_paren) - s.count(r"\'", open_paren, close_paren)
+                            if '"' in s[open_paren:close_paren]:
+                                q_count += s.count('"', open_paren, close_paren) - s.count(r'\"', open_paren, close_paren)
+                            if q_count % 2 == 0:
+                                break
+                            close_paren = s.find(')', close_paren + 1)
+
                         if close_paren == -1:
                             break
 
                         tuple_str = s[open_paren + 1:close_paren]
-                        start_pos = close_paren + 1
+                        i = close_paren + 1
 
                         quote = "'" if "'" in tuple_str else '"'
                         reader = csv.reader(io.StringIO(tuple_str), delimiter=',', quotechar=quote, skipinitialspace=True)
                         try:
-                            raw_row = [c.strip() for c in next(reader)]
+                            raw_row = [c.strip() if c is not None else None for c in next(reader)]
                         except Exception:
                             continue
 
@@ -306,10 +374,10 @@ class DataImporter:
                                 if col_count == 18:
                                     cnames = MERNIS_COLS
                                 else:
-                                    cnames = [f"col_{i+1}" for i in range(col_count)]
+                                    cnames = [f"col_{c_idx+1}" for c_idx in range(col_count)]
                                 cols = []
-                                for i, cn in enumerate(cnames):
-                                    non_empty = [r[i] for r in batch if i < len(r) and r[i] is not None and str(r[i]).strip() != ""]
+                                for c_idx, cn in enumerate(cnames):
+                                    non_empty = [r[c_idx] for r in batch if c_idx < len(r) and r[c_idx] is not None and str(r[c_idx]).strip() != ""]
                                     dt = DataType.STRING
                                     if non_empty:
                                         if all(re.match(r'^-?\d+$', str(v).strip()) for v in non_empty[:50]):
@@ -318,27 +386,52 @@ class DataImporter:
                                             dt = DataType.FLOAT64
                                     cols.append(ColumnDef(cn, dt))
                                 schema = Schema(cols)
+                                converters = _build_converters(schema)
                                 writer = FileWriter(output_mgdb_path, schema, block_size=block_size)
                                 writer.__enter__()
-                                conv_batch = [_convert_row(r, schema) for r in batch]
-                                writer.write_rows(conv_batch)
-                                total_imported += len(conv_batch)
+                                _write_columnar_batch(writer, schema, converters, batch)
+                                total_imported += len(batch)
                                 batch = []
                             continue
 
                         if writer is None:
+                            converters = _build_converters(schema)
                             writer = FileWriter(output_mgdb_path, schema, block_size=block_size)
                             writer.__enter__()
 
-                        batch.append(_convert_row(raw_row, schema))
+                        batch.append(raw_row)
                         if len(batch) >= block_size:
-                            writer.write_rows(batch)
+                            _write_columnar_batch(writer, schema, converters, batch)
                             total_imported += len(batch)
                             batch = []
 
+                            now = time.time()
+                            if now - last_progress_time >= 0.25:
+                                last_progress_time = now
+                                elapsed = max(now - start_time, 0.001)
+                                speed = total_imported / elapsed
+                                pos = f.tell()
+                                pct = min(100.0, (pos / total_bytes) * 100) if total_bytes > 0 else 0.0
+                                bar_len = 20
+                                filled = int(bar_len * (pct / 100))
+                                bar = "=" * filled + (">" if filled < bar_len else "")
+                                bar = bar.ljust(bar_len, " ")
+                                remaining = max(0, total_bytes - pos)
+                                byte_rate = pos / elapsed
+                                eta = (remaining / byte_rate) if byte_rate > 0 else 0
+                                sys.stdout.write(f"\r[*] Importing SQL: {total_imported:,} rows ({speed:,.0f} rows/s) [{bar}] {pct:.1f}% | ETA: {eta:.0f}s  ")
+                                sys.stdout.flush()
+
                 if batch and writer:
-                    writer.write_rows(batch)
+                    _write_columnar_batch(writer, schema, converters, batch)
                     total_imported += len(batch)
+                    batch = []
+
+                if total_imported > 0:
+                    elapsed = max(time.time() - start_time, 0.001)
+                    speed = total_imported / elapsed
+                    sys.stdout.write(f"\r[+] Successfully imported {total_imported:,} rows in {elapsed:.2f}s ({speed:,.0f} rows/s)!              \n")
+                    sys.stdout.flush()
 
             finally:
                 if writer:

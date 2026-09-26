@@ -21,7 +21,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.0 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.3 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -376,12 +376,14 @@ class MergenCLI:
                 src = parts[2]
                 out = self._resolve_table_path(parts[3])
                 cnt = DataImporter.from_sql_dump(src, out)
-                print(f"Imported {cnt:,} rows from SQL dump into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.")
+                self.active_table = out
+                print(f"[*] Active table context automatically switched to: '{out}'\n")
             elif sub == "CSV":
                 src = parts[2]
                 out = self._resolve_table_path(parts[3])
                 cnt = DataImporter.from_csv(src, out)
-                print(f"Imported {cnt:,} rows from CSV into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.")
+                self.active_table = out
+                print(f"Imported {cnt:,} rows from CSV into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.\n")
             else:
                 print(f"Unknown import format: {sub}. Use SQLITE, SQL, or CSV.")
 
@@ -392,7 +394,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.4.0 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.3 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:

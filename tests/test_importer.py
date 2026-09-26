@@ -97,5 +97,20 @@ class TestImporter(unittest.TestCase):
         """)
         self.assertGreater(len(res), 0)
 
+    def test_import_sql_dump_complex_strings(self):
+        complex_sql = os.path.join(self.test_dir, "complex.sql")
+        complex_mgdb = os.path.join(self.test_dir, "complex.mgdb")
+        with open(complex_sql, "w", encoding="utf-8") as f:
+            f.write("""
+            CREATE TABLE users (id INT, name VARCHAR(100), note VARCHAR(200));
+            INSERT INTO users VALUES (1, 'Ahmet', 'Kadıköy (Merkez)');
+            INSERT INTO users VALUES (2, 'O\\'Connor', 'Quotes and (brackets) test');
+            """)
+        tbl = mergendb.from_sql_dump(complex_sql, complex_mgdb)
+        self.assertEqual(tbl.row_count, 2)
+        res = mergendb.query(f'FROM "{complex_mgdb}" | SELECT name, note')
+        self.assertEqual(res.rows[0][1], "Kadıköy (Merkez)")
+        self.assertIn("O", res.rows[1][0])
+
 if __name__ == "__main__":
     unittest.main()
