@@ -205,9 +205,21 @@ class DataImporter:
         """
         # Resolve path
         if not os.path.exists(sql_dump_path):
-            desktop_try = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(sql_dump_path))
-            if os.path.exists(desktop_try):
-                sql_dump_path = desktop_try
+            candidates = [
+                sql_dump_path,
+                sql_dump_path + ".sql",
+                os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(sql_dump_path)),
+                os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(sql_dump_path) + ".sql"),
+                os.path.join(os.path.expanduser("~"), "Downloads", os.path.basename(sql_dump_path)),
+                os.path.join(os.path.expanduser("~"), "Downloads", os.path.basename(sql_dump_path) + ".sql"),
+            ]
+            found = None
+            for cand in candidates:
+                if os.path.exists(cand):
+                    found = cand
+                    break
+            if found:
+                sql_dump_path = found
             else:
                 raise FileNotFoundError(f"SQL dump file not found: {sql_dump_path}")
 
@@ -327,12 +339,14 @@ class DataImporter:
         writer = None
         converters = _build_converters(schema) if schema else None
         pbar = ProgressBar("Importing SQL", total_bytes=total_bytes)
+        bytes_processed = 0
 
         with open(sql_dump_path, "r", encoding=encoding, errors="replace", buffering=256*1024) as f:
             try:
                 inside_ddl = False
                 pending = ""
                 for line in f:
+                    bytes_processed += len(line)
                     s = line.strip()
                     if not pending and (not s or s.startswith("--") or s.startswith("#") or s.startswith("/*") or s.startswith("/*!") or s.startswith("SET ") or s.startswith("START ") or s.startswith("COMMIT") or s.startswith("LOCK ") or s.startswith("UNLOCK ")):
                         continue
@@ -433,7 +447,7 @@ class DataImporter:
                             _write_columnar_batch(writer, schema, converters, batch)
                             total_imported += len(batch)
                             batch = []
-                            pbar.update(total_imported, current_bytes=f.tell())
+                            pbar.update(total_imported, current_bytes=bytes_processed)
 
                     # Check remainder after last processed tuple
                     rem = combined[i:].strip()
@@ -528,7 +542,7 @@ class DataImporter:
                         writer.write_rows(batch)
                         total_imported += len(batch)
                         batch = []
-                        pbar.update(total_imported, current_bytes=f.tell())
+                        pbar.update(total_imported)
                 if batch:
                     writer.write_rows(batch)
                     total_imported += len(batch)

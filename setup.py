@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="mergendb",
-    version="0.4.4",
+    version="0.4.5",
     author="Uğur Türker Kebeci",
     author_email="ugurturkerkebeci@users.noreply.github.com",
     description="Ultra-compact, columnar, embedded database engine designed to run large workloads on small hardware.",
