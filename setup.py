@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="mergendb",
-    version="0.3.0",
+    version="0.4.0",
     author="Uğur Türker Kebeci",
     author_email="ugurturkerkebeci@users.noreply.github.com",
     description="Ultra-compact, columnar, embedded database engine designed to run large workloads on small hardware.",
@@ -34,6 +34,8 @@ setup(
     entry_points={
         "console_scripts": [
             "mergen=mergendb.cli.repl:main",
+            "mergendb=mergendb.cli.repl:main",
+            "mergendb-server=mergendb.server.server:main",
         ],
     },
 )

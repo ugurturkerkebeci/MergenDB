@@ -39,20 +39,28 @@ Traditional databases (MySQL, PostgreSQL, SQLite) store data in a **row-oriented
 
 **MergenDB** redesigns storage from the silicon up:
 
-```mermaid
-flowchart TD
-    RawData["Raw Input Records (SQL / CSV / JSON / Dicts)"] --> Chunker["Vector Chunker (1024 - 4096 row vectors)"]
-    Chunker --> ColSlice["Columnar Vertical Partitioning"]
-    
-    subgraph CompressionEngine ["Adaptive Compression Engine"]
-        ColSlice --> BitPack["Bit-Packing (8 Bools / Byte, Small Ints)"]
-        ColSlice --> Delta["Delta / Frame-of-Reference (Timestamps & IDs)"]
-        ColSlice --> Dict["Dictionary Encoding (Low-Cardinality Strings)"]
-        ColSlice --> RLE["Run-Length Encoding (Consecutive Repeated Data)"]
-    end
-
-    CompressionEngine --> ZoneMaps["ZoneMap Generator (Min/Max Indices per Chunk)"]
-    ZoneMaps --> Disk[".mgdb Columnar Binary Storage on Disk"]
+```text
+  [ Raw Input Records (SQL / CSV / JSON / Dicts) ]
+                        │
+                        ▼
+       [ Vector Chunker (1024 - 4096 rows) ]
+                        │
+                        ▼
+       [ Columnar Vertical Partitioning ]
+                        │
+  ┌─────────────────────┴──────────────────────┐
+  │         Adaptive Compression Engine         │
+  │  • Bit-Packing      (8 Bools / Byte)       │
+  │  • Frame-of-Ref/Delta (Timestamps & IDs)   │
+  │  • Dictionary       (Repeated Strings)     │
+  │  • Run-Length (RLE) (Sequential Duplicates)│
+  └─────────────────────┬──────────────────────┘
+                        │
+                        ▼
+   [ ZoneMap Indices (Min / Max per Chunk) ]
+                        │
+                        ▼
+      [ .mgdb Columnar Binary Disk Storage ]
 ```
 
 ### 1. 🗜️ Adaptive Hardware-Level Encodings
@@ -156,40 +164,103 @@ table = mergendb.from_csv("sensor_data.csv", "sensor_data.mgdb")
 
 ---
 
-## 💻 İnteraktif Terminal Kabuğu (REPL CLI)
+## 💻 İnteraktif Terminal Kabuğu (REPL CLI) & SQL Desteği
 
-Terminalden doğrudan MergenDB kabuğunu başlatın:
+MergenDB, terminalden tek bir komutla açılan, tıpkı MySQL CLI gibi zengin komut setine sahip bir REPL kabuğu içerir:
 
 ```bash
-python -m mergendb.cli.repl
-# veya
+# Terminalden anında başlatın:
 mergen
+# veya:
+python -m mergendb.cli.repl
 ```
 
 ```text
-  __  __                               _____  ____  
- |  \/  |                             |  __ \|  _ \ 
- | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
- | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
- | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
- |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
-                   __/ |                            
-                  |___/   v0.2.0 (Edge Columnar Engine)
+        /|                    __  __                                _____  ____  
+       / |                   |  \/  |                             |  __ \|  _ \ 
+======>>==>  (O)             | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
+       \ |                   | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
+        \|                   | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
+                             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
+                                               __/ |                            
+                                              |___/   v0.4.0 (Lightning Engine)
 
-mergen> .info telemetry.mgdb
---- Storage Footprint: telemetry.mgdb ---
-Total Rows           : 100,000
-File Size on Disk    : 1.65 MB
-Compression Ratio    : 11.80x (Saved 91.5% space)
+                   "Target Acquired. Zero Waste. Pure Speed."
+    Type SQL or MergenQL commands ending with ';'. Type 'HELP;' for command list.
+```
 
-mergen> .import sql backup.sql backup.mgdb
-Successfully imported 250,000 rows in 320 ms
+### 🛠️ MySQL Benzeri Veritabanı Yönetim Komutları
 
-mergen> FROM "telemetry.mgdb"
-   ...> | WHERE temp > 35.0 AND room LIKE "Server%"
-   ...> | AGGREGATE avg(temp) AS ortalama, stddev(temp) AS sapma BY building
-   ...> | SORT ortalama DESC
-   ...> | LIMIT 5;
+| Komut | Açıklama |
+| :--- | :--- |
+| `SHOW TABLES;` | Mevcut dizindeki tüm `.mgdb` tablolarını, satır sayılarını ve boyutlarını listeler. |
+| `SHOW DATABASES;` | Veritabanı dizinlerini listeler. |
+| `DESCRIBE <table>;` (veya `DESC`) | Tablonun sütunlarını, veri tiplerini ve null durumlarını gösterir. |
+| `USE <tablo>;` | Aktif tablo bağlamını belirler. Artık sorgularda tablo adı yazmadan sorgulayabilirsiniz. |
+| `COUNT <tablo>;` | Tablodaki toplam kayıt sayısını disk bloklarını taramadan anında O(1) sürede döner. |
+| `TRUNCATE TABLE <tablo>;` | Tablo şemasını koruyarak tüm satırları sıfırlar. |
+| `RENAME TABLE <eski> TO <yeni>;` | Tabloyu yeniden adlandırır. |
+| `OPTIMIZE TABLE <tablo>;` | Veri bloklarını yeniden sıkıştırır ve birleştirir. |
+| `EXPLAIN <sorgu>;` | Sorgunun çalıştırma planını, taranacak ve atlanacak blok sayılarını gösterir. |
+| `SELECT ... FROM ... WHERE ...;` | Standart SQL sorgularını doğrudan çalıştırır. |
+| `SERVE [port];` | CLI içinden doğrudan arka planda MergenQL Ağ Sunucusunu başlatır. |
+| `BENCHMARK <tablo>;` | Tablo üzerinde canlı I/O ve sorgu okuma hız testi yapar. |
+
+---
+
+## 🌐 MergenDB Network Server (MySQL/PostgreSQL Tarzı Ağ Sunucusu)
+
+MergenDB yalnızca gömülü (embedded) bir kütüphane değil, aynı zamanda uzaktan REST & JSON üzerinden sorgu çalıştırabileceğiniz bir **Veritabanı Sunucusudur**.
+
+### Sunucuyu Başlatma
+
+```bash
+# Bağımsız sunucuyu 8765 portunda başlatın:
+mergendb-server --port 8765
+
+# Veya Python içerisinden:
+mergendb serve 8765
+```
+
+```text
+======================================================================
+   🏹 MERGENDB SERVER (MergenQL & SQL Network Engine)
+======================================================================
+  * Status        : RUNNING
+  * Listening on  : http://0.0.0.0:8765
+  * Local Web API : http://localhost:8765
+  * Query Endpoint: POST http://localhost:8765/query
+  * Working Dir   : /data/db
+======================================================================
+```
+
+### Uzaktan Sorgu Gönderme (HTTP & cURL)
+
+Herhangi bir dilden (Python, Node.js, Go, PHP, C# vb.) standart HTTP POST isteğiyle MergenQL veya SQL sorguları çalıştırabilirsiniz:
+
+```bash
+curl -X POST http://localhost:8765/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT user_id, email, city FROM users WHERE city == \"Istanbul\" LIMIT 10;"}'
+```
+
+**JSON Yanıtı:**
+```json
+{
+  "success": true,
+  "columns": ["user_id", "email", "city"],
+  "rows": [
+    [1001, "ugur@example.com", "Istanbul"],
+    [1042, "ali@example.com", "Istanbul"]
+  ],
+  "stats": {
+    "execution_time_ms": 1.45,
+    "rows_returned": 2,
+    "blocks_scanned": 1,
+    "blocks_skipped": 48,
+    "bytes_read": 1024
+  }
+}
 ```
 
 ---

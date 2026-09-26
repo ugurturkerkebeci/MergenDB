@@ -4,57 +4,60 @@ import glob
 import time
 import json
 import csv
+import re
 from typing import Optional, List
 from mergendb.client import MergenDB
 from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
 
 BANNER = r"""
-                     .
-                    / \
-                   /   \
-                  /=====\
-                 /       \
-            .---'         '---.
-           /   _           _   \         __  __                               _____  ____  
-          |   / \         / \   |       |  \/  |                             |  __ \|  _ \ 
-          |  |   |  (O)  |   |  |       | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
-          |   \_/         \_/   |       | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
-           \                   /        | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
-            '---.         .---'         |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
-       =========>'=======>=====>                          __/ |                            
-                 \       /                               |___/   v0.2.2 (Lightning Engine)
-                  \=====/
-                   \   /             "Target Acquired. Zero Waste. Pure Speed."
-                    \ /
-                     '
- Type SQL or MergenQL commands ending with ';', or type 'HELP;' for command list.
+        /|                    __  __                                _____  ____  
+       / |                   |  \/  |                             |  __ \|  _ \ 
+======>>==>  (O)             | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
+       \ |                   | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
+        \|                   | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
+                             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
+                                               __/ |                            
+                                              |___/   v0.4.0 (Lightning Engine)
+
+                   "Target Acquired. Zero Waste. Pure Speed."
+   Type SQL or MergenQL commands ending with ';'. Type 'HELP;' for command list.
 """
 
 HELP_TEXT = """
 ================================ MERGENDB COMMANDS ================================
-SQL & Database Management:
-  SHOW TABLES;                           - List all .mgdb tables with rows & size
-  DESCRIBE <table_name>; (or DESC)       - Inspect table schema, columns, and types
-  USE <table_name>;                      - Set active table (queries won't need FROM)
-  DROP TABLE <table_name>;               - Delete a table
-  STATUS;                                - Engine status, memory footprint, cache stats
+Database & Table Management:
+  SHOW TABLES;                           - List all .mgdb tables with rows, size, blocks
+  SHOW DATABASES;                        - List databases / directories
+  SHOW COLUMNS FROM <table>; (or DESC)   - Inspect columns, data types, nullability
+  USE <table_name>;                      - Set active table context
+  CREATE TABLE <name> (col TYPE, ...);   - Create a new columnar table
+  RENAME TABLE <old> TO <new>;           - Rename a table
+  TRUNCATE TABLE <table>;                - Clear all rows in a table keeping schema
+  DROP TABLE <table>;                    - Delete a table permanently
+  OPTIMIZE TABLE <table>;                - Defragment and re-compress table blocks
+  COUNT <table>;                         - Instant O(1) total row count
+  STATUS;                                - Engine status, cache stats, and memory usage
 
-Querying:
-  FROM "table.mgdb" | WHERE ... | SELECT ...;   - Full MergenQL pipeline query
-  SELECT col1, col2 FROM "table.mgdb" WHERE ...;- SQL-style query
+Querying (MergenQL & SQL):
+  FROM "table.mgdb" | WHERE ... | SELECT ...;   - Full pipeline query
+  SELECT col1, col2 FROM <table> WHERE ...;     - Standard SQL query syntax
+  EXPLAIN <query>;                              - Display query optimization plan & pruning
   WHERE temp > 30 | SELECT col1, col2;          - Active table shortcut query (after USE)
 
+Network & Server:
+  SERVE [port];                                 - Start MergenQL TCP/HTTP server (default: 8765)
+
 Data Ingestion & Export:
-  IMPORT SQLITE <source.db> [tbl] <out.mgdb>;   - Ingest SQLite table to MergenDB
-  IMPORT SQL <dump.sql> <out.mgdb>;             - Ingest MySQL/phpMyAdmin SQL dump
-  IMPORT CSV <file.csv> <out.mgdb>;             - Ingest CSV file with auto-typing
-  EXPORT <table.mgdb> TO CSV <output.csv>;      - Export MergenDB table to CSV
-  EXPORT <table.mgdb> TO JSON <output.jsonl>;   - Export MergenDB table to JSONL
+  IMPORT SQLITE <source.db> [tbl] <out.mgdb>;   - Ingest SQLite table
+  IMPORT SQL <dump.sql> <out.mgdb>;             - Ingest MySQL / phpMyAdmin SQL dump
+  IMPORT CSV <file.csv> <out.mgdb>;             - Ingest CSV file with auto-detect
+  EXPORT <table.mgdb> TO CSV <output.csv>;      - Export to CSV
+  EXPORT <table.mgdb> TO JSON <output.jsonl>;   - Export to JSON Lines
 
 Diagnostics:
-  BENCHMARK <table.mgdb>;                       - Run live speed & I/O benchmark on table
-  INFO <table.mgdb>;                            - Show compression ratio & block stats
+  BENCHMARK <table.mgdb>;                       - Run live speed & I/O benchmark
+  INFO <table.mgdb>;                            - Compression ratio & block telemetry
   EXIT; (or QUIT;)                              - Exit MergenDB CLI
 ===================================================================================
 """
@@ -90,6 +93,18 @@ class MergenCLI:
                 print(f"| {f.ljust(30)} | {'CORRUPT'.center(10)} | {'-'.center(12)} | {'-'.center(9)} |")
         print("+--------------------------------+------------+--------------+-----------+\n")
 
+    def show_databases(self):
+        cwd = os.getcwd()
+        dirs = [d for d in os.listdir(cwd) if os.path.isdir(d) and not d.startswith(".")]
+        print(f"\nCurrent Directory: {cwd}")
+        print("+--------------------------------+")
+        print("| Database / Directory           |")
+        print("+--------------------------------+")
+        print(f"| {os.path.basename(cwd).ljust(30)} | (Current)")
+        for d in dirs:
+            print(f"| {d.ljust(30)} |")
+        print("+--------------------------------+\n")
+
     def describe_table(self, table_name: str):
         filepath = self._resolve_table_path(table_name)
         if not os.path.exists(filepath):
@@ -104,6 +119,72 @@ class MergenCLI:
             for col in reader.schema.columns:
                 print(f"| {col.name.ljust(25)} | {col.data_type.name.ljust(14)} | {str(col.nullable).ljust(8)} |")
             print("+---------------------------+----------------+----------+\n")
+
+    def count_table(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+        with FileReader(filepath) as reader:
+            print(f"\n{filepath}: {reader.total_rows:,} rows.\n")
+
+    def truncate_table(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+        with FileReader(filepath) as reader:
+            schema = reader.schema
+        MergenDB.create_table(filepath, schema)
+        print(f"Table '{filepath}' truncated. (0 rows)\n")
+
+    def rename_table(self, old_name: str, new_name: str):
+        old_path = self._resolve_table_path(old_name)
+        new_path = self._resolve_table_path(new_name)
+        if not os.path.exists(old_path):
+            print(f"Error: Table '{old_path}' not found.")
+            return
+        os.rename(old_path, new_path)
+        if self.active_table == old_path:
+            self.active_table = new_path
+        print(f"Table renamed from '{old_path}' to '{new_path}'.\n")
+
+    def optimize_table(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+        print(f"Optimizing blocks for '{filepath}'...")
+        t0 = time.perf_counter()
+        tbl = MergenDB.open_table(filepath)
+        tbl.insert_many([], block_size=2048) # triggers re-flushing & block consolidation
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"Table '{filepath}' optimized in {elapsed:.2f} ms.\n")
+
+    def explain_query(self, query_str: str):
+        from mergendb.query.lexer import Lexer
+        from mergendb.query.parser import Parser
+        from mergendb.query.planner import QueryPlanner
+        from mergendb.query.ast_nodes import QueryPlan
+
+        tokens = Lexer(query_str).tokenize()
+        plan = Parser(tokens).parse()
+
+        if not isinstance(plan, QueryPlan):
+            print("EXPLAIN only supports SELECT / FROM queries.")
+            return
+
+        pushdowns = QueryPlanner.extract_pushdown_predicates(plan.where_expr)
+        needed_cols = QueryPlanner.collect_required_columns(plan)
+
+        print("\n--- MergenQL Query Plan ---")
+        print(f"  Source Table       : {plan.table_source}")
+        print(f"  Pushdown Predicates: {pushdowns if pushdowns else '(None - Full block scan)'}")
+        print(f"  Columns to Read    : {needed_cols if needed_cols else '(All Columns)'}")
+        print(f"  Computed Columns   : {[c.target_column for c in plan.computes] if plan.computes else '(None)'}")
+        print(f"  Aggregation        : {[a.alias for a in plan.aggregate.aggregations] if plan.aggregate else '(None)'}")
+        print(f"  Sort               : {plan.sort.column + (' DESC' if plan.sort.descending else ' ASC') if plan.sort else '(None)'}")
+        print(f"  Limit              : {plan.limit if plan.limit is not None else '(None)'}\n")
 
     def show_info(self, table_name: str):
         filepath = self._resolve_table_path(table_name)
@@ -173,20 +254,18 @@ class MergenCLI:
             num_rows = reader.total_rows
 
         print(f"\nBenchmarking '{filepath}' ({num_rows:,} rows)...")
-
-        # Query 1: Full table count
         t0 = time.perf_counter()
         res1 = MergenDB.query(f'FROM "{filepath}" | AGGREGATE count(*) AS cnt')
         ms1 = (time.perf_counter() - t0) * 1000
 
-        # Query 2: Single column scan
         t0 = time.perf_counter()
         res2 = MergenDB.query(f'FROM "{filepath}" | SELECT {first_col} | LIMIT 100')
         ms2 = (time.perf_counter() - t0) * 1000
 
+        throughput = (num_rows / (ms1/1000.0)) if ms1 > 0 else 0
         print(f"  * Aggregation scan : {ms1:.2f} ms")
         print(f"  * Column prune scan: {ms2:.2f} ms")
-        print(f"  * Throughput       : {(num_rows / (ms1/1000.0)):,.0f} rows/sec\n")
+        print(f"  * Throughput       : {throughput:,.0f} rows/sec\n")
 
     def execute_command(self, raw_cmd: str):
         cmd = raw_cmd.strip().rstrip(";")
@@ -203,11 +282,42 @@ class MergenCLI:
         elif keyword == "HELP":
             print(HELP_TEXT)
 
-        elif keyword in ("SHOW", "LIST") and len(parts) > 1 and parts[1].upper() == "TABLES":
-            self.show_tables()
+        elif keyword == "SERVE":
+            port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 8765
+            from mergendb.server.server import start_server
+            start_server(port=port)
+
+        elif keyword in ("SHOW", "LIST") and len(parts) > 1:
+            sub = parts[1].upper()
+            if sub == "TABLES":
+                self.show_tables()
+            elif sub == "DATABASES":
+                self.show_databases()
+            elif sub == "COLUMNS" and len(parts) >= 4 and parts[2].upper() == "FROM":
+                self.describe_table(parts[3])
+            else:
+                print(f"Unknown SHOW command: {cmd}")
 
         elif keyword in ("DESCRIBE", "DESC") and len(parts) > 1:
             self.describe_table(parts[1])
+
+        elif keyword == "COUNT" and len(parts) > 1:
+            self.count_table(parts[1])
+
+        elif keyword == "TRUNCATE" and len(parts) >= 3 and parts[1].upper() == "TABLE":
+            self.truncate_table(parts[2])
+
+        elif keyword == "RENAME" and len(parts) >= 5 and parts[1].upper() == "TABLE" and parts[3].upper() == "TO":
+            self.rename_table(parts[2], parts[4])
+
+        elif keyword == "OPTIMIZE" and len(parts) >= 3 and parts[1].upper() == "TABLE":
+            self.optimize_table(parts[2])
+
+        elif keyword == "EXPLAIN":
+            query_part = cmd[7:].strip()
+            if query_part.upper().startswith("SELECT ") and "FROM " in query_part.upper():
+                query_part = self._convert_sql_to_pipeline(query_part)
+            self.explain_query(query_part)
 
         elif keyword == "USE" and len(parts) > 1:
             tbl = self._resolve_table_path(parts[1])
@@ -272,13 +382,12 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.2.2 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.0 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:
             # Query Execution (MergenQL or SQL)
             query_str = cmd
-            # If query starts with '|' or WHERE/SELECT without FROM, prepend active table
             if (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
                 if not self.active_table:
                     print("Error: No active table selected. Use 'USE <table_name>;' or specify 'FROM \"table.mgdb\"'.")
@@ -287,7 +396,6 @@ class MergenCLI:
                     query_str = "| " + query_str
                 query_str = f'FROM "{self.active_table}"\n' + query_str
 
-            # Support basic standard SQL: SELECT ... FROM ... WHERE ...
             if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
                 query_str = self._convert_sql_to_pipeline(query_str)
 
@@ -299,7 +407,6 @@ class MergenCLI:
 
     def _convert_sql_to_pipeline(self, sql: str) -> str:
         """Translates basic standard SQL 'SELECT ... FROM ... WHERE ...' into MergenQL pipeline."""
-        import re
         m = re.match(r"SELECT\s+(.+?)\s+FROM\s+([^\s;]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", sql, re.IGNORECASE)
         if not m:
             return sql
@@ -334,7 +441,6 @@ class MergenCLI:
 
                 stripped = line.strip()
 
-                # Handle single-line dot commands like .help, .tables
                 if not buffer and stripped.startswith("."):
                     sub = stripped[1:].upper()
                     if sub in ("HELP", "?"): self.execute_command("HELP;")
@@ -347,7 +453,6 @@ class MergenCLI:
 
                 buffer.append(line)
 
-                # Command ends with semicolon
                 if stripped.endswith(";"):
                     full_cmd = "\n".join(buffer)
                     buffer = []
@@ -358,8 +463,13 @@ class MergenCLI:
                 break
 
 def main():
-    cli = MergenCLI()
-    cli.run()
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
+        port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
+        from mergendb.server.server import start_server
+        start_server(port=port)
+    else:
+        cli = MergenCLI()
+        cli.run()
 
 if __name__ == "__main__":
     main()

@@ -9,8 +9,9 @@ from mergendb.client import (
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
+from mergendb.server.server import start_server
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     "MergenDB",
@@ -21,6 +22,7 @@ __all__ = [
     "from_sqlite",
     "from_sql_dump",
     "from_csv",
+    "start_server",
     "Schema",
     "ColumnDef",
     "DataType",
