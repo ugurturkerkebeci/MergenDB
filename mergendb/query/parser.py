@@ -214,10 +214,11 @@ class Parser:
     def _parse_comparison(self) -> ExprNode:
         expr = self._parse_additive()
         curr = self._current()
-        if curr.type in (TokenType.EQ, TokenType.NEQ, TokenType.LT, TokenType.LTE, TokenType.GT, TokenType.GTE):
+        if curr.type in (TokenType.EQ, TokenType.NEQ, TokenType.LT, TokenType.LTE, TokenType.GT, TokenType.GTE, TokenType.LIKE):
             self.pos += 1
             right = self._parse_additive()
-            return BinaryOpNode(op=curr.value, left=expr, right=right)
+            op = "LIKE" if curr.type == TokenType.LIKE else curr.value
+            return BinaryOpNode(op=op, left=expr, right=right)
         return expr
 
     def _parse_additive(self) -> ExprNode:

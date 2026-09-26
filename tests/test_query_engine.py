@@ -95,5 +95,28 @@ class TestQueryEngine(unittest.TestCase):
         self.assertEqual(len(res), 3)
         self.assertEqual(res.rows[0][1], 100) # Max battery is 100
 
+    def test_like_and_advanced_aggregates(self):
+        # 1. LIKE pattern test
+        q1 = f"""
+        FROM "{self.filepath}"
+        | WHERE room LIKE "kit%"
+        | SELECT room, device_id
+        | LIMIT 5
+        """
+        res1 = mergendb.query(q1)
+        self.assertGreater(len(res1), 0)
+        for r in res1.rows:
+            self.assertTrue(r[0].startswith("kit"))
+
+        # 2. Median and Stddev test
+        q2 = f"""
+        FROM "{self.filepath}"
+        | AGGREGATE median(temperature) AS med_temp, stddev(temperature) AS sd_temp
+        """
+        res2 = mergendb.query(q2)
+        self.assertEqual(len(res2), 1)
+        self.assertIsNotNone(res2.rows[0][0])
+        self.assertGreater(res2.rows[0][1], 0.0)
+
 if __name__ == "__main__":
     unittest.main()

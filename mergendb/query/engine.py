@@ -123,6 +123,15 @@ class ExpressionEvaluator:
             elif op == "OR":
                 for l, r in zip(left_vals, right_vals):
                     res.append(bool(l or r))
+            elif op == "LIKE":
+                import re
+                for l, r in zip(left_vals, right_vals):
+                    if l is None or r is None:
+                        res.append(False)
+                    else:
+                        pattern = str(r)
+                        regex_pattern = "^" + re.escape(pattern).replace("%", ".*").replace("_", ".") + "$"
+                        res.append(bool(re.match(regex_pattern, str(l), re.IGNORECASE)))
             else:
                 raise ValueError(f"Unsupported binary operator: {op}")
 
@@ -265,6 +274,7 @@ class QueryEngine:
                     "sums": {},
                     "mins": {},
                     "maxs": {},
+                    "values": {},
                 }
 
             entry = state[key]
@@ -278,6 +288,11 @@ class QueryEngine:
                 if fn in ("sum", "avg"):
                     if val is not None:
                         entry["sums"][alias] = entry["sums"].get(alias, 0.0) + float(val)
+                elif fn in ("median", "stddev"):
+                    if val is not None:
+                        if alias not in entry["values"]:
+                            entry["values"][alias] = []
+                        entry["values"][alias].append(float(val))
                 elif fn == "min":
                     if val is not None:
                         if alias not in entry["mins"] or val < entry["mins"][alias]:
@@ -320,6 +335,23 @@ class QueryEngine:
                 elif fn == "avg":
                     total = entry["sums"].get(alias, 0.0)
                     row.append(total / row_count if row_count > 0 else None)
+                elif fn == "median":
+                    vals = sorted(entry["values"].get(alias, []))
+                    if not vals:
+                        row.append(None)
+                    else:
+                        mid = len(vals) // 2
+                        med = (vals[mid] + vals[~mid]) / 2 if len(vals) % 2 == 0 else vals[mid]
+                        row.append(med)
+                elif fn == "stddev":
+                    import math
+                    vals = entry["values"].get(alias, [])
+                    if len(vals) < 2:
+                        row.append(0.0)
+                    else:
+                        mean = sum(vals) / len(vals)
+                        variance = sum((x - mean) ** 2 for x in vals) / (len(vals) - 1)
+                        row.append(math.sqrt(variance))
                 elif fn == "min":
                     row.append(entry["mins"].get(alias, None))
                 elif fn == "max":

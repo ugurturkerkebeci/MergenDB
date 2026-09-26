@@ -29,6 +29,7 @@ class TokenType(Enum):
     INSERT = auto()
     INTO = auto()
     VALUES = auto()
+    LIKE = auto()
 
     # Literals & Identifiers
     IDENTIFIER = auto()
@@ -72,6 +73,7 @@ KEYWORDS = {
     "insert": TokenType.INSERT,
     "into": TokenType.INTO,
     "values": TokenType.VALUES,
+    "like": TokenType.LIKE,
     "true": TokenType.BOOL_LITERAL,
     "false": TokenType.BOOL_LITERAL,
 }

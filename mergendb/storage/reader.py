@@ -115,20 +115,22 @@ class FileReader:
             stats.rows_scanned += block.row_count
             batch_data: Dict[str, List[Any]] = {}
 
+            # Read raw compressed chunk bytes sequentially from disk
+            raw_chunks = []
             for col_name in target_columns:
                 chunk_meta = block.columns[col_name]
                 col_def = self.schema.get_column(col_name)
-
-                # Seek directly to column chunk offset
                 self._file.seek(chunk_meta.offset)
                 chunk_bytes = self._file.read(chunk_meta.compressed_bytes)
                 stats.bytes_read += len(chunk_bytes)
+                raw_chunks.append((col_name, chunk_bytes, chunk_meta.encoding, col_def.data_type))
 
-                # Decompress column vector
+            # Decompress column vectors (fast in-memory)
+            for col_name, chunk_bytes, encoding, dtype in raw_chunks:
                 col_values = ColumnCompressor.decompress(
                     chunk_bytes,
-                    EncodingType(chunk_meta.encoding),
-                    col_def.data_type
+                    EncodingType(encoding),
+                    dtype
                 )
                 batch_data[col_name] = col_values
 
