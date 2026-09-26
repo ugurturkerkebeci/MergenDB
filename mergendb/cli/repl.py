@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.6 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.7 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -349,6 +349,10 @@ class MergenCLI:
             from mergendb.server.server import start_server
             start_server(port=port)
 
+        elif keyword in ("TEST", "TESTS"):
+            from mergendb.tests.__main__ import run_tests
+            run_tests()
+
         elif keyword in ("SHOW", "LIST") and len(parts) > 1:
             sub = parts[1].upper()
             if sub == "TABLES":
@@ -446,7 +450,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.4.6 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.7 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:
@@ -535,7 +539,11 @@ class MergenCLI:
                 break
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ("test", "--test", "-t"):
+        from mergendb.tests.__main__ import run_tests
+        res = run_tests()
+        sys.exit(0 if res.wasSuccessful() else 1)
+    elif len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
         port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
         from mergendb.server.server import start_server
         start_server(port=port)

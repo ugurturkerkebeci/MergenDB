@@ -217,10 +217,14 @@ Benchmarked on an Intel i7 machine with 100,000 telemetry records (12 mixed nume
 
 ## Running Tests
 
-MergenDB includes a complete test suite covering columnar storage, compression encodings, SQL/SQLite/CSV importers, and the query planner:
+MergenDB includes a self-contained test suite covering columnar storage, compression encodings, SQL/SQLite/CSV importers, and the query planner. You can run it from any directory:
 
 ```bash
-python -m unittest discover tests
+# Using the CLI
+mergen test
+
+# Or via Python module
+python -m mergendb.tests
 ```
 
 ---
