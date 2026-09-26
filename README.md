@@ -102,7 +102,7 @@ FROM "telemetry.mgdb"
 ### 1. Installation
 Clone the repository and install in editable mode:
 ```bash
-git clone https://github.com/your-username/MergenDB.git
+git clone https://github.com/ugurturkerkebeci/MergenDB.git
 cd MergenDB
 pip install -e .
 ```
