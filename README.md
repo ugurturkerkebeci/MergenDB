@@ -176,14 +176,24 @@ python -m mergendb.cli.repl
 ```
 
 ```text
-        /|                    __  __                                _____  ____  
-       / |                   |  \/  |                             |  __ \|  _ \ 
-======>>==>  (O)             | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
-       \ |                   | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
-        \|                   | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
-                             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
-                                               __/ |                            
-                                              |___/   v0.4.0 (Lightning Engine)
+                _
+               / \
+              /   \
+             / / \ \                   __  __                                _____  ____  
+            / /   \ \                 |  \/  |                             |  __ \|  _ \ 
+           / /  |  \ \                | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
+          / /  / \  \ \               | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
+         / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
+        / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
+       / /  / / | \ \  \ \                              __/ |                            
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.0 (Lightning Engine)
+     /     \    |    /     \
+    /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
+             \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
+              \ | /            + -- --=[ ZoneMap Zero-I/O Indexing (100M+ Rows Safe) ]
+               \|/             + -- --=[ Network SQL/MergenQL Server on Port 8765    ]
+                |              + -- --=[ Zero External Dependencies | Pure Speed     ]
+                '              + -- --=[ Author: Ugur Turker Kebeci (@ugurturkerkebeci)
 
                    "Target Acquired. Zero Waste. Pure Speed."
     Type SQL or MergenQL commands ending with ';'. Type 'HELP;' for command list.
