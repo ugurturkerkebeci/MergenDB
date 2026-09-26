@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/mergendb/"><img src="https://img.shields.io/pypi/v/mergendb.svg?color=blue&style=for-the-badge" alt="PyPI version" /></a>
-  <a href="https://pypi.org/project/mergendb/"><img src="https://img.shields.io/pypi/dm/mergendb.svg?style=for-the-badge" alt="PyPI Downloads" /></a>
+  <a href="https://pypi.org/project/mergendb/"><img src="https://img.shields.io/pypi/pyversions/mergendb.svg?color=blue&style=for-the-badge" alt="Python Versions" /></a>
   <a href="https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License: MIT" /></a>
   <a href="https://github.com/ugurturkerkebeci"><img src="https://img.shields.io/badge/Author-Uğur%20Türker%20Kebeci-orange.svg?style=for-the-badge" alt="Author" /></a>
   <img src="https://img.shields.io/badge/Compression-Up%20to%2016x-brightgreen.svg?style=for-the-badge" alt="Compression" />
