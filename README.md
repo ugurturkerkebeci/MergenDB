@@ -1,14 +1,30 @@
 # 🏹 MergenDB
 
+[![PyPI version](https://img.shields.io/pypi/v/mergendb.svg)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Author: Uğur Türker Kebeci](https://img.shields.io/badge/Author-Uğur%20Türker%20Kebeci-orange.svg)](https://github.com/ugurturkerkebeci)
 [![Architecture: Columnar](https://img.shields.io/badge/Architecture-Columnar-green.svg)](#architecture)
 [![Compression: 16x](https://img.shields.io/badge/Compression-Up%20to%2016x-brightgreen.svg)](#benchmark)
 
 > **"Big Data on Small Hardware"**  
 > **MergenDB** is an ultra-compact, columnar, embedded database engine and custom query language (**MergenQL**) designed to run analytical workloads on resource-constrained systems (Raspberry Pi, IoT gateways, low-end VPS, and edge devices) with maximum compression and zero memory exhaustion.
+>
+> 👨‍💻 **Author & Lead Developer:** **Uğur Türker Kebeci** ([@ugurturkerkebeci](https://github.com/ugurturkerkebeci))
 
 Named after **Mergen**, the ancient Turkic deity of wisdom, precision, and archery—who never misses his target.
+
+---
+
+## 📦 Installation
+
+Install MergenDB directly from PyPI via `pip`:
+
+```bash
+pip install mergendb
+```
+
+*(MergenDB has **zero external dependencies** for its core engine—runs on standard Python 3.8+!)*
 
 ---
 
