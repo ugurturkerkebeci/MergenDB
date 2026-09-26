@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mergendb"
-version = "0.4.1"
+version = "0.4.2"
 description = "Ultra-compact, columnar, embedded database engine and custom query language (MergenQL) designed to run large workloads on small hardware."
 readme = "README.md"
 requires-python = ">=3.8"
