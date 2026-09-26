@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mergendb"
+version = "0.1.0"
+description = "Ultra-compact, columnar, embedded database engine designed to run large workloads on small hardware."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "MergenDB Contributors" }
+]
+keywords = [
+    "database",
+    "columnar",
+    "compression",
+    "embedded",
+    "edge-computing",
+    "query-engine",
+    "analytics"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database :: Database Engines/Servers",
+]
+
+[project.scripts]
+mergen = "mergendb.cli.repl:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mergendb*"]
