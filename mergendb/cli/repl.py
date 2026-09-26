@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.7 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.8 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -349,23 +349,33 @@ class MergenCLI:
             from mergendb.server.server import start_server
             start_server(port=port)
 
-        elif keyword in ("TEST", "TESTS"):
-            from mergendb.tests.__main__ import run_tests
-            run_tests()
-
-        elif keyword in ("SHOW", "LIST") and len(parts) > 1:
+        elif keyword in ("SHOW", "LIST"):
+            if len(parts) == 1:
+                print("Available SHOW commands: SHOW TABLES;, SHOW DATABASES;, SHOW COLUMNS [FROM <table>];\n")
+                return
             sub = parts[1].upper()
-            if sub == "TABLES":
+            if sub in ("TABLES", "TABLE"):
                 self.show_tables()
-            elif sub == "DATABASES":
+            elif sub in ("DATABASES", "DATABASE"):
                 self.show_databases()
-            elif sub == "COLUMNS" and len(parts) >= 4 and parts[2].upper() == "FROM":
-                self.describe_table(parts[3])
+            elif sub in ("COLUMNS", "COLUMN", "FIELDS", "FIELD"):
+                if len(parts) >= 4 and parts[2].upper() == "FROM":
+                    self.describe_table(parts[3])
+                elif len(parts) == 3:
+                    self.describe_table(parts[2])
+                elif self.active_table:
+                    self.describe_table(self.active_table)
+                else:
+                    print("Error: No active table context. Use 'SHOW COLUMNS FROM <table>;' or 'USE <table_name>;'.\n")
             else:
-                print(f"Unknown SHOW command: {cmd}")
+                print(f"Unknown SHOW command: {cmd}\nAvailable: SHOW TABLES;, SHOW DATABASES;, SHOW COLUMNS [FROM <table>];\n")
 
-        elif keyword in ("DESCRIBE", "DESC") and len(parts) > 1:
-            self.describe_table(parts[1])
+        elif keyword in ("DESCRIBE", "DESC"):
+            tbl = parts[1] if len(parts) > 1 else self.active_table
+            if tbl:
+                self.describe_table(tbl)
+            else:
+                print("Error: Specify a table name or use 'USE <table_name>;'.\n")
 
         elif keyword == "COUNT" and len(parts) > 1:
             self.count_table(parts[1])
@@ -450,13 +460,23 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.4.7 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.8 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:
             # Query Execution (MergenQL or SQL)
             query_str = cmd
-            if (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
+            if query_str.upper().startswith("SELECT ") and "FROM " not in query_str.upper() and self.active_table:
+                sel_m = re.match(r"^SELECT\s+(.+?)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", query_str, re.IGNORECASE)
+                if sel_m:
+                    cols, where_clause, order_by, limit_val = sel_m.groups()
+                    sql_synth = f"SELECT {cols} FROM {self.active_table}"
+                    if where_clause: sql_synth += f" WHERE {where_clause}"
+                    if order_by: sql_synth += f" ORDER BY {order_by}"
+                    if limit_val: sql_synth += f" LIMIT {limit_val}"
+                    query_str = self._convert_sql_to_pipeline(sql_synth)
+
+            elif (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
                 if not self.active_table:
                     print("Error: No active table selected. Use 'USE <table_name>;' or specify 'FROM \"table.mgdb\"'.")
                     return
@@ -539,11 +559,7 @@ class MergenCLI:
                 break
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1].lower() in ("test", "--test", "-t"):
-        from mergendb.tests.__main__ import run_tests
-        res = run_tests()
-        sys.exit(0 if res.wasSuccessful() else 1)
-    elif len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
+    if len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
         port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
         from mergendb.server.server import start_server
         start_server(port=port)

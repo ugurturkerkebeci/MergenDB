@@ -85,3 +85,22 @@ class QueryPlanner:
                 required.add(plan.sort.column)
 
         return list(required)
+
+    @classmethod
+    def collect_filter_columns(cls, expr: Optional[ExprNode]) -> List[str]:
+        """Collects all column names referenced in the WHERE filter expression."""
+        if expr is None:
+            return []
+        cols: Set[str] = set()
+
+        def collect(e: Optional[ExprNode]):
+            if e is None:
+                return
+            if isinstance(e, ColumnRefNode):
+                cols.add(e.name)
+            elif isinstance(e, BinaryOpNode):
+                collect(e.left)
+                collect(e.right)
+
+        collect(expr)
+        return list(cols)

@@ -18,19 +18,29 @@ class ZoneMap:
         if self.count == 0 or self.min_value is None or self.max_value is None:
             return False
 
+        # Type coercion for safe and accurate comparisons
+        comp_val = value
+        if isinstance(self.min_value, str) and not isinstance(value, str):
+            comp_val = str(value)
+        elif isinstance(self.min_value, (int, float)) and isinstance(value, str):
+            try:
+                comp_val = int(value) if isinstance(self.min_value, int) else float(value)
+            except (ValueError, TypeError):
+                pass
+
         try:
             if op == "==" or op == "=":
-                return value < self.min_value or value > self.max_value
+                return comp_val < self.min_value or comp_val > self.max_value
             elif op == "!=":
-                return self.min_value == self.max_value == value
+                return self.min_value == self.max_value == comp_val
             elif op == ">":
-                return self.max_value <= value
+                return self.max_value <= comp_val
             elif op == ">=":
-                return self.max_value < value
+                return self.max_value < comp_val
             elif op == "<":
-                return self.min_value >= value
+                return self.min_value >= comp_val
             elif op == "<=":
-                return self.min_value > value
+                return self.min_value > comp_val
         except TypeError:
             # Incomparable types, safe fallback is not to prune
             return False

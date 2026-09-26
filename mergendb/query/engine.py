@@ -89,6 +89,17 @@ class ExpressionEvaluator:
                 left_vals = cols[col_name]
                 r_val = expr.right.value
 
+                # Robust type coercion: if column is string, coerce literal to string
+                if left_vals and r_val is not None:
+                    sample = next((v for v in left_vals if v is not None), None)
+                    if isinstance(sample, str) and not isinstance(r_val, str):
+                        r_val = str(r_val)
+                    elif isinstance(sample, (int, float)) and isinstance(r_val, str):
+                        try:
+                            r_val = int(r_val) if isinstance(sample, int) else float(r_val)
+                        except (ValueError, TypeError):
+                            pass
+
                 if op in ("==", "="):
                     return [l == r_val for l in left_vals]
                 elif op in ("!=", "<>"):
@@ -117,8 +128,22 @@ class ExpressionEvaluator:
                         regex = re.compile("^" + re.escape(pat).replace("%", ".*").replace("_", ".") + "$", re.IGNORECASE)
                         return [False if l is None else bool(regex.match(str(l))) for l in left_vals]
 
+            elif isinstance(expr.left, LiteralNode) and isinstance(expr.right, ColumnRefNode):
+                flipped_ops = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!=", "=": "="}
+                flipped_op = flipped_ops.get(op, op)
+                return cls.evaluate(BinaryOpNode(flipped_op, expr.right, expr.left), cols, row_count)
+
             left_vals = cls.evaluate(expr.left, cols, row_count)
             right_vals = cls.evaluate(expr.right, cols, row_count)
+
+            # Robust type coercion for generic paths
+            if left_vals and right_vals:
+                sl = next((v for v in left_vals if v is not None), None)
+                sr = next((v for v in right_vals if v is not None), None)
+                if isinstance(sl, str) and not isinstance(sr, str) and sr is not None:
+                    right_vals = [str(r) if r is not None else None for r in right_vals]
+                elif isinstance(sr, str) and not isinstance(sl, str) and sl is not None:
+                    left_vals = [str(l) if l is not None else None for l in left_vals]
 
             res = []
             if op == "+":
@@ -189,9 +214,19 @@ class QueryEngine:
         # Step 1: Optimize plan (Pushdowns & Column Pruning)
         pushdown_preds = QueryPlanner.extract_pushdown_predicates(plan.where_expr)
         needed_columns = QueryPlanner.collect_required_columns(plan)
+        filter_cols = QueryPlanner.collect_filter_columns(plan.where_expr)
 
         # Open storage reader
         reader = FileReader(plan.table_source)
+
+        filter_fn = None
+        late_mat_enabled = False
+        if filter_cols and plan.where_expr is not None:
+            def filter_evaluator(cdata):
+                first_vec = next(iter(cdata.values()))
+                return ExpressionEvaluator.evaluate(plan.where_expr, cdata, len(first_vec))
+            filter_fn = filter_evaluator
+            late_mat_enabled = True
 
         total_blocks = len(reader.blocks)
         blocks_scanned = 0
@@ -210,7 +245,12 @@ class QueryEngine:
             # group_key -> { 'count': int, 'sums': Dict[alias, float], 'mins': ..., 'maxs': ... }
             agg_state: Dict[Tuple, Dict[str, Any]] = {}
 
-            for batch, scan_stats in reader.scan(columns=needed_columns, predicates=pushdown_preds):
+            for batch, scan_stats in reader.scan(
+                columns=needed_columns,
+                predicates=pushdown_preds,
+                filter_columns=filter_cols if late_mat_enabled else None,
+                filter_fn=filter_fn if late_mat_enabled else None
+            ):
                 blocks_scanned = scan_stats.blocks_scanned
                 blocks_skipped = scan_stats.blocks_skipped
                 bytes_read = scan_stats.bytes_read
@@ -219,8 +259,9 @@ class QueryEngine:
                 current_cols = dict(batch.columns)
                 count = batch.row_count
 
-                # Filter evaluation (if where_expr exists)
-                if plan.where_expr is not None:
+                # If late materialization was applied, batch is ALREADY filtered!
+                # If not (e.g. no where_expr or late mat disabled), evaluate filter here
+                if plan.where_expr is not None and not late_mat_enabled:
                     mask = ExpressionEvaluator.evaluate(plan.where_expr, current_cols, count)
                     # Filter all column vectors by mask
                     for k in current_cols:
@@ -244,6 +285,11 @@ class QueryEngine:
                     for i in range(count):
                         row = [current_cols[c][i] for c in proj_cols]
                         collected_rows.append(row)
+
+                    # Early exit on LIMIT if no sort and no aggregate!
+                    if plan.sort is None and plan.limit is not None and len(collected_rows) >= plan.limit:
+                        collected_rows = collected_rows[:plan.limit]
+                        break
 
             # Post-Scan Processing
             final_columns: List[str] = []

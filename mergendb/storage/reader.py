@@ -72,23 +72,41 @@ class FileReader:
         self.total_rows = footer_data.get("total_rows", 0)
         self.blocks = [BlockMeta.from_dict(b) for b in footer_data.get("blocks", [])]
 
+    def _read_columns(self, block: BlockMeta, col_names: List[str], stats: ScanStats) -> Dict[str, List[Any]]:
+        result = {}
+        for col_name in col_names:
+            chunk_meta = block.columns[col_name]
+            col_def = self.schema.get_column(col_name)
+            self._file.seek(chunk_meta.offset)
+            chunk_bytes = self._file.read(chunk_meta.compressed_bytes)
+            stats.bytes_read += len(chunk_bytes)
+            result[col_name] = ColumnCompressor.decompress(
+                chunk_bytes,
+                EncodingType(chunk_meta.encoding),
+                col_def.data_type
+            )
+        return result
+
     def scan(
         self,
         columns: Optional[List[str]] = None,
-        predicates: Optional[List[Tuple[str, str, Any]]] = None
+        predicates: Optional[List[Tuple[str, str, Any]]] = None,
+        filter_columns: Optional[List[str]] = None,
+        filter_fn: Optional[Any] = None
     ) -> Iterator[Tuple[ColumnBatch, ScanStats]]:
         """
-        Scans data blocks with filter pushdown and column projection pruning.
+        Scans data blocks with filter pushdown, ZoneMap pruning, and Late Materialization.
 
         Args:
             columns: Specific column names to load. If None, loads all columns.
             predicates: Pushdown filters in form of (column_name, operator, value), e.g. [("age", ">", 30)]
+            filter_columns: Columns required to evaluate WHERE filter.
+            filter_fn: Callable evaluating WHERE mask on filter column data.
 
         Yields:
             (ColumnBatch, ScanStats)
         """
         target_columns = columns if columns is not None else self.schema.column_names()
-        # Ensure all requested columns exist
         for col_name in target_columns:
             if not self.schema.has_column(col_name):
                 raise KeyError(f"Column '{col_name}' does not exist in schema.")
@@ -110,31 +128,39 @@ class FileReader:
                 stats.blocks_skipped += 1
                 continue
 
-            # 2. Column Pruning (Read ONLY requested columns)
             stats.blocks_scanned += 1
             stats.rows_scanned += block.row_count
-            batch_data: Dict[str, List[Any]] = {}
 
-            # Read raw compressed chunk bytes sequentially from disk
-            raw_chunks = []
-            for col_name in target_columns:
-                chunk_meta = block.columns[col_name]
-                col_def = self.schema.get_column(col_name)
-                self._file.seek(chunk_meta.offset)
-                chunk_bytes = self._file.read(chunk_meta.compressed_bytes)
-                stats.bytes_read += len(chunk_bytes)
-                raw_chunks.append((col_name, chunk_bytes, chunk_meta.encoding, col_def.data_type))
+            # 2. Late Materialization
+            if filter_columns and filter_fn and set(filter_columns).issubset(block.columns.keys()):
+                # Read ONLY the filter columns first
+                filter_data = self._read_columns(block, filter_columns, stats)
+                mask = filter_fn(filter_data)
 
-            # Decompress column vectors (fast in-memory)
-            for col_name, chunk_bytes, encoding, dtype in raw_chunks:
-                col_values = ColumnCompressor.decompress(
-                    chunk_bytes,
-                    EncodingType(encoding),
-                    dtype
-                )
-                batch_data[col_name] = col_values
+                # Count matching rows
+                match_count = sum(1 for m in mask if m)
+                if match_count == 0:
+                    # ZERO rows in this block match the filter!
+                    # Skip reading/decompressing the remaining columns completely!
+                    continue
 
-            yield ColumnBatch(columns=batch_data, row_count=block.row_count), stats
+                # Rows matched! Read only the remaining requested columns
+                remaining_cols = [c for c in target_columns if c not in filter_columns]
+                if remaining_cols:
+                    rest_data = self._read_columns(block, remaining_cols, stats)
+                    filter_data.update(rest_data)
+
+                # Filter column vectors by mask
+                batch_data = {
+                    c: [v for v, m in zip(filter_data[c], mask) if m]
+                    for c in target_columns
+                }
+                yield ColumnBatch(columns=batch_data, row_count=match_count), stats
+
+            else:
+                # Standard columnar read
+                batch_data = self._read_columns(block, target_columns, stats)
+                yield ColumnBatch(columns=batch_data, row_count=block.row_count), stats
 
     def close(self):
         if not self._file.closed:
