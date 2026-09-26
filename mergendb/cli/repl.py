@@ -7,8 +7,10 @@ import csv
 import re
 from typing import Optional, List
 from mergendb.client import MergenDB
+from mergendb.core.types import DataType
 from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
+from mergendb.io.progress import ProgressBar
 
 BANNER = r"""
                 _
@@ -21,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.3 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.4 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -64,6 +66,7 @@ Data Ingestion & Export:
   IMPORT CSV <file.csv> <out.mgdb>;             - Ingest CSV file with auto-detect
   EXPORT <table.mgdb> TO CSV <output.csv>;      - Export to CSV
   EXPORT <table.mgdb> TO JSON <output.jsonl>;   - Export to JSON Lines
+  EXPORT <table.mgdb> TO SQL <output.sql>;      - Export to SQL dump (DDL + INSERTs)
 
 Diagnostics:
   BENCHMARK <table.mgdb>;                       - Run live speed & I/O benchmark
@@ -224,14 +227,24 @@ class MergenCLI:
             return
 
         fmt = fmt.upper()
+        if fmt == "JSON":
+            fmt = "JSONL"
+
         if not out_file:
             base = os.path.splitext(filepath)[0]
-            out_file = f"{base}.csv" if fmt == "CSV" else f"{base}.jsonl"
+            if fmt == "CSV":
+                out_file = f"{base}.csv"
+            elif fmt == "SQL":
+                out_file = f"{base}.sql"
+            else:
+                out_file = f"{base}.jsonl"
 
-        t0 = time.perf_counter()
-        exported = 0
         with FileReader(filepath) as reader:
+            total_rows = reader.total_rows
             col_names = reader.schema.column_names()
+            pbar = ProgressBar(f"Exporting to {fmt}", total_rows=total_rows)
+            exported = 0
+
             if fmt == "CSV":
                 with open(out_file, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
@@ -241,6 +254,48 @@ class MergenCLI:
                         for i in range(batch.row_count):
                             writer.writerow([cols[c][i] for c in col_names])
                         exported += batch.row_count
+                        pbar.update(exported)
+            elif fmt == "SQL":
+                with open(out_file, "w", encoding="utf-8") as f:
+                    clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
+                    # Write CREATE TABLE DDL
+                    col_defs = []
+                    for c in reader.schema.columns:
+                        tname = "TEXT"
+                        if c.data_type in (DataType.INT64, DataType.INT32):
+                            tname = "BIGINT"
+                        elif c.data_type == DataType.FLOAT64:
+                            tname = "DOUBLE"
+                        elif c.data_type == DataType.BOOL:
+                            tname = "BOOLEAN"
+                        col_defs.append(f"  `{c.name}` {tname}")
+                    f.write(f"CREATE TABLE IF NOT EXISTS `{clean_tbl}` (\n" + ",\n".join(col_defs) + "\n);\n\n")
+
+                    chunk_size = 500
+                    chunk = []
+                    for batch, _ in reader.scan():
+                        cols = batch.columns
+                        for i in range(batch.row_count):
+                            vals = []
+                            for c in col_names:
+                                val = cols[c][i]
+                                if val is None:
+                                    vals.append("NULL")
+                                elif isinstance(val, (int, float)):
+                                    vals.append(str(val))
+                                elif isinstance(val, bool):
+                                    vals.append("1" if val else "0")
+                                else:
+                                    esc = str(val).replace("\\", "\\\\").replace("'", "''")
+                                    vals.append(f"'{esc}'")
+                            chunk.append("(" + ", ".join(vals) + ")")
+                            if len(chunk) >= chunk_size:
+                                f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
+                                chunk = []
+                        exported += batch.row_count
+                        pbar.update(exported)
+                    if chunk:
+                        f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
             else: # JSONL
                 with open(out_file, "w", encoding="utf-8") as f:
                     for batch, _ in reader.scan():
@@ -249,9 +304,9 @@ class MergenCLI:
                             row_dict = {c: cols[c][i] for c in col_names}
                             f.write(json.dumps(row_dict) + "\n")
                         exported += batch.row_count
+                        pbar.update(exported)
 
-        elapsed = (time.perf_counter() - t0) * 1000
-        print(f"Successfully exported {exported:,} rows to '{out_file}' in {elapsed:.2f} ms.\n")
+            pbar.finish(f"[+] Successfully exported {exported:,} rows to '{out_file}'!")
 
     def benchmark_table(self, table_name: str):
         filepath = self._resolve_table_path(table_name)
@@ -394,7 +449,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.4.3 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.4.4 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:

@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Union
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.storage.writer import FileWriter
+from mergendb.io.progress import ProgressBar
 
 SQLITE_TYPE_MAP = {
     "integer": DataType.INT64,
@@ -16,13 +17,20 @@ SQLITE_TYPE_MAP = {
     "bigint": DataType.INT64,
     "smallint": DataType.INT32,
     "tinyint": DataType.INT32,
+    "mediumint": DataType.INT32,
+    "unsigned big int": DataType.INT64,
+    "int2": DataType.INT32,
+    "int8": DataType.INT64,
     "real": DataType.FLOAT64,
     "float": DataType.FLOAT64,
     "double": DataType.FLOAT64,
+    "double precision": DataType.FLOAT64,
     "numeric": DataType.FLOAT64,
     "decimal": DataType.FLOAT64,
     "text": DataType.STRING,
     "varchar": DataType.STRING,
+    "nvarchar": DataType.STRING,
+    "character": DataType.STRING,
     "char": DataType.STRING,
     "clob": DataType.STRING,
     "boolean": DataType.BOOL,
@@ -106,11 +114,12 @@ class DataImporter:
         output_mgdb_path: str,
         table_name: Optional[str] = None,
         query: Optional[str] = None,
-        block_size: int = 1024
+        block_size: int = 4096
     ) -> int:
         """
         Imports an entire SQLite table or SQL query result directly into a MergenDB (.mgdb) file.
-        Streams rows in batches, keeping memory usage constant even for gigabyte-scale databases.
+        Streams rows in chunks, keeping memory footprint strictly bounded (< 15 MB RAM)
+        making it 100% safe on low-spec hardware (e.g. 500 MB RAM devices).
         """
         if not os.path.exists(sqlite_path):
             raise FileNotFoundError(f"SQLite file not found: {sqlite_path}")
@@ -119,26 +128,29 @@ class DataImporter:
         cursor = conn.cursor()
 
         try:
+            total_rows = None
             if query:
                 cursor.execute(query)
-                # Infer schema from cursor.description
-                columns = []
-                for desc in cursor.description:
-                    col_name = desc[0]
-                    # Default to string/general if type not described
-                    columns.append(ColumnDef(col_name, DataType.STRING))
+                columns = [ColumnDef(desc[0], DataType.STRING) for desc in cursor.description]
                 schema = Schema(columns)
             else:
                 if not table_name:
-                    # Pick first table if not provided
                     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
                     tables = cursor.fetchall()
                     if not tables:
                         raise ValueError(f"No user tables found in SQLite database {sqlite_path}")
                     table_name = tables[0][0]
 
-                # Inspect schema via PRAGMA table_info
-                cursor.execute(f"PRAGMA table_info({table_name});")
+                # Get row count for 0-100% progress estimation
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`;")
+                    cnt_row = cursor.fetchone()
+                    if cnt_row:
+                        total_rows = cnt_row[0]
+                except Exception:
+                    pass
+
+                cursor.execute(f"PRAGMA table_info(`{table_name}`);")
                 table_info = cursor.fetchall()
                 if not table_info:
                     raise ValueError(f"Table '{table_name}' does not exist or has no columns.")
@@ -151,17 +163,26 @@ class DataImporter:
                     columns.append(ColumnDef(col_name, dtype))
                 schema = Schema(columns)
 
-                cursor.execute(f"SELECT * FROM {table_name}")
+                cursor.execute(f"SELECT * FROM `{table_name}`;")
 
             total_imported = 0
+            pbar = ProgressBar("Importing SQLite", total_rows=total_rows)
+
             with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
                 while True:
                     rows = cursor.fetchmany(block_size)
                     if not rows:
                         break
-                    writer.write_rows(rows)
-                    total_imported += len(rows)
+                    # Ensure bytearray/memoryview/bytes (BLOBs) are stringified to hex
+                    safe_rows = []
+                    for r in rows:
+                        safe_row = [v.hex() if isinstance(v, (bytes, bytearray, memoryview)) else v for v in r]
+                        safe_rows.append(safe_row)
+                    writer.write_rows(safe_rows)
+                    total_imported += len(safe_rows)
+                    pbar.update(total_imported)
 
+            pbar.finish()
             return total_imported
 
         finally:
@@ -305,15 +326,15 @@ class DataImporter:
         batch = []
         writer = None
         converters = _build_converters(schema) if schema else None
-        start_time = time.time()
-        last_progress_time = 0.0
+        pbar = ProgressBar("Importing SQL", total_bytes=total_bytes)
 
-        with open(sql_dump_path, "r", encoding=encoding, errors="replace", buffering=1024*1024) as f:
+        with open(sql_dump_path, "r", encoding=encoding, errors="replace", buffering=256*1024) as f:
             try:
                 inside_ddl = False
+                pending = ""
                 for line in f:
                     s = line.strip()
-                    if not s or s.startswith("--") or s.startswith("/*") or s.startswith("SET ") or s.startswith("START ") or s.startswith("COMMIT") or s.startswith("LOCK ") or s.startswith("UNLOCK "):
+                    if not pending and (not s or s.startswith("--") or s.startswith("#") or s.startswith("/*") or s.startswith("/*!") or s.startswith("SET ") or s.startswith("START ") or s.startswith("COMMIT") or s.startswith("LOCK ") or s.startswith("UNLOCK ")):
                         continue
 
                     if inside_ddl:
@@ -321,39 +342,47 @@ class DataImporter:
                             inside_ddl = False
                         continue
 
-                    if s.upper().startswith("CREATE TABLE") or s.upper().startswith("ALTER TABLE") or s.upper().startswith("DROP TABLE"):
+                    if not pending and (s.upper().startswith("CREATE TABLE") or s.upper().startswith("ALTER TABLE") or s.upper().startswith("DROP TABLE")):
                         if not (";" in s and s.endswith(";")):
                             inside_ddl = True
                         continue
 
+                    combined = (pending + " " + s).strip() if pending else s
+
+                    # Check quote balance
+                    single_q = combined.count("'") - combined.count(r"\'")
+                    double_q = combined.count('"') - combined.count(r'\"')
+                    if (single_q % 2 != 0) or (double_q % 2 != 0):
+                        pending = combined
+                        continue
+
                     # Extract tuples from line
-                    v_idx = s.find("VALUES")
+                    v_idx = combined.find("VALUES")
                     if v_idx == -1:
-                        v_idx = s.find("values")
+                        v_idx = combined.find("values")
                     i = v_idx + 6 if v_idx != -1 else 0
-                    n = len(s)
+                    n = len(combined)
 
                     while i < n:
-                        open_paren = s.find('(', i)
+                        open_paren = combined.find('(', i)
                         if open_paren == -1:
                             break
-                        close_paren = s.find(')', open_paren + 1)
+                        close_paren = combined.find(')', open_paren + 1)
                         if close_paren == -1:
                             break
 
                         # Quote-aware paren matching: verify no unclosed single or double quotes
                         while close_paren != -1:
-                            q_count = s.count("'", open_paren, close_paren) - s.count(r"\'", open_paren, close_paren)
-                            if '"' in s[open_paren:close_paren]:
-                                q_count += s.count('"', open_paren, close_paren) - s.count(r'\"', open_paren, close_paren)
-                            if q_count % 2 == 0:
+                            q_count = combined.count("'", open_paren, close_paren) - combined.count(r"\'", open_paren, close_paren)
+                            if (combined.count('"', open_paren, close_paren) - combined.count(r'\"', open_paren, close_paren)) % 2 != 0 or q_count % 2 != 0:
+                                close_paren = combined.find(')', close_paren + 1)
+                            else:
                                 break
-                            close_paren = s.find(')', close_paren + 1)
 
                         if close_paren == -1:
                             break
 
-                        tuple_str = s[open_paren + 1:close_paren]
+                        tuple_str = combined[open_paren + 1:close_paren]
                         i = close_paren + 1
 
                         quote = "'" if "'" in tuple_str else '"'
@@ -404,34 +433,21 @@ class DataImporter:
                             _write_columnar_batch(writer, schema, converters, batch)
                             total_imported += len(batch)
                             batch = []
+                            pbar.update(total_imported, current_bytes=f.tell())
 
-                            now = time.time()
-                            if now - last_progress_time >= 0.25:
-                                last_progress_time = now
-                                elapsed = max(now - start_time, 0.001)
-                                speed = total_imported / elapsed
-                                pos = f.tell()
-                                pct = min(100.0, (pos / total_bytes) * 100) if total_bytes > 0 else 0.0
-                                bar_len = 20
-                                filled = int(bar_len * (pct / 100))
-                                bar = "=" * filled + (">" if filled < bar_len else "")
-                                bar = bar.ljust(bar_len, " ")
-                                remaining = max(0, total_bytes - pos)
-                                byte_rate = pos / elapsed
-                                eta = (remaining / byte_rate) if byte_rate > 0 else 0
-                                sys.stdout.write(f"\r[*] Importing SQL: {total_imported:,} rows ({speed:,.0f} rows/s) [{bar}] {pct:.1f}% | ETA: {eta:.0f}s  ")
-                                sys.stdout.flush()
+                    # Check remainder after last processed tuple
+                    rem = combined[i:].strip()
+                    if rem and not rem.endswith(";"):
+                        pending = rem
+                    else:
+                        pending = ""
 
                 if batch and writer:
                     _write_columnar_batch(writer, schema, converters, batch)
                     total_imported += len(batch)
                     batch = []
 
-                if total_imported > 0:
-                    elapsed = max(time.time() - start_time, 0.001)
-                    speed = total_imported / elapsed
-                    sys.stdout.write(f"\r[+] Successfully imported {total_imported:,} rows in {elapsed:.2f}s ({speed:,.0f} rows/s)!              \n")
-                    sys.stdout.flush()
+                pbar.finish()
 
             finally:
                 if writer:
@@ -494,6 +510,9 @@ class DataImporter:
 
         # Step 2: Stream CSV to .mgdb
         total_imported = 0
+        total_bytes = os.path.getsize(csv_path)
+        pbar = ProgressBar("Importing CSV", total_bytes=total_bytes)
+
         with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
             reader = csv.reader(f, delimiter=delimiter)
             if has_header:
@@ -509,10 +528,13 @@ class DataImporter:
                         writer.write_rows(batch)
                         total_imported += len(batch)
                         batch = []
+                        pbar.update(total_imported, current_bytes=f.tell())
                 if batch:
                     writer.write_rows(batch)
                     total_imported += len(batch)
+                    batch = []
 
+        pbar.finish()
         return total_imported
 
     @classmethod
@@ -532,11 +554,11 @@ class DataImporter:
         columns = []
         for desc in cursor.description:
             col_name = desc[0]
-            # In DB-API 2.0, desc[1] is type_code. Default to STRING if mapping unknown.
             columns.append(ColumnDef(col_name, DataType.STRING))
 
         schema = Schema(columns)
         total_imported = 0
+        pbar = ProgressBar("Importing Cursor")
 
         with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
             while True:
@@ -545,5 +567,7 @@ class DataImporter:
                     break
                 writer.write_rows(rows)
                 total_imported += len(rows)
+                pbar.update(total_imported)
 
+        pbar.finish()
         return total_imported

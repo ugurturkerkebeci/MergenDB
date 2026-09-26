@@ -71,5 +71,37 @@ class TestStorage(unittest.TestCase):
                 self.assertNotIn("age", batch.columns)
                 self.assertNotIn("is_active", batch.columns)
 
+    def test_export_table_formats(self):
+        from mergendb.cli.repl import MergenCLI
+        schema = Schema([
+            ColumnDef("id", DataType.INT64),
+            ColumnDef("name", DataType.STRING),
+        ])
+        with FileWriter(self.filepath, schema, block_size=100) as writer:
+            for i in range(250):
+                writer.write_row([i, f"Name_{i}"])
+
+        cli = MergenCLI()
+        # Test CSV export
+        csv_out = os.path.join(self.test_dir, "out.csv")
+        cli.export_table(self.filepath, "CSV", csv_out)
+        self.assertTrue(os.path.exists(csv_out))
+        self.assertGreater(os.path.getsize(csv_out), 0)
+
+        # Test JSONL export
+        jsonl_out = os.path.join(self.test_dir, "out.jsonl")
+        cli.export_table(self.filepath, "JSON", jsonl_out)
+        self.assertTrue(os.path.exists(jsonl_out))
+        self.assertGreater(os.path.getsize(jsonl_out), 0)
+
+        # Test SQL export
+        sql_out = os.path.join(self.test_dir, "out.sql")
+        cli.export_table(self.filepath, "SQL", sql_out)
+        self.assertTrue(os.path.exists(sql_out))
+        with open(sql_out, "r", encoding="utf-8") as f:
+            content = f.read()
+            self.assertIn("CREATE TABLE", content)
+            self.assertIn("INSERT INTO", content)
+
 if __name__ == "__main__":
     unittest.main()

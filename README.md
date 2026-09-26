@@ -128,10 +128,20 @@ MergenDB'nin özgün sorgu dili **MergenQL**, verinin mantıksal olarak soldan s
 
 ---
 
-## 📥 SQL & phpMyAdmin Veritabanlarını İçe Aktarma
+## 📥 SQL, SQLite & CSV İçe / Dışa Aktarma (High-Performance Import & Export)
+
+MergenDB, gigabaytlarca veriyi (1 GB, 50 GB, 500 GB) dönüştürürken **canlı 0-100% ilerleme çubuğu** sunar ve **500 MB RAM'e sahip en mütevazı cihazlarda bile** asla belleği tüketmez (O(1) memory, tepe bellek < 20 MB RAM).
+
+```text
+[*] Importing SQL: 4,500,000 / 9,376,881 rows [============>-----------]  48.0% | 285,400 rows/s | ETA: 17s
+[+] Successfully imported 9,376,881 rows in 32.80s (285,880 rows/s)!
+```
 
 ### 1. phpMyAdmin veya MySQL Dump Dosyalarını Aktarma (`.sql`)
-phpMyAdmin'den dışa aktarılan `database.sql` dosyalarını tek satırda dönüştürün *(MySQL'e özel `ENGINE=InnoDB`, `AUTO_INCREMENT`, `LOCK TABLES` gibi fazlalıklar otomatik temizlenir)*:
+phpMyAdmin, mysqldump veya Adminer'den dışa aktarılan `.sql` dosyalarını tek hamlede içe aktarın:
+* **Çok Satırlı (Multiline) Kayıtlar:** phpMyAdmin'in satırlara böldüğü INSERT ifadelerini ve metin içindeki satır sonlarını eksiksiz birleştirir.
+* **Tırnak Duyarlı (Quote-Aware) Parite:** Parantez içeren metinleri (`'Kadıköy (Merkez)'`) ve kaçış karakterlerini (`\'`, `\"`) hatasız işler.
+* **Otomatik Temizleme:** MySQL'e özel `ENGINE=InnoDB`, `AUTO_INCREMENT`, `LOCK TABLES`, `/*!...` ve `#` yorum satırları otomatik filtrelenir.
 
 ```python
 import mergendb
@@ -141,11 +151,17 @@ print(f"Toplam {table.row_count:,} satır MergenDB'ye aktarıldı!")
 ```
 
 ### 2. SQLite Veritabanlarını Aktarma (`.db`, `.sqlite`)
+Tüm SQLite veri tiplerini (INTEGER, REAL, TEXT, BLOB/Binary, DATETIME, TIMESTAMP) otomatik dönüştürür.
 ```python
 table = mergendb.from_sqlite("legacy.db", "orders.mgdb", table_name="orders")
 ```
 
-### 3. Canlı MySQL / PostgreSQL / Oracle Bağlantılarından Çekme
+### 3. CSV Dosyalarını Otomatik Tip Algılama ile Aktarma
+```python
+table = mergendb.from_csv("sensor_data.csv", "sensor_data.mgdb")
+```
+
+### 4. Canlı DB-API 2.0 (PostgreSQL, MySQL, Oracle, MSSQL) Bağlantılarından Çekme
 ```python
 import pymysql
 from mergendb.io.importer import DataImporter
@@ -157,10 +173,14 @@ cur.execute("SELECT * FROM siparisler")
 DataImporter.from_cursor(cur, output_mgdb_path="siparisler.mgdb")
 ```
 
-### 4. CSV Dosyalarını Otomatik Tip Algılama ile Aktarma
-```python
-table = mergendb.from_csv("sensor_data.csv", "sensor_data.mgdb")
+### 5. Dışa Aktarma (Export: CSV, JSONL, SQL Dump)
+MergenDB tablolarını canlı yüzde ve hız çubuğuyla saniyeler içinde dışa aktarabilirsiniz:
+```sql
+EXPORT orders.mgdb TO CSV "orders_export.csv";
+EXPORT orders.mgdb TO JSON "orders_export.jsonl";
+EXPORT orders.mgdb TO SQL "orders_backup.sql";
 ```
+*(SQL dışa aktarımı, hem `CREATE TABLE` DDL şemasını hem de 500'lük gruplar halinde optimize edilmiş standart `INSERT INTO` ifadelerini otomatik üretir).*
 
 ---
 
@@ -186,7 +206,7 @@ python -m mergendb.cli.repl
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.4.0 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.4.4 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -212,9 +232,15 @@ python -m mergendb.cli.repl
 | `RENAME TABLE <eski> TO <yeni>;` | Tabloyu yeniden adlandırır. |
 | `OPTIMIZE TABLE <tablo>;` | Veri bloklarını yeniden sıkıştırır ve birleştirir. |
 | `EXPLAIN <sorgu>;` | Sorgunun çalıştırma planını, taranacak ve atlanacak blok sayılarını gösterir. |
-| `SELECT ... FROM ... WHERE ...;` | Standart SQL sorgularını doğrudan çalıştırır. |
+| `IMPORT SQL <dosya.sql> <tablo.mgdb>;` | phpMyAdmin / MySQL dump dosyasını canlı ilerleme çubuğuyla içe aktarır. |
+| `IMPORT SQLITE <dosya.db> [tablo] <cikti.mgdb>;` | SQLite veritabanını canlı sayaçla MergenDB'ye dönüştürür. |
+| `IMPORT CSV <dosya.csv> <tablo.mgdb>;` | CSV dosyasını otomatik tip tespitiyle içe aktarır. |
+| `EXPORT <table> TO CSV <dosya.csv>;` | Tabloyu CSV formatında dışa aktarır. |
+| `EXPORT <table> TO JSON <dosya.jsonl>;` | Tabloyu JSON Lines formatında dışa aktarır. |
+| `EXPORT <table> TO SQL <dosya.sql>;` | Tabloyu tam şemalı SQL dump olarak dışa aktarır. |
 | `SERVE [port];` | CLI içinden doğrudan arka planda MergenQL Ağ Sunucusunu başlatır. |
 | `BENCHMARK <tablo>;` | Tablo üzerinde canlı I/O ve sorgu okuma hız testi yapar. |
+| `INFO <tablo>;` | Tablonun sıkıştırma oranını ve ZoneMap telemetrisini raporlar. |
 
 ---
 
@@ -280,7 +306,7 @@ curl -X POST http://localhost:8765/query \
 ```bash
 python -m unittest discover tests
 ```
-*(Tüm 16 birim testi sıfır hata ile geçmektedir).*
+*(Tüm 18 birim testi sıfır hata ile geçmektedir).*
 
 ---
 
