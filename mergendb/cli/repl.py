@@ -1,160 +1,365 @@
 import sys
 import os
+import glob
 import time
+import json
+import csv
+from typing import Optional, List
 from mergendb.client import MergenDB
 from mergendb.storage.reader import FileReader
+from mergendb.io.importer import DataImporter
 
 BANNER = r"""
-  __  __                               _____  ____  
- |  \/  |                             |  __ \|  _ \ 
- | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
- | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
- | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
- |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
-                   __/ |                            
-                  |___/   v0.1.0 (Edge Columnar Engine)
-
- Type your MergenQL pipeline query ending with ';' or type '.help' for commands.
+                     .
+                    / \
+                   /   \
+                  /=====\
+                 /       \
+            .---'         '---.
+           /   _           _   \         __  __                               _____  ____  
+          |   / \         / \   |       |  \/  |                             |  __ \|  _ \ 
+          |  |   |  (O)  |   |  |       | \  / | ___ _ __ __ _  ___ _ __     | |  | | |_) |
+          |   \_/         \_/   |       | |\/| |/ _ \ '__/ _` |/ _ \ '_ \    | |  | |  _ < 
+           \                   /        | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
+            '---.         .---'         |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
+       =========>'=======>=====>                          __/ |                            
+                 \       /                               |___/   v0.2.2 (Lightning Engine)
+                  \=====/
+                   \   /             "Target Acquired. Zero Waste. Pure Speed."
+                    \ /
+                     '
+ Type SQL or MergenQL commands ending with ';', or type 'HELP;' for command list.
 """
 
 HELP_TEXT = """
-Commands:
-  .help                                      - Show this help menu
-  .schema <file.mgdb>                        - Display table schema and block metadata
-  .info <file.mgdb>                          - Show compression ratio & block stats
-  .import sqlite <source.db> [tbl] <out.mgdb>- Convert SQLite database/table to MergenDB
-  .import sql <dump.sql> <out.mgdb>          - Import SQL dump file into MergenDB
-  .import csv <source.csv> <out.mgdb>        - Import CSV file into MergenDB
-  .exit / .quit                              - Exit the REPL
+================================ MERGENDB COMMANDS ================================
+SQL & Database Management:
+  SHOW TABLES;                           - List all .mgdb tables with rows & size
+  DESCRIBE <table_name>; (or DESC)       - Inspect table schema, columns, and types
+  USE <table_name>;                      - Set active table (queries won't need FROM)
+  DROP TABLE <table_name>;               - Delete a table
+  STATUS;                                - Engine status, memory footprint, cache stats
 
-Example Query:
-  FROM "sensors.mgdb"
-  | WHERE temperature > 35.0 AND room == "kitchen"
-  | COMPUTE temp_f = (temperature * 1.8) + 32.0
-  | SELECT room, temperature, temp_f
-  | SORT temperature DESC
-  | LIMIT 10;
+Querying:
+  FROM "table.mgdb" | WHERE ... | SELECT ...;   - Full MergenQL pipeline query
+  SELECT col1, col2 FROM "table.mgdb" WHERE ...;- SQL-style query
+  WHERE temp > 30 | SELECT col1, col2;          - Active table shortcut query (after USE)
+
+Data Ingestion & Export:
+  IMPORT SQLITE <source.db> [tbl] <out.mgdb>;   - Ingest SQLite table to MergenDB
+  IMPORT SQL <dump.sql> <out.mgdb>;             - Ingest MySQL/phpMyAdmin SQL dump
+  IMPORT CSV <file.csv> <out.mgdb>;             - Ingest CSV file with auto-typing
+  EXPORT <table.mgdb> TO CSV <output.csv>;      - Export MergenDB table to CSV
+  EXPORT <table.mgdb> TO JSON <output.jsonl>;   - Export MergenDB table to JSONL
+
+Diagnostics:
+  BENCHMARK <table.mgdb>;                       - Run live speed & I/O benchmark on table
+  INFO <table.mgdb>;                            - Show compression ratio & block stats
+  EXIT; (or QUIT;)                              - Exit MergenDB CLI
+===================================================================================
 """
 
-def handle_import(args: list):
-    if len(args) < 3:
-        print("Usage: .import <sqlite|sql|csv> <source_file> [options] <out.mgdb>")
-        return
+class MergenCLI:
+    def __init__(self):
+        self.active_table: Optional[str] = None
 
-    subcmd = args[1].lower()
-    from mergendb.io.importer import DataImporter
+    def _resolve_table_path(self, name: str) -> str:
+        name = name.strip().strip('"').strip("'")
+        if not name.endswith(".mgdb"):
+            name = name + ".mgdb"
+        return name
 
-    try:
+    def show_tables(self):
+        files = glob.glob("*.mgdb")
+        if not files:
+            print("\n(No .mgdb tables found in current directory)\n")
+            return
+
+        print("\n+--------------------------------+------------+--------------+-----------+")
+        print("| Table Name                     | Rows       | Disk Size    | Blocks    |")
+        print("+--------------------------------+------------+--------------+-----------+")
+        for f in files:
+            try:
+                sz = os.path.getsize(f)
+                with FileReader(f) as reader:
+                    rows = reader.total_rows
+                    blocks = len(reader.blocks)
+                size_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.2f} MB"
+                print(f"| {f.ljust(30)} | {str(f'{rows:,}').rjust(10)} | {size_str.rjust(12)} | {str(blocks).rjust(9)} |")
+            except Exception:
+                print(f"| {f.ljust(30)} | {'CORRUPT'.center(10)} | {'-'.center(12)} | {'-'.center(9)} |")
+        print("+--------------------------------+------------+--------------+-----------+\n")
+
+    def describe_table(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+
+        with FileReader(filepath) as reader:
+            print(f"\nTable: {filepath} ({reader.total_rows:,} rows, {len(reader.blocks)} blocks)")
+            print("+---------------------------+----------------+----------+")
+            print("| Column                    | Type           | Nullable |")
+            print("+---------------------------+----------------+----------+")
+            for col in reader.schema.columns:
+                print(f"| {col.name.ljust(25)} | {col.data_type.name.ljust(14)} | {str(col.nullable).ljust(8)} |")
+            print("+---------------------------+----------------+----------+\n")
+
+    def show_info(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+
+        sz = os.path.getsize(filepath)
+        with FileReader(filepath) as reader:
+            u_bytes = sum(c.uncompressed_bytes for b in reader.blocks for c in b.columns.values())
+            c_bytes = sum(c.compressed_bytes for b in reader.blocks for c in b.columns.values())
+            ratio = (u_bytes / c_bytes) if c_bytes > 0 else 1.0
+            saved = ((1.0 - c_bytes / u_bytes) * 100.0) if u_bytes > 0 else 0.0
+
+            print(f"\n--- Storage Telemetry: {filepath} ---")
+            print(f"Total Rows        : {reader.total_rows:,}")
+            print(f"Total Blocks      : {len(reader.blocks)}")
+            print(f"On-Disk Size      : {sz / 1024:.2f} KB ({sz:,} bytes)")
+            print(f"Raw Uncompressed  : {u_bytes / 1024:.2f} KB")
+            print(f"Compressed Data   : {c_bytes / 1024:.2f} KB")
+            print(f"Compression Ratio : {ratio:.2f}x (Saved {saved:.1f}% space)\n")
+
+    def export_table(self, table_name: str, fmt: str, out_file: Optional[str]):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+
+        fmt = fmt.upper()
+        if not out_file:
+            base = os.path.splitext(filepath)[0]
+            out_file = f"{base}.csv" if fmt == "CSV" else f"{base}.jsonl"
+
         t0 = time.perf_counter()
-        if subcmd == "sqlite":
-            if len(args) == 4:
-                src, tbl, out = args[2], args[3], args[4] if len(args) > 4 else None
-            src = args[2]
-            if len(args) == 4:
-                out = args[3]
-                tbl = None
+        exported = 0
+        with FileReader(filepath) as reader:
+            col_names = reader.schema.column_names()
+            if fmt == "CSV":
+                with open(out_file, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(col_names)
+                    for batch, _ in reader.scan():
+                        cols = batch.columns
+                        for i in range(batch.row_count):
+                            writer.writerow([cols[c][i] for c in col_names])
+                        exported += batch.row_count
+            else: # JSONL
+                with open(out_file, "w", encoding="utf-8") as f:
+                    for batch, _ in reader.scan():
+                        cols = batch.columns
+                        for i in range(batch.row_count):
+                            row_dict = {c: cols[c][i] for c in col_names}
+                            f.write(json.dumps(row_dict) + "\n")
+                        exported += batch.row_count
+
+        elapsed = (time.perf_counter() - t0) * 1000
+        print(f"Successfully exported {exported:,} rows to '{out_file}' in {elapsed:.2f} ms.\n")
+
+    def benchmark_table(self, table_name: str):
+        filepath = self._resolve_table_path(table_name)
+        if not os.path.exists(filepath):
+            print(f"Error: Table '{filepath}' not found.")
+            return
+
+        with FileReader(filepath) as reader:
+            first_col = reader.schema.columns[0].name
+            num_rows = reader.total_rows
+
+        print(f"\nBenchmarking '{filepath}' ({num_rows:,} rows)...")
+
+        # Query 1: Full table count
+        t0 = time.perf_counter()
+        res1 = MergenDB.query(f'FROM "{filepath}" | AGGREGATE count(*) AS cnt')
+        ms1 = (time.perf_counter() - t0) * 1000
+
+        # Query 2: Single column scan
+        t0 = time.perf_counter()
+        res2 = MergenDB.query(f'FROM "{filepath}" | SELECT {first_col} | LIMIT 100')
+        ms2 = (time.perf_counter() - t0) * 1000
+
+        print(f"  * Aggregation scan : {ms1:.2f} ms")
+        print(f"  * Column prune scan: {ms2:.2f} ms")
+        print(f"  * Throughput       : {(num_rows / (ms1/1000.0)):,.0f} rows/sec\n")
+
+    def execute_command(self, raw_cmd: str):
+        cmd = raw_cmd.strip().rstrip(";")
+        if not cmd:
+            return
+
+        parts = cmd.split()
+        keyword = parts[0].upper()
+
+        if keyword in ("EXIT", "QUIT", "\\Q"):
+            print("Görüşmek üzere!")
+            sys.exit(0)
+
+        elif keyword == "HELP":
+            print(HELP_TEXT)
+
+        elif keyword in ("SHOW", "LIST") and len(parts) > 1 and parts[1].upper() == "TABLES":
+            self.show_tables()
+
+        elif keyword in ("DESCRIBE", "DESC") and len(parts) > 1:
+            self.describe_table(parts[1])
+
+        elif keyword == "USE" and len(parts) > 1:
+            tbl = self._resolve_table_path(parts[1])
+            if os.path.exists(tbl):
+                self.active_table = tbl
+                print(f"Database/Table context set to: {tbl}")
             else:
-                tbl = args[3]
-                out = args[4]
-            count = DataImporter.from_sqlite(src, out, table_name=tbl)
-            print(f"Successfully imported {count:,} rows from SQLite into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
-        elif subcmd == "sql":
-            src = args[2]
-            out = args[3]
-            count = DataImporter.from_sql_dump(src, out)
-            print(f"Successfully imported {count:,} rows from SQL dump into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
-        elif subcmd == "csv":
-            src = args[2]
-            out = args[3]
-            count = DataImporter.from_csv(src, out)
-            print(f"Successfully imported {count:,} rows from CSV into {out} in {(time.perf_counter()-t0)*1000:.2f}ms")
+                print(f"Error: Table '{tbl}' does not exist.")
+
+        elif keyword == "DROP" and len(parts) > 2 and parts[1].upper() == "TABLE":
+            tbl = self._resolve_table_path(parts[2])
+            if os.path.exists(tbl):
+                os.remove(tbl)
+                if self.active_table == tbl:
+                    self.active_table = None
+                print(f"Table '{tbl}' dropped successfully.")
+            else:
+                print(f"Table '{tbl}' not found.")
+
+        elif keyword == "INFO" and len(parts) > 1:
+            self.show_info(parts[1])
+
+        elif keyword == "BENCHMARK" and len(parts) > 1:
+            self.benchmark_table(parts[1])
+
+        elif keyword == "EXPORT" and len(parts) >= 4 and parts[2].upper() == "TO":
+            tbl = parts[1]
+            fmt = parts[3]
+            out = parts[4] if len(parts) > 4 else None
+            self.export_table(tbl, fmt, out)
+
+        elif keyword == "IMPORT" and len(parts) >= 4:
+            sub = parts[1].upper()
+            t0 = time.perf_counter()
+            if sub == "SQLITE":
+                src = parts[2]
+                if len(parts) == 4:
+                    out = self._resolve_table_path(parts[3])
+                    tbl = None
+                else:
+                    tbl = parts[3]
+                    out = self._resolve_table_path(parts[4])
+                cnt = DataImporter.from_sqlite(src, out, table_name=tbl)
+                print(f"Imported {cnt:,} rows from SQLite into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.")
+            elif sub == "SQL":
+                src = parts[2]
+                out = self._resolve_table_path(parts[3])
+                cnt = DataImporter.from_sql_dump(src, out)
+                print(f"Imported {cnt:,} rows from SQL dump into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.")
+            elif sub == "CSV":
+                src = parts[2]
+                out = self._resolve_table_path(parts[3])
+                cnt = DataImporter.from_csv(src, out)
+                print(f"Imported {cnt:,} rows from CSV into '{out}' in {(time.perf_counter()-t0)*1000:.2f} ms.")
+            else:
+                print(f"Unknown import format: {sub}. Use SQLITE, SQL, or CSV.")
+
+        elif keyword == "STATUS":
+            files = glob.glob("*.mgdb")
+            total_size = sum(os.path.getsize(f) for f in files)
+            print("\n--- MergenDB Engine Status ---")
+            print(f"Active Table Context : {self.active_table or '(None)'}")
+            print(f"Local Tables Count   : {len(files)}")
+            print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
+            print(f"Engine Version       : 0.2.2 (Lightning Columnar Engine)")
+            print(f"Process PID          : {os.getpid()}\n")
+
         else:
-            print(f"Unknown import type '{subcmd}'. Choose sqlite, sql, or csv.")
-    except Exception as e:
-        print(f"Import failed: {e}")
+            # Query Execution (MergenQL or SQL)
+            query_str = cmd
+            # If query starts with '|' or WHERE/SELECT without FROM, prepend active table
+            if (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or specify 'FROM \"table.mgdb\"'.")
+                    return
+                if not query_str.startswith("|"):
+                    query_str = "| " + query_str
+                query_str = f'FROM "{self.active_table}"\n' + query_str
 
-def print_schema(filepath: str):
-    if not os.path.exists(filepath):
-        print(f"File not found: {filepath}")
-        return
-    with FileReader(filepath) as reader:
-        print(f"\nTable: {filepath}")
-        print(f"Total Rows: {reader.total_rows:,} | Blocks: {len(reader.blocks)}")
-        print("\nColumns:")
-        for col in reader.schema.columns:
-            print(f"  - {col.name.ljust(20)} : {col.data_type.name}")
-        print()
+            # Support basic standard SQL: SELECT ... FROM ... WHERE ...
+            if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
+                query_str = self._convert_sql_to_pipeline(query_str)
 
-def print_info(filepath: str):
-    if not os.path.exists(filepath):
-        print(f"File not found: {filepath}")
-        return
-    file_size = os.path.getsize(filepath)
-    with FileReader(filepath) as reader:
-        total_uncompressed = 0
-        total_compressed = 0
-        for b in reader.blocks:
-            for c in b.columns.values():
-                total_uncompressed += c.uncompressed_bytes
-                total_compressed += c.compressed_bytes
+            try:
+                result = MergenDB.query(query_str)
+                print(result.display())
+            except Exception as e:
+                print(f"Error: {e}")
 
-        ratio = (total_uncompressed / total_compressed) if total_compressed > 0 else 1.0
-        saved_pct = ((1.0 - (total_compressed / total_uncompressed)) * 100.0) if total_uncompressed > 0 else 0.0
+    def _convert_sql_to_pipeline(self, sql: str) -> str:
+        """Translates basic standard SQL 'SELECT ... FROM ... WHERE ...' into MergenQL pipeline."""
+        import re
+        m = re.match(r"SELECT\s+(.+?)\s+FROM\s+([^\s;]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", sql, re.IGNORECASE)
+        if not m:
+            return sql
 
-        print(f"\n--- Storage Footprint: {filepath} ---")
-        print(f"Total Rows           : {reader.total_rows:,}")
-        print(f"Total Blocks         : {len(reader.blocks)}")
-        print(f"File Size on Disk    : {file_size / 1024:.2f} KB ({file_size:,} bytes)")
-        print(f"Raw Uncompressed     : {total_uncompressed / 1024:.2f} KB")
-        print(f"Compressed Data      : {total_compressed / 1024:.2f} KB")
-        print(f"Compression Ratio    : {ratio:.2f}x (Saved {saved_pct:.1f}% space)")
-        print()
+        cols, tbl, where_clause, order_by, limit_val = m.groups()
+        tbl = self._resolve_table_path(tbl)
+        pipe = [f'FROM "{tbl}"']
+
+        if where_clause:
+            pipe.append(f"| WHERE {where_clause}")
+        if cols.strip() != "*":
+            pipe.append(f"| SELECT {cols.strip()}")
+        if order_by:
+            parts = order_by.strip().split()
+            col = parts[0]
+            desc = "DESC" if len(parts) > 1 and parts[1].upper() == "DESC" else "ASC"
+            pipe.append(f"| SORT {col} {desc}")
+        if limit_val:
+            pipe.append(f"| LIMIT {limit_val}")
+
+        return "\n".join(pipe)
+
+    def run(self):
+        print(BANNER)
+        buffer = []
+
+        while True:
+            try:
+                table_prompt = f"[{os.path.basename(self.active_table)}]" if self.active_table else ""
+                prompt = f"mergen{table_prompt}> " if not buffer else "      ...> "
+                line = input(prompt)
+
+                stripped = line.strip()
+
+                # Handle single-line dot commands like .help, .tables
+                if not buffer and stripped.startswith("."):
+                    sub = stripped[1:].upper()
+                    if sub in ("HELP", "?"): self.execute_command("HELP;")
+                    elif sub in ("TABLES", "SHOW TABLES"): self.show_tables()
+                    elif sub in ("EXIT", "QUIT", "Q"): sys.exit(0)
+                    elif sub.startswith("DESC "): self.execute_command(f"DESC {stripped[5:]};")
+                    elif sub.startswith("INFO "): self.execute_command(f"INFO {stripped[5:]};")
+                    else: print(f"Unknown shortcut: {stripped}. Type HELP; for commands.")
+                    continue
+
+                buffer.append(line)
+
+                # Command ends with semicolon
+                if stripped.endswith(";"):
+                    full_cmd = "\n".join(buffer)
+                    buffer = []
+                    self.execute_command(full_cmd)
+
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting.")
+                break
 
 def main():
-    print(BANNER)
-    buffer = []
-
-    while True:
-        try:
-            prompt = "mergen> " if not buffer else "    ...> "
-            line = input(prompt)
-
-            stripped = line.strip()
-
-            if not buffer and stripped.startswith("."):
-                parts = stripped.split()
-                cmd = parts[0].lower()
-                if cmd in (".exit", ".quit"):
-                    print("Görüşmek üzere!")
-                    break
-                elif cmd == ".help":
-                    print(HELP_TEXT)
-                elif cmd == ".schema" and len(parts) > 1:
-                    print_schema(parts[1])
-                elif cmd == ".info" and len(parts) > 1:
-                    print_info(parts[1])
-                elif cmd == ".import":
-                    handle_import(parts)
-                else:
-                    print(f"Unknown command or missing argument: {stripped}")
-                continue
-
-            buffer.append(line)
-
-            # Query ends with semicolon
-            if stripped.endswith(";"):
-                query_str = "\n".join(buffer).rstrip(";")
-                buffer = []
-                try:
-                    result = MergenDB.query(query_str)
-                    print(result.display())
-                except Exception as e:
-                    print(f"Error: {e}")
-                print()
-
-        except (KeyboardInterrupt, EOFError):
-            print("\nExiting.")
-            break
+    cli = MergenCLI()
+    cli.run()
 
 if __name__ == "__main__":
     main()
