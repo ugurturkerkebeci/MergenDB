@@ -1,5 +1,5 @@
 import zlib
-from typing import List, Any, Tuple, Optional
+from typing import List, Any, Tuple, Optional, Union
 from mergendb.core.types import DataType, is_numeric
 from mergendb.core.block import ZoneMap
 from mergendb.compression.encodings import (
@@ -10,6 +10,7 @@ from mergendb.compression.encodings import (
     decode_rle,
     encode_dict,
     decode_dict,
+    dict_predicate_pushdown,
     encode_delta,
     decode_delta,
     encode_bitpacked_bool,
@@ -153,3 +154,31 @@ class ColumnCompressor:
             return decode_dict(payload, dtype)
         else:
             raise ValueError(f"Unknown encoding type: {enc_type}")
+
+    @classmethod
+    def evaluate_predicate(
+        cls,
+        data: Union[bytes, memoryview],
+        enc_type: EncodingType,
+        dtype: DataType,
+        op: str,
+        target_val: Any
+    ) -> Optional[List[bool]]:
+        """
+        Attempts to evaluate an equality or inequality filter directly against
+        the encoded representation without fully decompressing all elements.
+        """
+        if not data:
+            return None
+
+        # Check if secondary zlib compression was applied
+        is_zlib = (data[0] == 1)
+        payload = data[1:]
+
+        if is_zlib:
+            payload = zlib.decompress(payload)
+
+        if enc_type == EncodingType.DICTIONARY:
+            return dict_predicate_pushdown(payload, dtype, op, target_val)
+
+        return None

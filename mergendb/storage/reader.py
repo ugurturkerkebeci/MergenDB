@@ -1,8 +1,9 @@
 import os
 import struct
 import json
+import mmap
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Tuple, Iterator
+from typing import List, Dict, Any, Optional, Tuple, Iterator, Union
 from mergendb.core.schema import Schema
 from mergendb.core.types import DataType
 from mergendb.core.block import BlockMeta, ZoneMap
@@ -43,8 +44,7 @@ class LazyColumnDict(dict):
                 raise KeyError(f"Column '{key}' not in block columns.")
             chunk_meta = self.block.columns[key]
             col_def = self.reader.schema.get_column(key)
-            self.reader._file.seek(chunk_meta.offset)
-            chunk_bytes = self.reader._file.read(chunk_meta.compressed_bytes)
+            chunk_bytes = self.reader.read_chunk_bytes(chunk_meta.offset, chunk_meta.compressed_bytes)
             self.stats.bytes_read += len(chunk_bytes)
             val = ColumnCompressor.decompress(
                 chunk_bytes,
@@ -54,6 +54,29 @@ class LazyColumnDict(dict):
             super().__setitem__(key, val)
             return val
         return super().__getitem__(key)
+
+    def evaluate_predicate(self, col_name: str, op: str, target_val: Any) -> Optional[List[bool]]:
+        """
+        Attempts fast predicate evaluation directly on encoded/dictionary data
+        without expanding and decoding all rows to Python objects.
+        Returns None if fast pushdown is not supported for this column/encoding.
+        """
+        if col_name not in self.block.columns:
+            return None
+        # If already decompressed in memory, let expression evaluator use standard in-memory path
+        if super().__contains__(col_name):
+            return None
+        chunk_meta = self.block.columns[col_name]
+        col_def = self.reader.schema.get_column(col_name)
+        chunk_bytes = self.reader.read_chunk_bytes(chunk_meta.offset, chunk_meta.compressed_bytes)
+        self.stats.bytes_read += len(chunk_bytes)
+        return ColumnCompressor.evaluate_predicate(
+            chunk_bytes,
+            EncodingType(chunk_meta.encoding),
+            col_def.data_type,
+            op,
+            target_val
+        )
 
     def __contains__(self, key: object) -> bool:
         return super().__contains__(key) or (isinstance(key, str) and key in self.block.columns)
@@ -67,7 +90,7 @@ class LazyColumnDict(dict):
 
 class FileReader:
     """
-    Reads MergenDB (.mgdb) columnar files with zero-waste column pruning and ZoneMap block skipping.
+    Reads MergenDB (.mgdb) columnar files with zero-copy mmap I/O, column pruning, and ZoneMap skipping.
     """
 
     def __init__(self, filepath: str):
@@ -77,12 +100,27 @@ class FileReader:
         self.filepath = filepath
         self._file_size = os.path.getsize(filepath)
         self._file = open(filepath, "rb")
+        self._mmap: Optional[mmap.mmap] = None
+        if self._file_size > 0:
+            try:
+                self._mmap = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
+            except Exception:
+                self._mmap = None
 
         self.schema: Schema = None
         self.blocks: List[BlockMeta] = []
         self.total_rows: int = 0
 
         self._read_metadata()
+
+    def read_chunk_bytes(self, offset: int, length: int) -> Union[bytes, memoryview]:
+        """
+        Reads chunk bytes with zero-copy mmap if available, or falls back to seek/read.
+        """
+        if self._mmap is not None:
+            return memoryview(self._mmap)[offset : offset + length]
+        self._file.seek(offset)
+        return self._file.read(length)
 
     def _read_metadata(self):
         # 1. Read Header
@@ -118,8 +156,7 @@ class FileReader:
         for col_name in col_names:
             chunk_meta = block.columns[col_name]
             col_def = self.schema.get_column(col_name)
-            self._file.seek(chunk_meta.offset)
-            chunk_bytes = self._file.read(chunk_meta.compressed_bytes)
+            chunk_bytes = self.read_chunk_bytes(chunk_meta.offset, chunk_meta.compressed_bytes)
             stats.bytes_read += len(chunk_bytes)
             result[col_name] = ColumnCompressor.decompress(
                 chunk_bytes,
@@ -197,7 +234,13 @@ class FileReader:
                 yield ColumnBatch(columns=batch_data, row_count=block.row_count), stats
 
     def close(self):
-        if not self._file.closed:
+        if getattr(self, "_mmap", None) is not None:
+            try:
+                self._mmap.close()
+            except Exception:
+                pass
+            self._mmap = None
+        if getattr(self, "_file", None) is not None and not self._file.closed:
             self._file.close()
 
     def __enter__(self):

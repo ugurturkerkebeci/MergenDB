@@ -124,8 +124,15 @@ class ExpressionEvaluator:
                 col_name = expr.left.name
                 if col_name not in cols:
                     raise KeyError(f"Column '{col_name}' not found during evaluation.")
-                left_vals = cols[col_name]
                 r_val = expr.right.value
+
+                # Fast pushdown directly on encoded/dictionary data (e.g. via LazyColumnDict)
+                if hasattr(cols, "evaluate_predicate"):
+                    fast_mask = cols.evaluate_predicate(col_name, op, r_val)
+                    if fast_mask is not None:
+                        return fast_mask
+
+                left_vals = cols[col_name]
 
                 # Robust type coercion: if column is string, coerce literal to string
                 if left_vals and r_val is not None:

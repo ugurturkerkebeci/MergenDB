@@ -1,7 +1,7 @@
 import struct
 import array
 from enum import IntEnum
-from typing import List, Any, Tuple, Optional
+from typing import List, Any, Tuple, Optional, Union
 from mergendb.core.types import DataType, TYPE_STRUCT_FORMAT, TYPE_FIXED_SIZES
 
 class EncodingType(IntEnum):
@@ -63,7 +63,7 @@ def decode_raw(data: bytes, dtype: DataType) -> List[Any]:
             if length == -1:
                 values.append(None)
             else:
-                s = data[offset : offset + length].decode("utf-8")
+                s = bytes(data[offset : offset + length]).decode("utf-8")
                 offset += length
                 values.append(s)
     elif dtype in ARRAY_TYPECODES:
@@ -143,7 +143,7 @@ def decode_rle(data: bytes, dtype: DataType) -> List[Any]:
             if str_len == -1:
                 val = None
             else:
-                val = data[offset : offset + str_len].decode("utf-8")
+                val = bytes(data[offset : offset + str_len]).decode("utf-8")
                 offset += str_len
             result.extend([val] * count)
     else:
@@ -220,7 +220,7 @@ def decode_dict(data: bytes, dtype: DataType) -> List[Any]:
             if str_len == -1:
                 unique_vals.append(None)
             else:
-                val = data[offset : offset + str_len].decode("utf-8")
+                val = bytes(data[offset : offset + str_len]).decode("utf-8")
                 offset += str_len
                 unique_vals.append(val)
     else:
@@ -246,6 +246,77 @@ def decode_dict(data: bytes, dtype: DataType) -> List[Any]:
         codes = array.array("I")
         codes.frombytes(data[offset : offset + total_items * 4])
         return [unique_vals[c] for c in codes]
+
+def dict_predicate_pushdown(
+    data: Union[bytes, memoryview],
+    dtype: DataType,
+    op: str,
+    target_val: Any
+) -> Optional[List[bool]]:
+    """
+    Evaluates binary equality/inequality predicates directly against dictionary codes
+    without expanding all unique string/value objects for every row in the block.
+    Returns None if pushdown cannot evaluate this operator.
+    """
+    if op not in ("==", "=", "!=", "<>"):
+        return None
+
+    if not data or len(data) < 8:
+        return None
+
+    total_items, dict_size = struct.unpack_from("<II", data, 0)
+    offset = 8
+
+    unique_vals = []
+    if dtype == DataType.STRING:
+        target_str = str(target_val) if target_val is not None else None
+        for _ in range(dict_size):
+            str_len = struct.unpack_from("<i", data, offset)[0]
+            offset += 4
+            if str_len == -1:
+                unique_vals.append(None)
+            else:
+                unique_vals.append(bytes(data[offset : offset + str_len]).decode("utf-8"))
+                offset += str_len
+        target = target_str
+    else:
+        fmt = TYPE_STRUCT_FORMAT[dtype]
+        val_size = struct.calcsize(fmt)
+        for _ in range(dict_size):
+            val = struct.unpack_from(fmt, data, offset)[0]
+            offset += val_size
+            unique_vals.append(val)
+        target = target_val
+
+    is_eq = op in ("==", "=")
+
+    if target not in unique_vals:
+        return [False] * total_items if is_eq else [True] * total_items
+
+    target_code = unique_vals.index(target)
+    code_size = struct.unpack_from("<B", data, offset)[0]
+    offset += 1
+
+    if code_size == 1:
+        raw_codes = data[offset : offset + total_items]
+        if is_eq:
+            return [c == target_code for c in raw_codes]
+        else:
+            return [c != target_code for c in raw_codes]
+    elif code_size == 2:
+        codes = array.array("H")
+        codes.frombytes(data[offset : offset + total_items * 2])
+        if is_eq:
+            return [c == target_code for c in codes]
+        else:
+            return [c != target_code for c in codes]
+    else:
+        codes = array.array("I")
+        codes.frombytes(data[offset : offset + total_items * 4])
+        if is_eq:
+            return [c == target_code for c in codes]
+        else:
+            return [c != target_code for c in codes]
 
 # -------------------------------------------------------------
 # Delta / Frame-of-Reference (FoR) for Integers
