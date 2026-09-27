@@ -488,7 +488,7 @@ class MergenCLI:
                 query_str = self._convert_sql_to_pipeline(query_str)
 
             try:
-                result = MergenDB.query(query_str)
+                result = MergenDB.query(query_str, show_progress=True)
                 print(result.display())
             except Exception as e:
                 print(f"Error: {e}")

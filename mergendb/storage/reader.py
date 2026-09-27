@@ -23,6 +23,48 @@ class ColumnBatch:
     columns: Dict[str, List[Any]]
     row_count: int
 
+
+class LazyColumnDict(dict):
+    """
+    On-demand columnar decompressor.
+    Only reads and decompresses a column when that column is explicitly accessed
+    by an expression evaluator. Enables instant short-circuiting of multi-column conditions.
+    """
+    def __init__(self, reader: "FileReader", block: BlockMeta, stats: ScanStats):
+        super().__init__()
+        self.reader = reader
+        self.block = block
+        self.stats = stats
+        self.row_count = block.row_count
+
+    def __getitem__(self, key: str) -> List[Any]:
+        if not super().__contains__(key):
+            if key not in self.block.columns:
+                raise KeyError(f"Column '{key}' not in block columns.")
+            chunk_meta = self.block.columns[key]
+            col_def = self.reader.schema.get_column(key)
+            self.reader._file.seek(chunk_meta.offset)
+            chunk_bytes = self.reader._file.read(chunk_meta.compressed_bytes)
+            self.stats.bytes_read += len(chunk_bytes)
+            val = ColumnCompressor.decompress(
+                chunk_bytes,
+                EncodingType(chunk_meta.encoding),
+                col_def.data_type
+            )
+            super().__setitem__(key, val)
+            return val
+        return super().__getitem__(key)
+
+    def __contains__(self, key: object) -> bool:
+        return super().__contains__(key) or (isinstance(key, str) and key in self.block.columns)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
 class FileReader:
     """
     Reads MergenDB (.mgdb) columnar files with zero-waste column pruning and ZoneMap block skipping.
@@ -43,8 +85,7 @@ class FileReader:
         self._read_metadata()
 
     def _read_metadata(self):
-        # 1. Read and verify Header
-        self._file.seek(0)
+        # 1. Read Header
         magic = self._file.read(4)
         if magic != MAGIC_HEADER:
             raise ValueError(f"Invalid file format: magic bytes {magic} do not match {MAGIC_HEADER}")
@@ -112,6 +153,7 @@ class FileReader:
                 raise KeyError(f"Column '{col_name}' does not exist in schema.")
 
         stats = ScanStats(total_blocks=len(self.blocks))
+        filter_cols_set = set(filter_columns) if filter_columns else set()
 
         for block in self.blocks:
             # 1. ZoneMap Check (Block Pruning)
@@ -131,28 +173,20 @@ class FileReader:
             stats.blocks_scanned += 1
             stats.rows_scanned += block.row_count
 
-            # 2. Late Materialization
-            if filter_columns and filter_fn and set(filter_columns).issubset(block.columns.keys()):
-                # Read ONLY the filter columns first
-                filter_data = self._read_columns(block, filter_columns, stats)
-                mask = filter_fn(filter_data)
+            # 2. Late Materialization via Demand-Driven Lazy Column Loading
+            if filter_columns and filter_fn and filter_cols_set.issubset(block.columns.keys()):
+                lazy_data = LazyColumnDict(self, block, stats)
+                mask = filter_fn(lazy_data)
 
-                # Count matching rows
-                match_count = sum(1 for m in mask if m)
-                if match_count == 0:
-                    # ZERO rows in this block match the filter!
-                    # Skip reading/decompressing the remaining columns completely!
+                # Fast short-circuit: if no rows match, skip block immediately
+                if not any(mask):
                     continue
 
-                # Rows matched! Read only the remaining requested columns
-                remaining_cols = [c for c in target_columns if c not in filter_columns]
-                if remaining_cols:
-                    rest_data = self._read_columns(block, remaining_cols, stats)
-                    filter_data.update(rest_data)
+                match_count = mask.count(True) if hasattr(mask, "count") else sum(1 for m in mask if m)
 
-                # Filter column vectors by mask
+                # Rows matched! Read only the requested target columns
                 batch_data = {
-                    c: [v for v, m in zip(filter_data[c], mask) if m]
+                    c: [v for v, m in zip(lazy_data[c], mask) if m]
                     for c in target_columns
                 }
                 yield ColumnBatch(columns=batch_data, row_count=match_count), stats

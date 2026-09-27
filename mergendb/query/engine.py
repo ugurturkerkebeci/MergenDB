@@ -1,7 +1,11 @@
+import os
 import time
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple, Union
 from mergendb.storage.reader import FileReader, ScanStats, ColumnBatch
+from mergendb.core.schema import Schema
+from mergendb.core.types import DataType
+from mergendb.io.progress import ProgressBar
 from mergendb.query.ast_nodes import (
     QueryPlan, ExprNode, BinaryOpNode, ColumnRefNode, LiteralNode,
     ComputeNode, AggregateNode, SortNode
@@ -26,6 +30,40 @@ class QueryResult:
 
     def __len__(self) -> int:
         return len(self.rows)
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __getitem__(self, index):
+        return self.rows[index]
+
+    @property
+    def first(self) -> Optional[List[Any]]:
+        return self.rows[0] if self.rows else None
+
+    def to_dicts(self) -> List[Dict[str, Any]]:
+        """Converts query result rows into a list of Python dictionaries."""
+        return [dict(zip(self.column_names, r)) for r in self.rows]
+
+    def to_dict(self) -> Optional[Dict[str, Any]]:
+        """Returns the first matching row as a dictionary, or None."""
+        return dict(zip(self.column_names, self.rows[0])) if self.rows else None
+
+    def to_list(self) -> List[List[Any]]:
+        """Returns raw list of rows."""
+        return self.rows
+
+    def to_df(self):
+        """Converts result into a pandas DataFrame (if pandas is installed)."""
+        try:
+            import pandas as pd
+            return pd.DataFrame(self.rows, columns=self.column_names)
+        except ImportError:
+            raise ImportError("pandas is required for to_df(). Install with 'pip install pandas'.")
+
+    def show(self, max_rows: int = 50):
+        """Prints the result table directly to stdout."""
+        print(self.display(max_rows=max_rows))
 
     def __repr__(self) -> str:
         return f"<QueryResult rows={len(self.rows)} time={self.stats.execution_time_ms:.2f}ms>"
@@ -133,6 +171,20 @@ class ExpressionEvaluator:
                 flipped_op = flipped_ops.get(op, op)
                 return cls.evaluate(BinaryOpNode(flipped_op, expr.right, expr.left), cols, row_count)
 
+            if op == "AND":
+                left_vals = cls.evaluate(expr.left, cols, row_count)
+                if not any(left_vals):
+                    return left_vals
+                right_vals = cls.evaluate(expr.right, cols, row_count)
+                return [bool(l and r) for l, r in zip(left_vals, right_vals)]
+
+            if op == "OR":
+                left_vals = cls.evaluate(expr.left, cols, row_count)
+                if all(left_vals):
+                    return left_vals
+                right_vals = cls.evaluate(expr.right, cols, row_count)
+                return [bool(l or r) for l, r in zip(left_vals, right_vals)]
+
             left_vals = cls.evaluate(expr.left, cols, row_count)
             right_vals = cls.evaluate(expr.right, cols, row_count)
 
@@ -162,29 +214,17 @@ class ExpressionEvaluator:
                 for l, r in zip(left_vals, right_vals):
                     res.append(None if l is None or r is None or r == 0 else l % r)
             elif op in ("==", "="):
-                for l, r in zip(left_vals, right_vals):
-                    res.append(l == r)
+                return [l == r for l, r in zip(left_vals, right_vals)]
             elif op in ("!=", "<>"):
-                for l, r in zip(left_vals, right_vals):
-                    res.append(l != r)
+                return [l != r for l, r in zip(left_vals, right_vals)]
             elif op == "<":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(False if l is None or r is None else l < r)
+                return [False if l is None or r is None else l < r for l, r in zip(left_vals, right_vals)]
             elif op == "<=":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(False if l is None or r is None else l <= r)
+                return [False if l is None or r is None else l <= r for l, r in zip(left_vals, right_vals)]
             elif op == ">":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(False if l is None or r is None else l > r)
+                return [False if l is None or r is None else l > r for l, r in zip(left_vals, right_vals)]
             elif op == ">=":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(False if l is None or r is None else l >= r)
-            elif op == "AND":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(bool(l and r))
-            elif op == "OR":
-                for l, r in zip(left_vals, right_vals):
-                    res.append(bool(l or r))
+                return [False if l is None or r is None else l >= r for l, r in zip(left_vals, right_vals)]
             elif op == "LIKE":
                 import re
                 for l, r in zip(left_vals, right_vals):
@@ -194,6 +234,7 @@ class ExpressionEvaluator:
                         pattern = str(r)
                         regex_pattern = "^" + re.escape(pattern).replace("%", ".*").replace("_", ".") + "$"
                         res.append(bool(re.match(regex_pattern, str(l), re.IGNORECASE)))
+                return res
             else:
                 raise ValueError(f"Unsupported binary operator: {op}")
 
@@ -208,42 +249,86 @@ class QueryEngine:
     """
 
     @classmethod
-    def execute(cls, plan: QueryPlan) -> QueryResult:
-        start_time = time.perf_counter()
+    def _coerce_expr_literals(cls, expr: Optional[ExprNode], schema: Schema):
+        if expr is None:
+            return
+        if isinstance(expr, BinaryOpNode):
+            if isinstance(expr.left, ColumnRefNode) and isinstance(expr.right, LiteralNode):
+                if schema.has_column(expr.left.name):
+                    dt = schema.get_column(expr.left.name).data_type
+                    cls._coerce_val(expr.right, dt)
+            elif isinstance(expr.right, ColumnRefNode) and isinstance(expr.left, LiteralNode):
+                if schema.has_column(expr.right.name):
+                    dt = schema.get_column(expr.right.name).data_type
+                    cls._coerce_val(expr.left, dt)
+            cls._coerce_expr_literals(expr.left, schema)
+            cls._coerce_expr_literals(expr.right, schema)
 
-        # Step 1: Optimize plan (Pushdowns & Column Pruning)
-        pushdown_preds = QueryPlanner.extract_pushdown_predicates(plan.where_expr)
-        needed_columns = QueryPlanner.collect_required_columns(plan)
-        filter_cols = QueryPlanner.collect_filter_columns(plan.where_expr)
+    @classmethod
+    def _coerce_val(cls, lit_node: LiteralNode, dt: DataType):
+        if lit_node.value is None:
+            return
+        try:
+            if dt == DataType.STRING and not isinstance(lit_node.value, str):
+                lit_node.value = str(lit_node.value)
+            elif dt in (DataType.INT32, DataType.INT64) and not isinstance(lit_node.value, int):
+                lit_node.value = int(lit_node.value)
+            elif dt in (DataType.FLOAT32, DataType.FLOAT64) and not isinstance(lit_node.value, float):
+                lit_node.value = float(lit_node.value)
+        except (ValueError, TypeError):
+            pass
+
+    @classmethod
+    def execute(cls, plan: QueryPlan, show_progress: bool = False) -> QueryResult:
+        start_time = time.perf_counter()
 
         # Open storage reader
         reader = FileReader(plan.table_source)
 
-        filter_fn = None
-        late_mat_enabled = False
-        if filter_cols and plan.where_expr is not None:
-            def filter_evaluator(cdata):
-                first_vec = next(iter(cdata.values()))
-                return ExpressionEvaluator.evaluate(plan.where_expr, cdata, len(first_vec))
-            filter_fn = filter_evaluator
-            late_mat_enabled = True
-
-        total_blocks = len(reader.blocks)
-        blocks_scanned = 0
-        blocks_skipped = 0
-        bytes_read = 0
-        rows_scanned = 0
-
-        collected_rows: List[List[Any]] = []
-
-        # Step 2: Stream blocks
         try:
-            # Check if this query involves aggregation
-            is_aggregate = plan.aggregate is not None
+            # Pre-coerce literals to column schema types for zero-overhead evaluation
+            cls._coerce_expr_literals(plan.where_expr, reader.schema)
 
-            # Accumulator state for aggregations:
-            # group_key -> { 'count': int, 'sums': Dict[alias, float], 'mins': ..., 'maxs': ... }
+            # Step 1: Optimize plan (Pushdowns & Column Pruning)
+            pushdown_preds = QueryPlanner.extract_pushdown_predicates(plan.where_expr)
+            needed_columns = QueryPlanner.collect_required_columns(plan)
+            filter_cols = QueryPlanner.collect_filter_columns(plan.where_expr)
+
+            filter_fn = None
+            late_mat_enabled = False
+            if filter_cols and plan.where_expr is not None:
+                def filter_evaluator(cdata):
+                    row_cnt = getattr(cdata, "row_count", None) or len(next(iter(cdata.values())))
+                    return ExpressionEvaluator.evaluate(plan.where_expr, cdata, row_cnt)
+                filter_fn = filter_evaluator
+                late_mat_enabled = True
+
+            total_blocks = len(reader.blocks)
+            blocks_scanned = 0
+            blocks_skipped = 0
+            bytes_read = 0
+            rows_scanned = 0
+
+            pbar = None
+            if show_progress and reader.total_rows > 0:
+                tbl_label = os.path.basename(plan.table_source)
+                pbar = ProgressBar(f"Querying '{tbl_label}'", total_rows=reader.total_rows)
+
+            collected_rows: List[List[Any]] = []
+
+            # Step 2: Stream blocks
+            is_aggregate = plan.aggregate is not None
             agg_state: Dict[Tuple, Dict[str, Any]] = {}
+
+            # Check column projection and sort needs
+            needed_extra_sort = False
+            if not is_aggregate and plan.select_columns is not None:
+                scan_cols = list(plan.select_columns)
+                if plan.sort is not None and plan.sort.column not in scan_cols:
+                    scan_cols.append(plan.sort.column)
+                    needed_extra_sort = True
+            else:
+                scan_cols = None
 
             for batch, scan_stats in reader.scan(
                 columns=needed_columns,
@@ -255,18 +340,18 @@ class QueryEngine:
                 blocks_skipped = scan_stats.blocks_skipped
                 bytes_read = scan_stats.bytes_read
                 rows_scanned = scan_stats.rows_scanned
+                if pbar:
+                    pbar.update(rows_scanned)
 
                 current_cols = dict(batch.columns)
                 count = batch.row_count
 
                 # If late materialization was applied, batch is ALREADY filtered!
-                # If not (e.g. no where_expr or late mat disabled), evaluate filter here
                 if plan.where_expr is not None and not late_mat_enabled:
                     mask = ExpressionEvaluator.evaluate(plan.where_expr, current_cols, count)
-                    # Filter all column vectors by mask
                     for k in current_cols:
                         current_cols[k] = [v for v, m in zip(current_cols[k], mask) if m]
-                    count = sum(1 for m in mask if m)
+                    count = mask.count(True) if hasattr(mask, "count") else sum(1 for m in mask if m)
 
                 if count == 0:
                     continue
@@ -280,8 +365,7 @@ class QueryEngine:
                 if is_aggregate:
                     cls._accumulate_aggregate(plan.aggregate, current_cols, count, agg_state)
                 else:
-                    # Determine columns to project
-                    proj_cols = plan.select_columns if plan.select_columns is not None else list(current_cols.keys())
+                    proj_cols = scan_cols if scan_cols is not None else list(current_cols.keys())
                     for i in range(count):
                         row = [current_cols[c][i] for c in proj_cols]
                         collected_rows.append(row)
@@ -289,7 +373,13 @@ class QueryEngine:
                     # Early exit on LIMIT if no sort and no aggregate!
                     if plan.sort is None and plan.limit is not None and len(collected_rows) >= plan.limit:
                         collected_rows = collected_rows[:plan.limit]
+                        if pbar:
+                            pbar.finish(f"Matched {len(collected_rows)} rows (early exit on LIMIT)")
+                            pbar = None
                         break
+
+            if pbar:
+                pbar.finish()
 
             # Post-Scan Processing
             final_columns: List[str] = []
@@ -305,13 +395,18 @@ class QueryEngine:
             # Sorting
             if plan.sort is not None:
                 sort_col = plan.sort.column
-                if sort_col in final_columns:
-                    col_idx = final_columns.index(sort_col)
-                    # Safe sort handling None values
+                sort_target_cols = scan_cols if scan_cols is not None else final_columns
+                if sort_col in sort_target_cols:
+                    col_idx = sort_target_cols.index(sort_col)
                     def sort_key(row):
                         v = row[col_idx]
                         return (1 if v is None else 0, v)
                     collected_rows.sort(key=sort_key, reverse=plan.sort.descending)
+
+            # Strip extra sort column if it was appended
+            if needed_extra_sort:
+                target_len = len(final_columns)
+                collected_rows = [r[:target_len] for r in collected_rows]
 
             # Limit
             if plan.limit is not None and plan.limit >= 0:
