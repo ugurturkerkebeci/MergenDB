@@ -3,7 +3,7 @@ import struct
 import json
 import mmap
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Tuple, Iterator, Union
+from typing import List, Dict, Any, Optional, Tuple, Iterator, Union, Set
 from mergendb.core.schema import Schema
 from mergendb.core.types import DataType
 from mergendb.core.block import BlockMeta, ZoneMap
@@ -165,21 +165,77 @@ class FileReader:
             )
         return result
 
+    def _scan_single_block(
+        self,
+        block: BlockMeta,
+        target_columns: List[str],
+        predicates: Optional[List[Tuple[str, str, Any]]],
+        filter_cols_set: Set[str],
+        filter_fn: Optional[Any]
+    ) -> Tuple[Optional[ColumnBatch], int, bool]:
+        """
+        Scans a single block.
+        Returns: (batch, bytes_read, was_skipped)
+        """
+        # 1. ZoneMap check (Block Pruning)
+        if predicates:
+            for col_name, op, val in predicates:
+                if col_name in block.columns:
+                    chunk_meta = block.columns[col_name]
+                    if chunk_meta.zone_map.can_prune(op, val):
+                        return None, 0, True
+
+        # 2. Late Materialization via Demand-Driven Lazy Column Loading
+        if filter_cols_set and filter_fn and filter_cols_set.issubset(block.columns.keys()):
+            from itertools import compress
+            block_stats = ScanStats()
+            lazy_data = LazyColumnDict(self, block, block_stats)
+            mask = filter_fn(lazy_data)
+            bytes_read = block_stats.bytes_read
+
+            # Fast short-circuit: if no rows match, skip immediately
+            if not any(mask):
+                return None, bytes_read, False
+
+            match_count = mask.count(True) if hasattr(mask, "count") else sum(1 for m in mask if m)
+
+            # Optimization: If all rows matched, avoid filtering overhead
+            if match_count == block.row_count:
+                batch_data = {c: lazy_data[c] for c in target_columns}
+            else:
+                # High-speed C-level filtering using itertools.compress
+                batch_data = {
+                    c: list(compress(lazy_data[c], mask))
+                    for c in target_columns
+                }
+            return ColumnBatch(columns=batch_data, row_count=match_count), block_stats.bytes_read, False
+
+        else:
+            # Standard columnar read
+            block_stats = ScanStats()
+            batch_data = self._read_columns(block, target_columns, block_stats)
+            return ColumnBatch(columns=batch_data, row_count=block.row_count), block_stats.bytes_read, False
+
     def scan(
         self,
         columns: Optional[List[str]] = None,
         predicates: Optional[List[Tuple[str, str, Any]]] = None,
         filter_columns: Optional[List[str]] = None,
-        filter_fn: Optional[Any] = None
+        filter_fn: Optional[Any] = None,
+        parallel: bool = True,
+        max_workers: Optional[int] = None
     ) -> Iterator[Tuple[ColumnBatch, ScanStats]]:
         """
-        Scans data blocks with filter pushdown, ZoneMap pruning, and Late Materialization.
+        Scans data blocks with filter pushdown, ZoneMap pruning, Late Materialization,
+        and automatic multi-core parallel block processing.
 
         Args:
             columns: Specific column names to load. If None, loads all columns.
             predicates: Pushdown filters in form of (column_name, operator, value), e.g. [("age", ">", 30)]
             filter_columns: Columns required to evaluate WHERE filter.
             filter_fn: Callable evaluating WHERE mask on filter column data.
+            parallel: Whether to enable multi-threaded parallel block scanning when multiple blocks exist.
+            max_workers: Maximum worker threads for parallel scan (defaults to CPU core count, max 8).
 
         Yields:
             (ColumnBatch, ScanStats)
@@ -193,46 +249,39 @@ class FileReader:
         self.last_scan_stats = stats
         filter_cols_set = set(filter_columns) if filter_columns else set()
 
-        for block in self.blocks:
-            # 1. ZoneMap Check (Block Pruning)
-            skip_block = False
-            if predicates:
-                for col_name, op, val in predicates:
-                    if col_name in block.columns:
-                        chunk_meta = block.columns[col_name]
-                        if chunk_meta.zone_map.can_prune(op, val):
-                            skip_block = True
-                            break
+        use_parallel = parallel and len(self.blocks) > 2 and self._mmap is not None
 
-            if skip_block:
-                stats.blocks_skipped += 1
-                continue
+        if use_parallel:
+            from concurrent.futures import ThreadPoolExecutor
+            worker_count = max_workers or min(os.cpu_count() or 4, 8)
 
-            stats.blocks_scanned += 1
-            stats.rows_scanned += block.row_count
+            def worker_fn(blk):
+                return self._scan_single_block(blk, target_columns, predicates, filter_cols_set, filter_fn)
 
-            # 2. Late Materialization via Demand-Driven Lazy Column Loading
-            if filter_columns and filter_fn and filter_cols_set.issubset(block.columns.keys()):
-                lazy_data = LazyColumnDict(self, block, stats)
-                mask = filter_fn(lazy_data)
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                for block, (batch, b_read, was_skipped) in zip(self.blocks, executor.map(worker_fn, self.blocks)):
+                    if was_skipped:
+                        stats.blocks_skipped += 1
+                        continue
+                    stats.blocks_scanned += 1
+                    stats.bytes_read += b_read
+                    stats.rows_scanned += block.row_count
+                    if batch is not None and batch.row_count > 0:
+                        yield batch, stats
 
-                # Fast short-circuit: if no rows match, skip block immediately
-                if not any(mask):
+        else:
+            for block in self.blocks:
+                batch, b_read, was_skipped = self._scan_single_block(
+                    block, target_columns, predicates, filter_cols_set, filter_fn
+                )
+                if was_skipped:
+                    stats.blocks_skipped += 1
                     continue
-
-                match_count = mask.count(True) if hasattr(mask, "count") else sum(1 for m in mask if m)
-
-                # Rows matched! Read only the requested target columns
-                batch_data = {
-                    c: [v for v, m in zip(lazy_data[c], mask) if m]
-                    for c in target_columns
-                }
-                yield ColumnBatch(columns=batch_data, row_count=match_count), stats
-
-            else:
-                # Standard columnar read
-                batch_data = self._read_columns(block, target_columns, stats)
-                yield ColumnBatch(columns=batch_data, row_count=block.row_count), stats
+                stats.blocks_scanned += 1
+                stats.bytes_read += b_read
+                stats.rows_scanned += block.row_count
+                if batch is not None and batch.row_count > 0:
+                    yield batch, stats
 
     def close(self):
         if getattr(self, "_mmap", None) is not None:
