@@ -134,6 +134,12 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json(200, res_obj)
             return
 
+        elif path == "/query":
+            q = params.get("q", params.get("query", [""]))[0]
+            tbl = params.get("table", params.get("active_table", [""]))[0]
+            self._execute_query(q, tbl)
+            return
+
         elif path == "/tables":
             files = glob.glob("*.mgdb")
             tables = []
@@ -347,6 +353,42 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_response_json(404, {"error": "Endpoint not found"})
 
+    def _execute_query(self, query_text: str, active_table: str = ""):
+        query_text = (query_text or "").strip()
+        active_table = (active_table or "").strip()
+
+        if not query_text:
+            self._send_response_json(400, {"success": False, "error": "Missing 'query' parameter"})
+            return
+
+        # If active_table provided and query is missing FROM clause, auto-inject active table
+        if active_table and not re.search(r"\bFROM\b", query_text, re.IGNORECASE):
+            if query_text.upper().startswith("SELECT "):
+                query_text = f"{query_text} FROM '{active_table}'"
+
+        try:
+            t0 = time.perf_counter()
+            result = MergenDB.query(query_text)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+
+            response = {
+                "success": True,
+                "columns": result.column_names,
+                "rows": result.rows,
+                "row_count": len(result.rows),
+                "stats": {
+                    "execution_time_ms": round(elapsed_ms, 2),
+                    "rows_returned": len(result.rows),
+                    "blocks_scanned": result.stats.blocks_scanned if result.stats else 0,
+                    "blocks_skipped": result.stats.blocks_skipped if result.stats else 0,
+                    "bytes_read": result.stats.bytes_read if result.stats else 0
+                }
+            }
+            self._send_response_json(200, response)
+
+        except Exception as e:
+            self._send_response_json(400, {"success": False, "error": str(e)})
+
     def do_POST(self):
         path = self.path.split("?")[0].rstrip("/")
 
@@ -356,39 +398,11 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         if path == "/query":
             try:
                 payload = json.loads(post_data) if post_data else {}
-                query_text = payload.get("query", "").strip()
-                active_table = payload.get("active_table", "").strip()
-
-                if not query_text:
-                    self._send_response_json(400, {"error": "Missing 'query' in request body"})
-                    return
-
-                # If active_table provided and query is missing FROM clause, auto-inject active table
-                if active_table and not re.search(r"\bFROM\b", query_text, re.IGNORECASE):
-                    if query_text.upper().startswith("SELECT "):
-                        query_text = f"{query_text} FROM '{active_table}'"
-
-                t0 = time.perf_counter()
-                result = MergenDB.query(query_text)
-                elapsed_ms = (time.perf_counter() - t0) * 1000
-
-                response = {
-                    "success": True,
-                    "columns": result.column_names,
-                    "rows": result.rows,
-                    "row_count": len(result.rows),
-                    "stats": {
-                        "execution_time_ms": round(elapsed_ms, 2),
-                        "rows_returned": len(result.rows),
-                        "blocks_scanned": result.stats.blocks_scanned if result.stats else 0,
-                        "blocks_skipped": result.stats.blocks_skipped if result.stats else 0,
-                        "bytes_read": result.stats.bytes_read if result.stats else 0
-                    }
-                }
-                self._send_response_json(200, response)
-
-            except Exception as e:
-                self._send_response_json(400, {"success": False, "error": str(e)})
+            except Exception:
+                payload = {}
+            query_text = payload.get("query", payload.get("q", "")).strip()
+            active_table = payload.get("active_table", payload.get("table", "")).strip()
+            self._execute_query(query_text, active_table)
             return
 
         elif path == "/import":

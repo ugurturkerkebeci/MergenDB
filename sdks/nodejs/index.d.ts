@@ -9,6 +9,7 @@ export interface MergenOptions {
   port?: number;
   activeTable?: string;
   timeout?: number;
+  autoStart?: boolean;
 }
 
 export interface QueryStats {
@@ -99,17 +100,21 @@ export class TableHandle {
   drop(): Promise<{ status: string; message: string }>;
 }
 
+export type Table = TableHandle;
+
 export class MergenDB {
   protocol: string;
   host: string;
   port: number;
   activeTable?: string;
   timeout: number;
+  autoStart: boolean;
 
   constructor(options?: MergenOptions | string);
   ping(): Promise<boolean>;
   status(): Promise<ServerStatus>;
   benchmark(): Promise<any>;
+  ensureServer(maxWaitMs?: number): Promise<boolean>;
   listTables(): Promise<TableInfo[]>;
   query<T = any>(sqlQuery: string, options?: { activeTable?: string }): Promise<QueryResult<T>>;
   sql<T = any>(strings: TemplateStringsArray, ...values: any[]): Promise<QueryResult<T>>;
@@ -121,4 +126,7 @@ export class MergenDB {
 }
 
 export function connect(options?: MergenOptions | string): MergenDB;
+export const open: typeof connect;
+export function startServer(options?: { port?: number; host?: string; detached?: boolean }): any;
 export default connect;
+

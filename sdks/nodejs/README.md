@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+</p>
+
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.1-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.6.2-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
@@ -8,9 +12,11 @@ The official **zero-dependency** Node.js and TypeScript client for **MergenDB** 
 
 ---
 
-## ⚡ Features
+## ⚡ Features & Zero Extra Installation
 
-- **Zero Runtime Dependencies:** Built purely on native Node.js standard library (`http`, `url`, `child_process`).
+- **Zero Runtime Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`). No external packages (`dependencies: {}`).
+- **Zero Configuration Runner:** Run `npx mergendb serve` or `npx mergendb studio` directly from your project without installing global CLI tools.
+- **Auto-Start Server (`autoStart: true`):** The client can automatically spawn and manage the background MergenDB server transparently.
 - **TypeScript First:** Complete typings, interfaces, and autocompletion out of the box.
 - **100% Feature Parity with Python CLI:** Insert, query, search, update, delete, schema alteration, and benchmarks.
 - **SQL & Document-Style APIs:** Run analytical SQL or use fluent `.find()` / `.findOne()` / `.search()` syntax.
@@ -30,13 +36,24 @@ npm install mergendb
 
 ## 🚀 Quick Start
 
-### 1. Start the MergenDB Server
+### Option A: Automatic Server Management (Zero Extra Setup)
 
-```bash
-mergen serve 8765
+```javascript
+const { connect } = require('mergendb');
+
+// Spawns and manages the local MergenDB server automatically!
+const db = connect({ autoStart: true, port: 8765 });
 ```
 
-### 2. Connect from Node.js (JavaScript / TypeScript)
+### Option B: Start Server via `npx` or CLI
+
+```bash
+# Start server
+npx mergendb serve 8765
+
+# Or open phpMyAdmin Studio in your default browser
+npx mergendb studio 8765
+```
 
 ```javascript
 const { connect } = require('mergendb');

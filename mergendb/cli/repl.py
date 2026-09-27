@@ -15,7 +15,7 @@ from mergendb.io.progress import ProgressBar
 try:
     from mergendb import __version__
 except Exception:
-    __version__ = "0.5.9"
+    __version__ = "0.6.2"
 
 BANNER = r"""
                 _
@@ -28,7 +28,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v__VERSION__ (Mergen Studio & Columnar Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v__VERSION__ (phpMyAdmin Studio & Columnar Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -670,7 +670,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.5.4 (Lightning Columnar Engine)")
+            print(f"Engine Version       : v{__version__} (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         elif keyword in ("TEST", "BENCHMARK", "DIAGNOSE", "CHECK"):

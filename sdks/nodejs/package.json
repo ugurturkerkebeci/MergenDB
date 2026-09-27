@@ -1,12 +1,17 @@
 {
   "name": "mergendb",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Official zero-dependency Node.js and TypeScript client SDK for MergenDB - the ultra-compact, columnar embedded database engine.",
   "main": "index.js",
   "types": "index.d.ts",
+  "bin": {
+    "mergendb": "./bin/mergendb.js",
+    "mergen": "./bin/mergendb.js"
+  },
   "files": [
     "index.js",
     "index.d.ts",
+    "bin",
     "README.md",
     "LICENSE"
   ],

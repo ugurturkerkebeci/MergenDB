@@ -634,7 +634,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
     <div class="header-right">
       <div class="status-badge">
         <div class="status-dot"></div>
-        <span id="headerStatusText">v0.6.0 Çevrimiçi</span>
+        <span id="headerStatusText">v__MERGEN_VERSION__ Çevrimiçi</span>
       </div>
       <button class="btn-icon" onclick="switchTab('status')">🩺 Sunucu</button>
       <button class="btn-icon" onclick="switchTab('docs')">📚 Kılavuz (Docs)</button>
@@ -996,7 +996,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
               </div>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
                 <div style="font-size: 11px; color: #666;">Motor Sürümü</div>
-                <div id="statVer" style="font-size: 13px; font-weight: 700; color: var(--pma-blue); margin-top: 2px;">v0.6.0</div>
+                <div id="statVer" style="font-size: 13px; font-weight: 700; color: var(--pma-blue); margin-top: 2px;">v__MERGEN_VERSION__</div>
               </div>
             </div>
 
@@ -2073,8 +2073,8 @@ curl -X POST http://localhost:8765/operation \
         document.getElementById('statCpu').textContent = st.cpu || 'Algılanamadı';
         document.getElementById('statRam').textContent = st.ram_gb ? `${st.ram_gb} GB` : 'Bilinmiyor';
         document.getElementById('statOs').textContent = st.os || 'OS';
-        document.getElementById('statVer').textContent = `v${st.version || st.engine_version || '0.6.0'}`;
-        document.getElementById('headerStatusText').textContent = `v${st.version || '0.6.0'} Çevrimiçi`;
+        document.getElementById('statVer').textContent = `v${st.version || st.engine_version || '__MERGEN_VERSION__'}`;
+        document.getElementById('headerStatusText').textContent = `v${st.version || '__MERGEN_VERSION__'} Çevrimiçi`;
       } catch (e) {
         console.error('Status fetch error:', e);
       }
@@ -2135,3 +2135,11 @@ curl -X POST http://localhost:8765/operation \
 </body>
 </html>
 """
+
+try:
+    from mergendb import __version__ as _version
+except Exception:
+    _version = "0.6.2"
+
+STUDIO_HTML = STUDIO_HTML.replace("__MERGEN_VERSION__", _version)
+

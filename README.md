@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.1-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.2-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.2-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -17,19 +17,32 @@ Whether you're querying a 10-million row dataset on a 500 MB RAM VPS, analyzing 
 
 ---
 
-## 📦 Installation
+## 📦 Installation & Zero-Dependency Quickstart
+
+MergenDB requires **ZERO external packages or compilers** (`dependencies: {}`). It runs purely on the standard library of Python and Node.js.
 
 ### Python Engine & CLI
 ```bash
+# Standard install via PyPI
 pip install --upgrade mergendb
+
+# Run directly without configuring PATH:
+python -m mergendb
+python -m mergendb serve 8765
+python -m mergendb test
 ```
 
 ### Node.js & TypeScript SDK
 ```bash
+# Install SDK via npm
 npm install mergendb
+
+# Run server or launch studio directly via npx:
+npx mergendb serve 8765
+npx mergendb studio 8765
 ```
 
-Requires **Python 3.8** or newer. Works seamlessly on Windows, macOS, Linux, and Docker.
+Requires **Python 3.8+** and/or **Node.js 16+**. Works out-of-the-box on Windows, macOS, Linux, and Docker with zero extra setup.
 
 ---
 
@@ -216,7 +229,7 @@ mergen> TEST;
   * Operating System   : Windows 10 / Linux 6.x / macOS
   * CPU Architecture   : AMD64 / ARM64 (12 logical threads)
   * Python Runtime     : CPython 3.8+
-  * Engine Version     : v0.5.3 (Pure Python / Zero-Dependency)
+  * Engine Version     : v0.6.2 (Pure Python / Zero-Dependency)
 
 --------------------------------------------------------------------------
   [ESTIMATED PROCESSING SPEEDS FOR THIS HARDWARE]
@@ -664,6 +677,19 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ## 🚀 Version Updates & Release Comparisons
 
+### Version Comparison: v0.6.1 vs v0.6.2
+
+| Capability / Feature | v0.6.1 (phpMyAdmin & Node SDK Parity) | v0.6.2 (Zero-Dependency & Multi-Runtime Optimization) | Status & Impact |
+| :--- | :--- | :--- | :--- |
+| **Plain Python Execution** | `mergen` script only | ✅ **Direct `python -m mergendb` Runner** | Run CLI, server, tests, and REPL without requiring PATH modifications (`mergendb/__main__.py`) |
+| **Plain Node.js Execution** | Programmatic HTTP client only | ✅ **Direct `npx mergendb` Executable CLI** | Run `npx mergendb serve`, `npx mergendb studio`, `benchmark`, and `query` directly (`sdks/nodejs/bin/mergendb.js`) |
+| **Node.js Server Auto-Spawn** | Manual server startup required | ✅ **Transparent `autoStart: true`** | Client auto-spawns and manages local MergenDB server in background with zero extra setup |
+| **REST Query Interface** | `POST /query` only | ✅ **Unified `GET /query?q=...` & `POST`** | Run instant queries from web browsers, simple curl scripts, or any programming language |
+| **Mergen Studio Versioning** | Hardcoded display strings | ✅ **Dynamic Runtime Engine Binding** | Studio UI automatically renders the exact engine version across header, status, and diagnostic tabs |
+| **Zero External Dependencies** | Verified | ✅ **100% Zero-Dependency across Python & Node** | Pure standard library across all supported environments (`dependencies: {}`) |
+
+---
+
 ### Version Comparison: v0.6.0 vs v0.6.1
 
 | Capability / Feature | v0.6.0 (Initial Node.js SDK Release) | v0.6.1 (phpMyAdmin Redesign & Full Ecosystem Parity) | Status & Impact |
@@ -680,20 +706,6 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ---
 
-### Version Comparison: v0.5.9 vs v0.6.0
-
-| Capability / Architecture | v0.5.9 (Mergen Studio & Embedded Web UI) | v0.6.0 (Universal Node.js SDK & Production Polish) | Status & Impact |
-| :--- | :--- | :--- | :--- |
-| **Node.js & TypeScript SDK** | ❌ Python only | ✅ **Official `mergendb` Client Package** | Zero-dependency TypeScript/Node.js client for Express, Next.js, and NestJS |
-| **Document-Style API in JS** | ❌ Not available | ✅ **Fluent `.find()`, `.count()` & Tagged SQL** | Safe parameterized queries via `db.sql\`...\`` and object-based row mapping |
-| **CLI Shell Autocompletions** | ❌ Not available | ✅ **`mergen completions <shell>`** | Tab autocompletion for Bash, Zsh, PowerShell, and Fish |
-| **One-Off Query Execution** | REPL only | ✅ **`mergen query "<SQL>"`** | Rapid shell querying without entering the interactive REPL prompt |
-| **Hardware Diagnostic Accuracies** | Architecture only | ✅ **Exact CPU Model & RAM Sizing** | Accurate detection of Intel/AMD/Apple Silicon models via WMI/sysfs/sysctl |
-| **Web UI (Mergen Studio)** | phpMyAdmin layout | ✅ **Standardized REST Payloads** | Consistent JSON error codes and `row_count` attributes across all endpoints |
-| **Total Test Suite** | 83 Tests (100% pass) | ✅ **100 Tests (88 Python + 12 Node.js SDK, 100% pass)** | Complete end-to-end integration verification across Python and Node.js runtimes |
-
----
-
 ### Roadmap & Version Progression
 
 | Version | Milestone | Key Deliverables | Status |
@@ -704,7 +716,8 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
 | **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | ✅ Released |
 | **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | ✅ Released |
-| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | ✅ Released (Milestone Complete) |
+| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | ✅ Released |
+| **v0.6.2** | Multi-Runtime & Zero-Dependency | **Direct `python -m mergendb` & `npx mergendb` runners**, `autoStart: true`, `GET /query`, zero-dependency optimization | ✅ Released (Milestone Complete) |
 
 ---
 
