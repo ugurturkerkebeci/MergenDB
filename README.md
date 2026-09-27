@@ -4,10 +4,10 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.8-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.9-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-68%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-79%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
@@ -37,6 +37,7 @@ Even though you only care about `name` and `balance`, SQLite has to read **every
 ## Key Highlights
 
 - **Zero External Dependencies:** Built entirely with Python's built-in libraries (`struct`, `array`, `zlib`, `csv`, `sqlite3`, `http.server`).
+- **Embedded Web UI (Mergen Studio):** Interactive zero-dependency dark-mode visual interface (`mergen serve`) with table explorer, query editor, execution stats, and browser export.
 - **Developer-Friendly API:** Simple, intuitive Python interface (`db = mergendb.connect(...)`, `db.find(name="Alice")`, `db.to_df()`, `db.search("text")`).
 - **Auto-Schema Inference:** Pass plain Python dictionaries to `db.insert(...)` and MergenDB creates the table and infers column types automatically.
 - **Adaptive Compression Encodings:**
@@ -211,6 +212,27 @@ mergen> TEST;
   [SUCCESS] ALL CHECKS PASSED PERFECTLY in 0.68s
 ==========================================================================
 ```
+
+### 8. Embedded Web UI: "Mergen Studio" (`mergen serve`)
+
+MergenDB includes **Mergen Studio**, an ultra-fast, zero-dependency, dark-mode interactive web dashboard embedded directly into the engine. Launch it with a single command:
+
+```bash
+# Start server and launch Mergen Studio
+mergen serve
+# Or specify a custom port
+mergen serve 8765
+```
+
+Open your browser to:
+👉 **`http://localhost:8765/studio`** (or simply `http://localhost:8765/`)
+
+**What you can do in Mergen Studio:**
+- **📁 Table Explorer:** Instantly lists all `.mgdb` tables in the directory, showing file sizes, total row counts, block counts, and schema columns with data types.
+- **⚡ Interactive Query Editor:** Write standard SQL or MergenQL queries with keyboard shortcuts (`Ctrl+Enter`), pre-built analytical snippets (SELECT, GROUP BY + HAVING, Hash JOINs), and real-time execution feedback.
+- **📊 Real-Time Performance Telemetry:** Inspect query execution time in milliseconds, rows returned, blocks scanned vs skipped via Bloom filters / ZoneMaps (Zero I/O), and total bytes read.
+- **💾 Browser-Side Data Export:** Export result sets directly to `.csv` or `.json` with a single click.
+- **🌐 Dual Negotiation:** Automated content negotiation ensures curl / Node.js requests receive JSON while browser navigations automatically render Mergen Studio.
 
 ---
 
@@ -570,17 +592,17 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ## 🚀 Version Updates & Release Comparisons
 
-### Version Comparison: v0.5.7 vs v0.5.8
+### Version Comparison: v0.5.8 vs v0.5.9
 
-| Capability / Architecture | v0.5.7 (Bloom Filter Lightning Engine) | v0.5.8 (Analytical SQL & Hash JOIN Engine) | Status & Impact |
+| Capability / Architecture | v0.5.8 (Analytical SQL & Hash JOIN) | v0.5.9 (Mergen Studio & Embedded Web UI) | Status & Impact |
 | :--- | :--- | :--- | :--- |
-| **Table JOINs** | ❌ Not supported | ✅ **Streaming Hash JOIN** (`INNER JOIN` & `LEFT JOIN`) | Query multiple `.mgdb` tables in one analytical statement |
-| **Column Resolution** | Single-table only | ✅ **Qualified & Unqualified** (`users.name`, `orders.amount`) | Zero name collision conflicts between joined tables |
-| **GROUP BY Clauses** | Single-column only | ✅ **Multi-Column GROUP BY** (`GROUP BY dept, city`) | Complex dimensional aggregation supported |
-| **HAVING Filter** | ❌ Not supported | ✅ **HAVING Filtering** (`HAVING total > 10000`) | Evaluate conditions directly against aggregated metric values |
-| **SQL Translation** | Simple `SELECT WHERE ORDER LIMIT` | ✅ **Full Analytical SQL Grammer** (JOIN, GROUP BY, HAVING) | Seamless translation of standard SQL into MergenQL |
-| **Hardware Profiler** | Basic generic architecture info | ✅ **Real CPU & RAM Detection** + Live 4-Step Disk Benchmark | Detects exact CPU name (e.g. 12th Gen Intel i5) & Windows 11 Build |
-| **Unit Test Suite** | 60 Tests (100% pass) | ✅ **73 Tests (100% pass)** | Added comprehensive tests for JOIN, HAVING, Bloom Filters & Audit |
+| **Interactive Web UI** | ❌ Not available | ✅ **Mergen Studio** (`http://localhost:8765/studio`) | Zero-dependency dark-mode visual interface in any web browser |
+| **Browser Content Negotiation** | JSON only | ✅ **Smart Content-Type Detection** | Browser visits to `/` auto-render Studio; API clients receive JSON |
+| **Table & Schema Explorer** | CLI/API queries only | ✅ **Interactive Sidebar Explorer** | Inspect `.mgdb` files, block counts, byte sizes, and column data types |
+| **Live SQL / MergenQL Editor** | Terminal REPL only | ✅ **Code Editor with Presets & Hotkeys** | Execute queries via `Ctrl+Enter`, pre-built analytical snippets |
+| **Execution Metrics Visualizer** | Text logs only | ✅ **Real-Time Query Stats Banner** | Displays latency (ms), rows returned, blocks scanned vs skipped (pruned), bytes read |
+| **Direct Browser Data Export** | CLI export only | ✅ **Client-side CSV & JSON Export** | Download result sets straight from the browser grid without server re-reads |
+| **Unit Test Suite** | 73 Tests (100% pass) | ✅ **79 Tests (100% pass)** | Added tests for HTTP server, HTML content negotiation, and query API |
 
 ---
 
@@ -592,14 +614,14 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | ✅ Released |
 | **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
-| **v0.5.9** | Embedded Web UI | **Mergen Studio**: Zero-dependency dark-mode dashboard on `mergen serve` | ⏳ Up Next |
-| **v0.6.0** | Universal Node.js SDK | Node.js client package + CLI completions + Production 0.6 Polish | 📅 Planned |
+| **v0.5.9** | Embedded Web UI | **Mergen Studio**: Zero-dependency dark-mode dashboard on `mergen serve` | ✅ Released |
+| **v0.6.0** | Universal Node.js SDK | Node.js client package + CLI completions + Production 0.6 Polish | ⏳ Up Next (Final Milestone) |
 
 ---
 
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with 73 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
+MergenDB includes an embedded test suite with 79 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
 
 ```bash
 # Run via CLI

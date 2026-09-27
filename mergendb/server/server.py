@@ -25,6 +25,15 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_response_html(self, status_code: int, html: str):
+        body = html.encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -34,16 +43,28 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0].rstrip("/")
+        accept = self.headers.get("Accept", "")
 
         if path in ("", "/"):
+            if "text/html" in accept:
+                from mergendb.server.studio_ui import STUDIO_HTML
+                self._send_response_html(200, STUDIO_HTML)
+                return
+
             from mergendb import __version__
             self._send_response_json(200, {
                 "name": "MergenDB Server",
                 "version": __version__,
                 "status": "online",
                 "engine": "Lightning Columnar Engine",
+                "studio": "/studio",
                 "docs": "/help"
             })
+            return
+
+        elif path == "/studio":
+            from mergendb.server.studio_ui import STUDIO_HTML
+            self._send_response_html(200, STUDIO_HTML)
             return
 
         elif path == "/status" or path == "/health":
@@ -80,6 +101,8 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/help":
             self._send_response_json(200, {
                 "endpoints": {
+                    "GET /": "Server status or Mergen Studio Web UI (in browser)",
+                    "GET /studio": "Mergen Studio Interactive Web Dashboard",
                     "POST /query": "Execute MergenQL or SQL query. Body: {'query': '...'}",
                     "GET /tables": "List all tables with schema and size",
                     "GET /status": "Engine health and statistics",
@@ -154,8 +177,8 @@ def start_server(host: str = "0.0.0.0", port: int = 8765, data_dir: Optional[str
     print("=" * 70)
     print(f"  * Status        : RUNNING")
     print(f"  * Listening on  : http://{host}:{port}")
-    print(f"  * Local Web API : http://localhost:{port}")
-    print(f"  * Query Endpoint: POST http://localhost:{port}/query")
+    print(f"  * Mergen Studio : http://localhost:{port}/studio (Interactive Web UI)")
+    print(f"  * REST Query API: POST http://localhost:{port}/query")
     print(f"  * Working Dir   : {os.getcwd()}")
     print("=" * 70)
     print(" Press Ctrl+C to stop the server.\n")
