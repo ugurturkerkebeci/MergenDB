@@ -4,10 +4,10 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/pypi/v/mergendb.svg?color=blue&style=flat-square)](https://pypi.org/project/mergendb/)
-[![Python Versions](https://img.shields.io/pypi/pyversions/mergendb.svg?color=blue&style=flat-square)](https://pypi.org/project/mergendb/)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-26%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-41%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
@@ -75,14 +75,14 @@ db = mergendb.connect("users.mgdb")
 
 # 2. Insert records using plain Python dictionaries (Schema is auto-inferred!)
 db.insert([
-    {"id": 1, "name": "Abdurrezzak", "balance": 30, "city": "Ankara"},
-    {"id": 2, "name": "Mehmet", "balance": 50, "city": "Istanbul"},
-    {"id": 3, "name": "Abdurrezzak", "balance": 100, "city": "Izmir"},
-    {"id": 4, "name": "Ayse", "balance": 30, "city": "Ankara"},
+    {"id": 1, "name": "Alice", "role": "admin", "balance": 1500, "city": "San Francisco"},
+    {"id": 2, "name": "Bob", "role": "engineer", "balance": 2400, "city": "New York"},
+    {"id": 3, "name": "Charlie", "role": "designer", "balance": 1800, "city": "London"},
+    {"id": 4, "name": "Diana", "role": "admin", "balance": 3200, "city": "Tokyo"},
 ])
 
 print(f"Total Rows: {len(db)}")  # 4
-print(f"Columns: {db.columns}")   # ['id', 'name', 'balance', 'city']
+print(f"Columns: {db.columns}")   # ['id', 'name', 'role', 'balance', 'city']
 ```
 
 ### 2. Querying with Simple Key-Value Filters (`.find`)
@@ -90,14 +90,14 @@ print(f"Columns: {db.columns}")   # ['id', 'name', 'balance', 'city']
 Find records with zero SQL boilerplate:
 
 ```python
-# Multiple conditions: name == 'Abdurrezzak' AND balance == 30
-results = db.find(name="Abdurrezzak", balance=30)
+# Multiple conditions: role == 'admin' AND city == 'Tokyo'
+results = db.find(role="admin", city="Tokyo")
 print(results.to_dicts())
-# [{'id': 1, 'name': 'Abdurrezzak', 'balance': 30, 'city': 'Ankara'}]
+# [{'id': 4, 'name': 'Diana', 'role': 'admin', 'balance': 3200, 'city': 'Tokyo'}]
 
 # Fetch the first match directly as a dict
-user = db.find_one(name="Abdurrezzak")
-print(user["city"])  # "Ankara"
+user = db.find_one(name="Alice")
+print(user["city"])  # "San Francisco"
 ```
 
 ### 3. Full-Text Search Across All Text Columns (`.search`)
@@ -105,7 +105,7 @@ print(user["city"])  # "Ankara"
 Search for any substring across all string columns with case-insensitivity:
 
 ```python
-matches = db.search("rezza")
+matches = db.search("admin")
 matches.show()
 ```
 
@@ -131,7 +131,7 @@ All row mutations execute with streaming block preservation to keep memory under
 
 ```python
 # Update balance for matching records
-updated = db.update({"balance": 999}, where="name = 'Abdurrezzak'")
+updated = db.update({"balance": 999}, where="name = 'Alice'")
 print(f"Updated {updated} records")
 
 # Delete inactive or zero-balance records
@@ -148,7 +148,7 @@ Instantly alter table layout without losing data:
 db.rename_column("name", "full_name")
 
 # Add a new column with a default value
-db.add_column("country", "string", default="Turkey")
+db.add_column("country", "string", default="US")
 
 # Drop an unneeded column
 db.drop_column("city")
@@ -311,14 +311,14 @@ All commands can be terminated with an optional semicolon (`;`).
 When executing queries or data transfers in the CLI, MergenDB displays a dynamic, cross-platform progress bar:
 
 ```text
-mergen[customers.mgdb]> SELECT name, city, balance WHERE city = 'Istanbul' AND balance > 5000;
+mergen[customers.mgdb]> SELECT name, city, balance WHERE city = 'New York' AND balance > 5000;
 
 [*] Querying 'customers.mgdb': 9,350,762 / 9,350,762 rows [========================] 100.0% | 2,841,200 rows/s | ETA: 0s  
 +--------------------+----------+---------+
 | name               | city     | balance |
 +--------------------+----------+---------+
-| Ali Vural          | Istanbul | 12450   |
-| Zeynep Demir       | Istanbul | 8900    |
+| Alex Morgan        | New York | 12450   |
+| Sarah Jenkins      | New York | 8900    |
 +--------------------+----------+---------+
 Returned 2 rows in 4.12 ms | Blocks: 1142 scanned, 0 skipped | Read: 21,410 KB
 ```
@@ -363,11 +363,11 @@ FROM "employees.mgdb"
 
 When executing compound filters like:
 ```sql
-WHERE city = 'Ankara' AND balance > 1000
+WHERE country = 'US' AND balance > 1000
 ```
 MergenDB optimizes execution through **Demand-Driven Lazy Evaluation**:
-1. It decompresses **only** the `city` column for the block.
-2. If zero rows in the block have `city == 'Ankara'`, the `AND` operator short-circuits.
+1. It decompresses **only** the `country` column for the block.
+2. If zero rows in the block have `country == 'US'`, the `AND` operator short-circuits.
 3. The `balance` column (and all other columns in the table) are **never read from disk and never decompressed**.
 4. On large tables, this cuts disk read volume and CPU decompression time by up to **90%**.
 
@@ -417,8 +417,8 @@ curl -X POST http://localhost:8765/query \
   "success": true,
   "columns": ["id", "name", "balance"],
   "rows": [
-    [1, "Abdurrezzak", 100],
-    [5, "Elif", 250]
+    [1, "Alice", 100],
+    [5, "Emma", 250]
   ],
   "stats": {
     "execution_time_ms": 1.25,
