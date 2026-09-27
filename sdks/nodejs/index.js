@@ -228,6 +228,13 @@ class MergenDB {
   async renameTable(oldName, newName) {
     return await this.operation('rename', { table: oldName, new_name: newName });
   }
+
+  /**
+   * Run live hardware diagnostics and benchmark throughput
+   */
+  async benchmark() {
+    return await this._request('GET', '/status?benchmark=1');
+  }
 }
 
 /**
@@ -346,6 +353,104 @@ class TableHandle {
       table: this.pureName,
       format: format,
       content: content
+    });
+  }
+
+  /**
+   * Insert one or multiple row objects into table
+   * @param {Object|Array<Object>} records Single object or array of row objects
+   */
+  async insert(records) {
+    return await this.client.operation('insert', {
+      table: this.name,
+      row: records
+    });
+  }
+
+  /**
+   * Search for a substring across all text columns (full-text search)
+   * @param {string} term Substring to search
+   */
+  async search(term) {
+    const schema = await this.schema();
+    const strCols = (schema.columns || []).filter(c => c.type === 'STRING').map(c => c.name);
+    if (strCols.length === 0) return [];
+    
+    const conditions = strCols.map(c => `${c} LIKE '%${String(term).replace(/'/g, "''")}%'`);
+    const sql = `SELECT * FROM ${this.pureName} WHERE ${conditions.join(' OR ')}`;
+    const res = await this.client.query(sql, { activeTable: this.name });
+    if (!res || !res.columns || !res.rows) return [];
+    const colNames = res.columns;
+    return res.rows.map(row => {
+      const obj = {};
+      colNames.forEach((col, idx) => { obj[col] = row[idx]; });
+      return obj;
+    });
+  }
+
+  /**
+   * Update matching records
+   * @param {Object} updates Column-value pairs to set
+   * @param {string} where WHERE condition clause
+   */
+  async update(updates, where) {
+    if (!where) throw new MergenError("A WHERE clause is required for update()");
+    const setClauses = [];
+    for (const [key, val] of Object.entries(updates)) {
+      if (val === null || val === undefined) {
+        setClauses.push(`${key} = NULL`);
+      } else if (typeof val === 'number' || typeof val === 'boolean') {
+        setClauses.push(`${key} = ${val}`);
+      } else {
+        setClauses.push(`${key} = '${String(val).replace(/'/g, "''")}'`);
+      }
+    }
+    const sql = `UPDATE ${this.pureName} SET ${setClauses.join(', ')} WHERE ${where}`;
+    return await this.client.query(sql, { activeTable: this.name });
+  }
+
+  /**
+   * Delete matching records
+   * @param {string} where WHERE condition clause
+   */
+  async delete(where) {
+    if (!where) throw new MergenError("A WHERE clause is required for delete()");
+    return await this.client.operation('delete', {
+      table: this.name,
+      where: where
+    });
+  }
+
+  /**
+   * Add a new column to the table schema
+   */
+  async addColumn(name, type = 'STRING', defaultVal = null) {
+    return await this.client.operation('add_column', {
+      table: this.name,
+      name: name,
+      type: type,
+      default: defaultVal
+    });
+  }
+
+  /**
+   * Drop a column from the table
+   */
+  async dropColumn(name) {
+    return await this.client.operation('drop_column', {
+      table: this.name,
+      name: name
+    });
+  }
+
+  /**
+   * Rename an existing column
+   */
+  async renameColumn(oldName, newName) {
+    return await this.client.operation('rename_column', {
+      table: this.name,
+      old_name: oldName,
+      new_name: newName
     });
   }
 

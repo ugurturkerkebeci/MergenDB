@@ -1,5 +1,5 @@
 """
-Mergen Studio: Zero-dependency, embedded modern phpMyAdmin-style Web UI for MergenDB.
+Mergen Studio: Zero-dependency, fast, lightweight phpMyAdmin-style Web UI for MergenDB.
 Served by `mergen serve` or `mergendb-server` at http://localhost:8765/studio.
 """
 
@@ -8,735 +8,742 @@ STUDIO_HTML = r"""<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mergen Studio | phpMyAdmin Edition</title>
+  <title>MergenDB | phpMyAdmin Edition</title>
+  <link rel="icon" href="/logo.png" type="image/png">
   <style>
     :root {
-      --bg-base: #1a1e29;
-      --bg-panel: #222838;
-      --bg-header: #141824;
-      --bg-input: #151926;
-      --bg-hover: #2b3347;
-      --border: #323b52;
-      --primary: #00d2ff;
-      --primary-hover: #00b4dc;
-      --accent: #00ffaa;
-      --accent-glow: rgba(0, 255, 170, 0.2);
-      --danger: #ff4757;
-      --warning: #ffa502;
       --pma-blue: #235a81;
-      --pma-tab-active: #2b3b5c;
-      --text: #e2e8f0;
-      --text-muted: #8e9bb5;
-      --font-code: "JetBrains Mono", "Fira Code", "Consolas", monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --pma-dark-blue: #1b4463;
+      --pma-light-blue: #e8f0f8;
+      --pma-border: #ccd8e4;
+      --pma-table-border: #d0d7de;
+      --pma-text: #222222;
+      --pma-text-muted: #555555;
+      --pma-bg-light: #f5f7fa;
+      --pma-bg-white: #ffffff;
+      --pma-header-bg: #235a81;
+      --pma-success: #28a745;
+      --pma-danger: #dc3545;
+      --pma-warning: #ffc107;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-code: "Consolas", "Monaco", "Courier New", monospace;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: var(--bg-base);
-      color: var(--text);
-      font-family: var(--font-sans);
+      background: var(--pma-bg-light);
+      color: var(--pma-text);
+      font-family: var(--font-family);
+      font-size: 13px;
       height: 100vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      font-size: 13px;
     }
 
-    /* Top Brand & Server Header */
+    /* Top Progress Bar (Zero blocking, ultra-snappy) */
+    #topProgressBar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      width: 0%;
+      background: #00d2ff;
+      box-shadow: 0 0 6px #00d2ff;
+      z-index: 9999;
+      transition: width 0.15s ease-out;
+      display: none;
+    }
+
+    /* phpMyAdmin Classic Header */
     header {
-      background: var(--bg-header);
-      border-bottom: 2px solid var(--border);
-      height: 48px;
+      background: var(--pma-header-bg);
+      color: #ffffff;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 1rem;
+      padding: 0 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
       user-select: none;
     }
     .brand-section {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 10px;
     }
-    .brand-logo {
-      font-size: 1.4rem;
-      filter: drop-shadow(0 0 6px var(--primary));
+    .brand-logo-img {
+      height: 28px;
+      width: 28px;
+      object-fit: contain;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
     }
     .brand-title {
-      font-weight: 800;
-      font-size: 1.15rem;
-      letter-spacing: 0.04em;
-      background: linear-gradient(135deg, #00d2ff 0%, #00ffaa 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .pma-badge {
-      background: rgba(35, 90, 129, 0.4);
-      border: 1px solid rgba(0, 210, 255, 0.4);
-      color: var(--primary);
-      font-size: 0.7rem;
+      font-size: 16px;
       font-weight: 700;
-      padding: 0.1rem 0.45rem;
-      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .pma-tag {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
     }
 
-    /* Breadcrumbs & Active Target Selector */
+    /* Breadcrumbs & Active Table Dropdown */
     .header-center {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
-      background: var(--bg-panel);
-      padding: 0.3rem 0.8rem;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      font-size: 0.8rem;
-    }
-    .breadcrumb-item {
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-    }
-    .breadcrumb-item.active {
-      color: #fff;
-      font-weight: 700;
-    }
-    .active-table-select {
-      background: var(--bg-input);
-      border: 1px solid var(--primary);
-      color: var(--primary);
-      font-size: 0.82rem;
-      font-weight: 700;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.15);
+      padding: 4px 10px;
       border-radius: 4px;
-      padding: 0.2rem 0.6rem;
-      outline: none;
+      font-size: 12px;
+    }
+    .header-center select {
+      background: #ffffff;
+      color: #222;
+      border: 1px solid #aaa;
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
     }
 
     .header-right {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 12px;
     }
-    .status-pill {
+    .status-badge {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
-      font-size: 0.78rem;
-      color: var(--text-muted);
+      gap: 5px;
+      background: rgba(40, 167, 69, 0.25);
+      border: 1px solid #28a745;
+      color: #98ff98;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
     }
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
+      background: #28a745;
       border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
     }
 
     /* Main Container (Sidebar + Content) */
-    .main-container {
+    .main-wrapper {
       flex: 1;
       display: flex;
       overflow: hidden;
     }
 
-    /* phpMyAdmin Left Sidebar */
+    /* Sidebar Navigation Tree */
     aside {
-      width: 260px;
-      background: var(--bg-panel);
-      border-right: 1px solid var(--border);
+      width: 250px;
+      min-width: 250px;
+      background: var(--pma-bg-white);
+      border-right: 1px solid var(--pma-border);
       display: flex;
       flex-direction: column;
       user-select: none;
     }
-    .sidebar-actions {
-      padding: 0.6rem 0.75rem;
-      border-bottom: 1px solid var(--border);
+    .sidebar-header {
+      background: #eef3f7;
+      border-bottom: 1px solid var(--pma-border);
+      padding: 8px 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.5rem;
+      gap: 6px;
     }
-    .btn-new-table {
-      background: rgba(0, 210, 255, 0.12);
-      border: 1px solid var(--primary);
-      color: var(--primary);
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 0.3rem 0.6rem;
-      border-radius: 4px;
+    .btn-icon {
+      background: #ffffff;
+      border: 1px solid #ccd8e4;
+      padding: 3px 8px;
+      border-radius: 3px;
       cursor: pointer;
-      display: flex;
+      font-size: 12px;
+      display: inline-flex;
       align-items: center;
-      gap: 0.3rem;
-      transition: all 0.2s;
+      gap: 4px;
+      color: #333;
     }
-    .btn-new-table:hover {
-      background: var(--primary);
-      color: #0b0f17;
+    .btn-icon:hover {
+      background: #e6edf5;
+      border-color: #99afc4;
     }
-    .sidebar-search {
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid var(--border);
+    .sidebar-filter {
+      padding: 6px 10px;
+      background: #fafbfc;
+      border-bottom: 1px solid var(--pma-border);
     }
-    .sidebar-search input {
+    .sidebar-filter input {
       width: 100%;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 4px;
-      padding: 0.35rem 0.6rem;
-      font-size: 0.78rem;
-      outline: none;
-    }
-    .sidebar-search input:focus {
-      border-color: var(--primary);
-    }
-    .table-tree {
-      flex: 1;
-      overflow-y: auto;
-      padding: 0.4rem;
-    }
-    .tree-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.4rem 0.6rem;
-      border-radius: 4px;
-      margin-bottom: 0.25rem;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .tree-item:hover {
-      background: var(--bg-hover);
-    }
-    .tree-item.active {
-      background: var(--pma-tab-active);
-      border-left: 3px solid var(--primary);
-      color: #fff;
-      font-weight: 700;
-    }
-    .tree-name {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .tree-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-    .tree-badge {
-      font-size: 0.68rem;
-      color: var(--text-muted);
-      font-family: var(--font-code);
-      background: rgba(255, 255, 255, 0.05);
-      padding: 0.1rem 0.35rem;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
       border-radius: 3px;
-    }
-    .tree-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-size: 0.75rem;
-      padding: 0.1rem 0.2rem;
-      border-radius: 3px;
-    }
-    .tree-btn:hover {
-      color: var(--primary);
+      font-size: 12px;
     }
 
-    /* Content Area (phpMyAdmin Tabs & Workspace) */
+    .table-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .table-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      border-bottom: 1px solid #f1f4f8;
+      transition: background 0.1s;
+    }
+    .table-node:hover {
+      background: #eef4f9;
+    }
+    .table-node.active {
+      background: #d8e6f3;
+      font-weight: 700;
+      color: var(--pma-blue);
+      border-left: 3px solid var(--pma-blue);
+    }
+    .table-node-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .table-row-count {
+      background: #e2e8f0;
+      color: #4a5568;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 10px;
+      font-family: var(--font-code);
+    }
+
+    /* Content Area & Tabs */
     .content-area {
       flex: 1;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      background: var(--bg-base);
+      background: #f8fafc;
     }
 
-    /* phpMyAdmin Navigation Tabs */
-    nav.pma-tabs {
-      background: var(--bg-panel);
-      border-bottom: 2px solid var(--border);
+    /* phpMyAdmin Classic Tabs Bar */
+    .pma-tabs {
+      background: #edf2f7;
+      border-bottom: 1px solid var(--pma-border);
       display: flex;
-      padding: 0 0.75rem;
-      gap: 0.2rem;
+      flex-wrap: wrap;
+      padding: 6px 12px 0 12px;
+      gap: 2px;
       user-select: none;
     }
     .pma-tab {
-      padding: 0.6rem 0.95rem;
+      padding: 6px 12px;
+      background: #e2e8f0;
+      border: 1px solid var(--pma-border);
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
       cursor: pointer;
-      font-size: 0.82rem;
+      font-size: 12px;
       font-weight: 600;
-      color: var(--text-muted);
-      border-bottom: 3px solid transparent;
+      color: #334155;
       display: flex;
       align-items: center;
-      gap: 0.4rem;
-      transition: all 0.15s;
+      gap: 5px;
+      margin-bottom: -1px;
     }
     .pma-tab:hover {
-      color: #fff;
-      background: rgba(255, 255, 255, 0.03);
+      background: #f1f5f9;
     }
     .pma-tab.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
-      background: rgba(0, 210, 255, 0.08);
+      background: #ffffff;
+      color: var(--pma-blue);
+      border-top: 2px solid var(--pma-blue);
+      border-bottom: 1px solid #ffffff;
     }
 
     /* Tab Panes */
     .tab-content {
       flex: 1;
-      overflow: auto;
-      padding: 1.25rem;
-      position: relative;
+      overflow-y: auto;
+      padding: 14px 18px;
     }
     .tab-pane {
       display: none;
-      height: 100%;
-      flex-direction: column;
     }
     .tab-pane.active {
-      display: flex;
+      display: block;
     }
 
-    /* Browse (Gözat) Tab */
-    .pma-toolbar {
+    /* phpMyAdmin Toolbar & Pagination */
+    .toolbar-box {
+      background: #ffffff;
+      border: 1px solid var(--pma-border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 0.85rem;
-      background: var(--bg-panel);
-      padding: 0.6rem 1rem;
-      border-radius: 6px;
-      border: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 10px;
     }
-    .pagination-bar {
+    .pagination-controls {
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 4px;
     }
-    .btn-pma {
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: 0.75rem;
-      padding: 0.3rem 0.65rem;
-      border-radius: 4px;
+    .pagination-controls button, .btn-action {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
       cursor: pointer;
-      transition: all 0.15s;
+      font-weight: 600;
+      color: #334155;
     }
-    .btn-pma:hover:not(:disabled) {
-      border-color: var(--primary);
-      color: var(--primary);
+    .pagination-controls button:hover:not(:disabled), .btn-action:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
     }
-    .btn-pma:disabled {
+    .pagination-controls button:disabled {
       opacity: 0.4;
       cursor: not-allowed;
     }
-    .btn-pma-primary {
-      background: linear-gradient(135deg, #00d2ff 0%, #0088ff 100%);
-      border: none;
-      color: #0b0f17;
-      font-weight: 700;
-      padding: 0.4rem 1rem;
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-    .btn-pma-primary:hover {
-      filter: brightness(1.1);
+    .page-input {
+      width: 44px;
+      padding: 3px 4px;
+      text-align: center;
+      border: 1px solid #cbd5e1;
+      border-radius: 3px;
+      font-size: 12px;
     }
 
-    /* Data Grid Table */
-    .grid-container {
-      flex: 1;
-      overflow: auto;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg-panel);
+    /* Table Grid Styling */
+    .table-container {
+      background: #ffffff;
+      border: 1px solid var(--pma-border);
+      border-radius: 4px;
+      overflow-x: auto;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    table.pma-table {
+    table.pma-grid {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.82rem;
+      font-size: 12px;
       text-align: left;
     }
-    table.pma-table thead {
-      position: sticky;
-      top: 0;
-      background: #171d2b;
-      z-index: 10;
-    }
-    table.pma-table th {
-      padding: 0.6rem 0.85rem;
+    table.pma-grid th {
+      background: #e8eff6;
+      color: var(--pma-dark-blue);
+      border-bottom: 2px solid var(--pma-border);
+      border-right: 1px solid #e2e8f0;
+      padding: 7px 10px;
       font-weight: 700;
-      color: var(--primary);
-      border-bottom: 2px solid var(--border);
       white-space: nowrap;
-      font-family: var(--font-code);
       cursor: pointer;
+      user-select: none;
     }
-    table.pma-table th:hover {
-      background: rgba(0, 210, 255, 0.08);
+    table.pma-grid th:hover {
+      background: #d9e5f0;
     }
-    table.pma-table td {
-      padding: 0.55rem 0.85rem;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    table.pma-grid td {
+      border-bottom: 1px solid #edf2f7;
+      border-right: 1px solid #edf2f7;
+      padding: 6px 10px;
       white-space: nowrap;
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    table.pma-table tbody tr:hover {
-      background: rgba(0, 210, 255, 0.04);
+    table.pma-grid tr:nth-child(even) {
+      background: #fbfcfd;
+    }
+    table.pma-grid tr:hover {
+      background: #f1f6fa;
+    }
+    .btn-row-action {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 2px 4px;
+      border-radius: 2px;
+    }
+    .btn-row-action:hover {
+      background: #e2e8f0;
     }
 
-    /* Structure (Yapı) Tab */
-    .schema-card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin-bottom: 1.25rem;
-      overflow: hidden;
+    /* Cards & Forms */
+    .card-box {
+      background: #ffffff;
+      border: 1px solid var(--pma-border);
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
-    .schema-header {
-      background: #171d2b;
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--border);
+    .card-title {
+      font-size: 14px;
       font-weight: 700;
-      font-size: 0.88rem;
+      color: var(--pma-dark-blue);
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      border-bottom: 1px solid #edf2f7;
+      padding-bottom: 6px;
     }
-    .add-column-box {
-      padding: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      background: var(--bg-input);
-      border-top: 1px solid var(--border);
+    .form-group {
+      margin-bottom: 12px;
     }
-    .input-pma {
-      background: var(--bg-base);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 0.4rem 0.65rem;
-      font-size: 0.8rem;
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #334155;
+    }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
       border-radius: 4px;
-      outline: none;
+      font-size: 13px;
+      font-family: inherit;
     }
-    .input-pma:focus {
-      border-color: var(--primary);
+    .form-row {
+      display: flex;
+      gap: 12px;
+    }
+    .form-row > * {
+      flex: 1;
+    }
+    .btn-submit {
+      background: var(--pma-blue);
+      color: #ffffff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-submit:hover {
+      background: var(--pma-dark-blue);
+    }
+    .btn-danger {
+      background: var(--pma-danger);
+      color: #ffffff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-danger:hover {
+      background: #bd2130;
     }
 
-    /* SQL Query Tab */
-    .sql-container {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      gap: 0.85rem;
+    /* SQL Editor */
+    .sql-editor-container textarea {
+      width: 100%;
+      height: 140px;
+      font-family: var(--font-code);
+      font-size: 13px;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      resize: vertical;
+      background: #fafbfc;
     }
     .sql-snippets {
       display: flex;
-      gap: 0.4rem;
       flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+      margin-bottom: 12px;
     }
-    .sql-editor-box {
-      flex: 1;
-      min-height: 180px;
-      max-height: 45vh;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-      position: relative;
-    }
-    #sqlQuery {
-      width: 100%;
-      height: 100%;
-      background: #0f1420;
-      border: none;
-      outline: none;
-      color: #f1f5f9;
+    .sql-snippet-btn {
+      background: #edf2f7;
+      border: 1px solid #cbd5e1;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 3px;
+      cursor: pointer;
       font-family: var(--font-code);
-      font-size: 0.92rem;
-      line-height: 1.5;
-      padding: 0.85rem 1rem;
-      resize: none;
     }
-    .sql-footer {
+    .sql-snippet-btn:hover {
+      background: #e2e8f0;
+      border-color: #94a3b8;
+    }
+
+    /* SQL Query Telemetry Banner */
+    .telemetry-bar {
+      background: #e8f4fd;
+      border: 1px solid #b6d4fe;
+      color: #084298;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-top: 10px;
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-    }
-    .stats-card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 0.5rem 0.85rem;
+      gap: 16px;
       font-family: var(--font-code);
-      font-size: 0.75rem;
+    }
+
+    /* Documentation Code Boxes */
+    .doc-lang-tabs {
       display: flex;
-      gap: 1.25rem;
-      color: var(--text-muted);
+      gap: 4px;
+      border-bottom: 2px solid #cbd5e1;
+      margin-bottom: 12px;
     }
-    .stats-card b {
-      color: var(--primary);
+    .doc-lang-tab {
+      padding: 6px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      border-radius: 4px 4px 0 0;
+      background: #e2e8f0;
     }
-
-    /* Import & Export Cards */
-    .form-panel {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
+    .doc-lang-tab.active {
+      background: var(--pma-blue);
+      color: #ffffff;
+    }
+    .code-box {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 14px;
       border-radius: 6px;
-      padding: 1.5rem;
-      max-width: 650px;
+      font-family: var(--font-code);
+      font-size: 12px;
+      overflow-x: auto;
+      line-height: 1.5;
+      position: relative;
     }
-    .form-group {
-      margin-bottom: 1.25rem;
-    }
-    .form-label {
-      display: block;
-      font-weight: 700;
-      margin-bottom: 0.4rem;
-      color: #cbd5e1;
-    }
-    .form-help {
-      font-size: 0.74rem;
-      color: var(--text-muted);
-      margin-top: 0.3rem;
-    }
-
-    /* Operations (İşlemler) Cards */
-    .ops-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.25rem;
-    }
-    .ops-card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 1.25rem;
-    }
-    .ops-card h4 {
-      margin-bottom: 0.6rem;
-      font-size: 0.95rem;
+    .btn-copy-code {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(255,255,255,0.15);
       color: #fff;
+      border: none;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-copy-code:hover {
+      background: rgba(255,255,255,0.3);
     }
 
-    /* ============================================================== */
-    /* UNIVERSAL REAL-TIME PERCENTAGE PROGRESS BAR MODAL (%0 -> %100) */
-    /* ============================================================== */
-    .progress-modal-backdrop {
+    /* Notification Toast */
+    #toastMsg {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(11, 15, 23, 0.82);
-      backdrop-filter: blur(4px);
+      bottom: 20px;
+      right: 20px;
+      background: #1e293b;
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 13px;
       display: none;
       align-items: center;
-      justify-content: center;
-      z-index: 9999;
-    }
-    .progress-modal {
-      width: 480px;
-      background: #171d2c;
-      border: 1px solid var(--primary);
-      box-shadow: 0 10px 35px rgba(0, 210, 255, 0.25);
-      border-radius: 8px;
-      padding: 1.5rem;
-      user-select: none;
-    }
-    .progress-title {
-      font-weight: 700;
-      font-size: 0.95rem;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 0.85rem;
-    }
-    .progress-percentage {
-      font-family: var(--font-code);
-      font-size: 1.15rem;
-      font-weight: 800;
-      color: var(--primary);
-    }
-    .progress-track {
-      width: 100%;
-      height: 14px;
-      background: #0d121c;
-      border: 1px solid var(--border);
-      border-radius: 9999px;
-      overflow: hidden;
-      margin-bottom: 0.85rem;
-      position: relative;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #00d2ff 0%, #00ffaa 100%);
-      box-shadow: 0 0 12px rgba(0, 255, 170, 0.6);
-      border-radius: 9999px;
-      transition: width 0.15s ease-out;
-    }
-    .progress-details {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.76rem;
-      color: var(--text-muted);
-      font-family: var(--font-code);
-    }
-    .progress-status-text {
-      color: #94a3b8;
+      gap: 8px;
+      z-index: 10000;
     }
 
-    /* Modal for New Table */
-    .modal-backdrop {
+    /* Modal for New Table / Create Column */
+    .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(11, 15, 23, 0.75);
+      background: rgba(0,0,0,0.4);
       display: none;
       align-items: center;
       justify-content: center;
       z-index: 9000;
     }
-    .modal-box {
-      width: 440px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.5rem;
+    .modal-card {
+      background: #ffffff;
+      border-radius: 6px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      width: 480px;
+      max-width: 95%;
+      overflow: hidden;
     }
-    .modal-header {
+    .modal-head {
+      background: #eef3f7;
+      padding: 10px 16px;
       font-weight: 700;
-      font-size: 1rem;
-      margin-bottom: 1rem;
-      color: #fff;
+      font-size: 14px;
+      border-bottom: 1px solid var(--pma-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-body {
+      padding: 16px;
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Header / phpMyAdmin Bar -->
+  <!-- Top Slim Progress Bar -->
+  <div id="topProgressBar"></div>
+
+  <!-- phpMyAdmin Classic Header -->
   <header>
     <div class="brand-section">
-      <span class="brand-logo">🏹</span>
+      <img src="/logo.png" alt="MergenDB" class="brand-logo-img" onerror="this.style.display='none'">
       <span class="brand-title">MergenDB</span>
-      <span class="pma-badge">Studio (phpMyAdmin)</span>
+      <span class="pma-tag">phpMyAdmin Edition</span>
     </div>
 
-    <!-- Active Table Selector & Breadcrumb -->
+    <!-- Active Table Selector & Breadcrumbs -->
     <div class="header-center">
-      <span class="breadcrumb-item">🏠 Sunucu: <b>127.0.0.1:8765</b></span>
-      <span style="color: var(--border);">/</span>
-      <span class="breadcrumb-item">📄 Aktif Tablo:</span>
-      <select id="activeTableSelect" class="active-table-select" onchange="changeActiveTable(this.value)">
-        <option value="">(Tablo Seçilmedi)</option>
+      <span>🏠 <b>127.0.0.1</b></span>
+      <span>»</span>
+      <span>📁 mergendb</span>
+      <span>»</span>
+      <span>📄 Aktif Tablo:</span>
+      <select id="activeTableSelect" onchange="changeActiveTable(this.value)">
+        <option value="">(Tablo Seçin)</option>
       </select>
     </div>
 
     <div class="header-right">
-      <div class="status-pill">
+      <div class="status-badge">
         <div class="status-dot"></div>
-        <span id="serverInfoText">Çevrimiçi</span>
+        <span id="headerStatusText">v0.6.0 Çevrimiçi</span>
       </div>
-      <button class="btn-pma" onclick="switchTab('status')">🩺 Sunucu Durumu</button>
+      <button class="btn-icon" onclick="switchTab('status')">🩺 Sunucu</button>
+      <button class="btn-icon" onclick="switchTab('docs')">📚 Kılavuz (Docs)</button>
     </div>
   </header>
 
-  <!-- Main Container -->
-  <div class="main-container">
+  <!-- Main Application Wrapper -->
+  <div class="main-wrapper">
 
-    <!-- phpMyAdmin Sidebar: Local .mgdb Tables -->
+    <!-- Sidebar: Local .mgdb Table Tree -->
     <aside>
-      <div class="sidebar-actions">
-        <button class="btn-new-table" onclick="openNewTableModal()">
-          <span>➕</span> Yeni Tablo
-        </button>
-        <button class="btn-pma" onclick="loadTables()" title="Yenile">🔄</button>
+      <div class="sidebar-header">
+        <button class="btn-icon" onclick="openNewTableModal()">➕ Yeni Tablo</button>
+        <button class="btn-icon" onclick="loadTables()" title="Yenile">🔄</button>
       </div>
-      <div class="sidebar-search">
-        <input type="text" id="sidebarSearch" placeholder="Tabloları filtrele..." oninput="filterSidebarTables()">
+      <div class="sidebar-filter">
+        <input type="text" id="sidebarFilter" placeholder="Tabloları filtrele..." oninput="filterTables()">
       </div>
-      <div class="table-tree" id="sidebarTableList">
-        <!-- Tables loaded via JS -->
+      <div class="table-list" id="sidebarTableList">
+        <!-- Loaded via JavaScript -->
       </div>
     </aside>
 
-    <!-- phpMyAdmin Workspace -->
-    <div class="content-area">
+    <!-- Content Area & Navigation Tabs -->
+    <main class="content-area">
 
-      <!-- Navigation Tabs -->
+      <!-- Navigation Tabs (phpMyAdmin Standard) -->
       <nav class="pma-tabs">
         <div class="pma-tab active" data-tab="browse" onclick="switchTab('browse')">
           <span>👁️</span> Gözat (Browse)
         </div>
         <div class="pma-tab" data-tab="structure" onclick="switchTab('structure')">
-          <span>📋</span> Yapı / Şema (Structure)
+          <span>📋</span> Yapı (Structure)
         </div>
         <div class="pma-tab" data-tab="sql" onclick="switchTab('sql')">
           <span>🔍</span> SQL
         </div>
-        <div class="pma-tab" data-tab="import" onclick="switchTab('import')">
-          <span>📥</span> İçe Aktar (Import)
+        <div class="pma-tab" data-tab="search" onclick="switchTab('search')">
+          <span>🔎</span> Ara (Search)
+        </div>
+        <div class="pma-tab" data-tab="insert" onclick="switchTab('insert')">
+          <span>➕</span> Ekle (Insert)
         </div>
         <div class="pma-tab" data-tab="export" onclick="switchTab('export')">
           <span>📤</span> Dışa Aktar (Export)
+        </div>
+        <div class="pma-tab" data-tab="import" onclick="switchTab('import')">
+          <span>📥</span> İçe Aktar (Import)
         </div>
         <div class="pma-tab" data-tab="operations" onclick="switchTab('operations')">
           <span>⚙️</span> İşlemler (Operations)
         </div>
         <div class="pma-tab" data-tab="status" onclick="switchTab('status')">
-          <span>🩺</span> Sunucu (Status)
+          <span>🩺</span> Sunucu & Test
+        </div>
+        <div class="pma-tab" data-tab="docs" onclick="switchTab('docs')">
+          <span>📚</span> Kılavuz & Ekosistem
         </div>
       </nav>
 
-      <!-- Tab Contents -->
+      <!-- Tab Panes -->
       <div class="tab-content">
 
-        <!-- 1. BROWSE TAB -->
+        <!-- 1. GÖZAT (BROWSE) TAB -->
         <div class="tab-pane active" id="pane-browse">
-          <div class="pma-toolbar">
-            <div class="pagination-bar">
-              <button class="btn-pma" id="btnPageFirst" onclick="changePage(1)">« İlk</button>
-              <button class="btn-pma" id="btnPagePrev" onclick="changePage(currentPage - 1)">‹ Önceki</button>
-              <span id="pageInfoText" style="font-size: 0.8rem; margin: 0 0.4rem; color: var(--text-muted);">Sayfa 1</span>
-              <button class="btn-pma" id="btnPageNext" onclick="changePage(currentPage + 1)">Sonraki ›</button>
-              <button class="btn-pma" id="btnPageLast" onclick="changePage(totalPages)">Son »</button>
+          <div class="toolbar-box">
+            <div class="pagination-controls">
+              <button id="btnFirst" onclick="changePage(1)">« İlk</button>
+              <button id="btnPrev" onclick="changePage(currentPage - 1)">‹ Önceki</button>
+              <span style="font-size: 12px; margin: 0 4px;">Sayfa:</span>
+              <input type="number" id="pageNumberInput" class="page-input" value="1" min="1" onchange="changePage(parseInt(this.value))">
+              <span id="pageTotalText" style="font-size: 12px; color: #666;">/ 1</span>
+              <button id="btnNext" onclick="changePage(currentPage + 1)">Sonraki ›</button>
+              <button id="btnLast" onclick="changePage(totalPages)">Son »</button>
+
+              <span style="margin-left: 12px; font-size: 12px;">Satır:</span>
+              <select id="limitSelect" onchange="pageLimit = parseInt(this.value); changePage(1);" style="padding: 2px 4px; font-size: 12px;">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+              </select>
             </div>
-            <div id="browseMetaText" style="font-size: 0.8rem; color: var(--text-muted);">
+
+            <div id="browseInfoText" style="font-size: 12px; color: var(--pma-text-muted);">
               Tablo yükleniyor...
             </div>
+
             <div>
-              <button class="btn-pma" onclick="loadBrowseData()">🔄 Yenile</button>
+              <button class="btn-action" onclick="loadBrowseData()">🔄 Yenile</button>
             </div>
           </div>
-          <div class="grid-container" id="browseGridContainer">
-            <div style="padding: 3rem; text-align: center; color: var(--text-muted);">
-              Sol taraftan veya yukarıdan bir .mgdb tablosu seçin.
+
+          <div class="table-container" id="browseGridContainer">
+            <div style="padding: 3rem; text-align: center; color: #888;">
+              Sol taraftan bir .mgdb tablosu seçin veya yeni oluşturun.
             </div>
           </div>
         </div>
 
-        <!-- 2. STRUCTURE TAB -->
+        <!-- 2. YAPI (STRUCTURE) TAB -->
         <div class="tab-pane" id="pane-structure">
-          <div class="schema-card">
-            <div class="schema-header">
-              <span>Sütun Listesi & Veri Tipleri (<span id="structTableName">Tablo</span>)</span>
-              <span id="structTableRows" class="tree-badge">0 satır</span>
+          <div class="card-box">
+            <div class="card-title">
+              <span>Sütun Listesi & Şema Tanımı (<span id="structTableName">Tablo</span>)</span>
+              <span id="structTableInfo" style="font-size: 12px; font-weight: normal; color: #666;">0 blok • 0 satır</span>
             </div>
-            <div class="grid-container" style="border: none;">
-              <table class="pma-table" id="structureTable">
+            <div class="table-container" style="margin-bottom: 16px;">
+              <table class="pma-grid">
                 <thead>
                   <tr>
                     <th>#</th>
@@ -749,276 +756,526 @@ STUDIO_HTML = r"""<!DOCTYPE html>
                 <tbody id="structureTableBody"></tbody>
               </table>
             </div>
-            <!-- Add Column Box -->
-            <div class="add-column-box">
-              <span style="font-weight: 700; color: #fff;">➕ Sütun Ekle:</span>
-              <input type="text" id="newColName" class="input-pma" placeholder="Sütun Adı">
-              <select id="newColType" class="input-pma">
-                <option value="STRING">STRING (Metin)</option>
-                <option value="INT64">INT64 (Tamsayı)</option>
-                <option value="FLOAT64">FLOAT64 (Ondalıklı)</option>
-                <option value="BOOL">BOOL (Boolean)</option>
-                <option value="TIMESTAMP">TIMESTAMP (Zaman)</option>
-              </select>
-              <input type="text" id="newColDefault" class="input-pma" placeholder="Varsayılan Değer (Opsiyonel)">
-              <button class="btn-pma-primary" onclick="handleAddColumn()">Ekle</button>
+
+            <!-- Add Column Inline Form -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px;">
+              <h4 style="margin-bottom: 8px; font-size: 13px;">➕ Tabloya Yeni Sütun Ekle (ALTER TABLE ADD COLUMN)</h4>
+              <div class="form-row">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label>Sütun Adı</label>
+                  <input type="text" id="newColName" placeholder="örn: status, score, created_at">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label>Veri Tipi</label>
+                  <select id="newColType">
+                    <option value="STRING">STRING</option>
+                    <option value="INT64">INT64</option>
+                    <option value="FLOAT64">FLOAT64</option>
+                    <option value="BOOL">BOOL</option>
+                    <option value="TIMESTAMP">TIMESTAMP</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label>Varsayılan Değer (Opsiyonel)</label>
+                  <input type="text" id="newColDefault" placeholder="örn: ACTIVE, 0, true">
+                </div>
+                <div style="display: flex; align-items: flex-end;">
+                  <button class="btn-submit" onclick="handleAddColumn()">Sütun Ekle</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 3. SQL TAB -->
         <div class="tab-pane" id="pane-sql">
-          <div class="sql-container">
+          <div class="card-box">
+            <div class="card-title">
+              <span>SQL / MergenQL Sorgu Çalıştırıcı</span>
+              <span style="font-size: 11px; color: #888;">Kısayol: <b>Ctrl + Enter</b></span>
+            </div>
+
+            <div class="sql-editor-container">
+              <textarea id="sqlQueryText" placeholder="SELECT * FROM table LIMIT 25;"></textarea>
+            </div>
+
             <div class="sql-snippets">
-              <span style="align-self: center; font-size: 0.75rem; color: var(--text-muted); margin-right: 0.3rem;">Hazır Şablonlar:</span>
-              <button class="btn-pma" onclick="insertSql('SELECT * FROM \'{table}\' LIMIT 25;')">SELECT 25</button>
-              <button class="btn-pma" onclick="insertSql('SELECT COUNT(*) FROM \'{table}\';')">COUNT(*)</button>
-              <button class="btn-pma" onclick="insertSql('SELECT {col1}, COUNT(*), AVG({col2}) FROM \'{table}\' GROUP BY {col1} HAVING COUNT(*) >= 1;')">GROUP BY & HAVING</button>
-              <button class="btn-pma" onclick="insertSql('SELECT * FROM \'{table}\' WHERE {col1} LIKE \'%deger%\';')">Bloom / Substring Filter</button>
-              <button class="btn-pma" onclick="insertSql('SELECT a.*, b.* FROM \'{table}\' a INNER JOIN \'diger.mgdb\' b ON a.id = b.id LIMIT 25;')">Hash JOIN</button>
-              <button class="btn-pma" onclick="document.getElementById('sqlQuery').value = ''">Temizle</button>
+              <span style="font-size: 11px; color: #666; display: flex; align-items: center; margin-right: 4px;">Şablonlar:</span>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('SELECT *')">SELECT *</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('COUNT')">COUNT(*)</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('WHERE')">WHERE Filtre</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('GROUP_BY')">GROUP BY + HAVING</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('BLOOM')">Bloom Filter Lookup</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('JOIN')">Hash JOIN</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('UPDATE')">UPDATE</button>
+              <button class="sql-snippet-btn" onclick="setSqlSnippet('DELETE')">DELETE</button>
             </div>
-            <div class="sql-editor-box">
-              <textarea id="sqlQuery" spellcheck="false" placeholder="SQL veya MergenQL sorgunuzu buraya yazın...&#10;Örn: SELECT * FROM 'users.mgdb' WHERE status = 'active';"></textarea>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button class="btn-action" onclick="document.getElementById('sqlQueryText').value=''">Temizle</button>
+              <button class="btn-submit" onclick="runSqlQuery()">Git / Çalıştır (Execute)</button>
             </div>
-            <div class="sql-footer">
-              <div class="stats-card" id="sqlStatsBar">
-                <span>⚡ Süre: <b id="sqlStatTime">0.00 ms</b></span>
-                <span>📦 Dönen: <b id="sqlStatRows">0</b></span>
-                <span>🔍 Taranan Blok: <b id="sqlStatScanned">0</b></span>
-                <span>✨ Atlanan (Zero-I/O): <b id="sqlStatSkipped">0</b></span>
-                <span>💾 Okunan: <b id="sqlStatBytes">0 KB</b></span>
-              </div>
-              <button class="btn-pma-primary" onclick="executeSqlQuery()" id="btnRunSql">
-                <span>▶</span> Git / Çalıştır (Ctrl+Enter)
-              </button>
+
+            <!-- SQL Results Area -->
+            <div id="sqlExecutionTelemetry" style="display: none;" class="telemetry-bar">
+              <span>⏱️ Süre: <b id="sqlTime">0 ms</b></span>
+              <span>📊 Dönen Satır: <b id="sqlRowsCount">0</b></span>
+              <span>🔍 Taranan Blok: <b id="sqlBlocksScanned">0</b></span>
+              <span>⚡ Atlanan (ZoneMap/Bloom): <b id="sqlBlocksSkipped">0</b></span>
+              <span>💾 Okunan Bayt: <b id="sqlBytesRead">0 B</b></span>
             </div>
-            <div class="grid-container" id="sqlResultContainer">
-              <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
-                Sorgu çıktısı burada listelenecektir.
-              </div>
-            </div>
+
+            <div class="table-container" id="sqlResultContainer" style="margin-top: 12px; display: none;"></div>
           </div>
         </div>
 
-        <!-- 4. IMPORT TAB -->
-        <div class="tab-pane" id="pane-import">
-          <div class="form-panel">
-            <h3 style="color: #fff; margin-bottom: 1.25rem;">📥 Veritabanına İçe Aktar (Import)</h3>
-            <div class="form-group">
-              <label class="form-label">Hedef .mgdb Tablosu</label>
-              <input type="text" id="importTargetTable" class="input-pma" style="width: 100%;" placeholder="users.mgdb">
-              <div class="form-help">Verilerin aktarılacağı tablo. Yoksa otomatik oluşturulur.</div>
+        <!-- 4. ARA (SEARCH / FIND) TAB -->
+        <div class="tab-pane" id="pane-search">
+          <div class="card-box">
+            <div class="card-title">
+              <span>Tablo İçi Arama (CLI .search() & .find())</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">Kaynak Dosya Formatı</label>
-              <select id="importFormat" class="input-pma" style="width: 100%;">
-                <option value="csv">CSV (Virgülle Ayrılmış Metin)</option>
-                <option value="sql">SQL Dump (INSERT ifadeleri)</option>
-                <option value="json">JSON / JSON Lines (.jsonl)</option>
-              </select>
+
+            <!-- Full-text search across all columns -->
+            <div style="margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px;">
+              <h4 style="margin-bottom: 6px; font-size: 13px;">🔍 1. Genel Metin Araması (Tüm Sütunlarda Alt Dize / LIKE)</h4>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="fulltextSearchInput" placeholder="Aramak istediğiniz metni veya ID'yi girin..." style="flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px;">
+                <button class="btn-submit" onclick="executeSearchFullText()">Hemen Ara</button>
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">Bilgisayardan Dosya Seç</label>
-              <input type="file" id="importFileInput" class="input-pma" style="width: 100%; padding: 0.5rem;" accept=".csv,.sql,.json,.jsonl">
-              <div class="form-help">Tarayıcı üzerinden dosya yükleyin.</div>
+
+            <!-- Column-wise filter search -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px;">
+              <h4 style="margin-bottom: 8px; font-size: 13px;">🎯 2. Sütuna Göre Kesin Eşleşme (CLI .find() Karşılığı)</h4>
+              <div id="columnFiltersContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px;">
+                <!-- Generated dynamically from schema -->
+              </div>
+              <button class="btn-submit" onclick="executeSearchColumns()">Kriterlere Göre Filtrele</button>
             </div>
-            <div class="form-group">
-              <label class="form-label">VEYA Sunucudaki Dosya Yolu</label>
-              <input type="text" id="importFilePath" class="input-pma" style="width: 100%;" placeholder="C:/veriler/data.csv">
-            </div>
-            <button class="btn-pma-primary" onclick="handleImportSubmit()">
-              <span>🚀</span> İçe Aktarmayı Başlat
-            </button>
+
+            <!-- Search Results Table -->
+            <div class="table-container" id="searchResultContainer" style="margin-top: 16px; display: none;"></div>
           </div>
         </div>
 
-        <!-- 5. EXPORT TAB -->
+        <!-- 5. EKLE (INSERT) TAB -->
+        <div class="tab-pane" id="pane-insert">
+          <div class="card-box">
+            <div class="card-title">
+              <span>Yeni Satır Ekle (INSERT INTO <span id="insertTableName">Tablo</span>)</span>
+            </div>
+            <p style="font-size: 12px; color: #666; margin-bottom: 14px;">Aktif tablonun şemasına göre sütun değerlerini girin ve doğrudan veritabanına kaydedin.</p>
+            <form id="insertRowForm" onsubmit="handleInsertRow(event)">
+              <div id="insertFieldsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px;">
+                <!-- Generated dynamically -->
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <button type="submit" class="btn-submit">💾 Satırı Kaydet</button>
+                <button type="button" class="btn-action" onclick="document.getElementById('insertRowForm').reset()">Temizle</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 6. DIŞA AKTAR (EXPORT) TAB -->
         <div class="tab-pane" id="pane-export">
-          <div class="form-panel">
-            <h3 style="color: #fff; margin-bottom: 1.25rem;">📤 Tabloyu Dışa Aktar (Export)</h3>
-            <div class="form-group">
-              <label class="form-label">Dışa Aktarılacak Tablo</label>
-              <input type="text" id="exportTargetTable" class="input-pma" style="width: 100%;" readonly>
+          <div class="card-box">
+            <div class="card-title">
+              <span>Veri Dışa Aktar (EXPORT)</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">Çıktı Formatı</label>
-              <select id="exportFormat" class="input-pma" style="width: 100%;">
-                <option value="csv">CSV (Comma-Separated Values)</option>
-                <option value="json">JSON Array (Formatlı Nesneler)</option>
-                <option value="jsonl">JSON Lines (.jsonl Akış Formatı)</option>
-                <option value="sql">SQL Dump (Standart INSERT İfadeleri)</option>
-              </select>
-            </div>
-            <button class="btn-pma-primary" onclick="handleExportSubmit()">
-              <span>⬇</span> Dışa Aktar ve İndir
-            </button>
-          </div>
-        </div>
-
-        <!-- 6. OPERATIONS TAB -->
-        <div class="tab-pane" id="pane-operations">
-          <div class="ops-grid">
-            <div class="ops-card">
-              <h4>✏️ Tabloyu Yeniden Adlandır</h4>
+            <p style="font-size: 12px; color: #666; margin-bottom: 14px;">Seçilen tablonun verilerini anında tarayıcınız üzerinden indirin.</p>
+            <div class="form-row" style="max-width: 500px; margin-bottom: 16px;">
               <div class="form-group">
-                <label class="form-label">Yeni Tablo Adı</label>
-                <input type="text" id="opsRenameNew" class="input-pma" style="width: 100%;" placeholder="yeni_tablo.mgdb">
+                <label>Hedef Tablo</label>
+                <input type="text" id="exportTargetTable" readonly style="background: #eef3f7; font-weight: 600;">
               </div>
-              <button class="btn-pma" onclick="handleRenameTable()">Yeniden Adlandır</button>
+              <div class="form-group">
+                <label>Format</label>
+                <select id="exportFormatSelect">
+                  <option value="csv">CSV (Virgülle Ayrılmış Değerler)</option>
+                  <option value="json">JSON (Array of Objects)</option>
+                  <option value="jsonl">JSON Lines (.jsonl)</option>
+                  <option value="sql">SQL Dump (INSERT INTO ifadeleri)</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn-submit" onclick="executeExportDownload()">📥 Doğrudan İndir (Export)</button>
+          </div>
+        </div>
+
+        <!-- 7. İÇE AKTAR (IMPORT) TAB -->
+        <div class="tab-pane" id="pane-import">
+          <div class="card-box">
+            <div class="card-title">
+              <span>Veri İçe Aktar (IMPORT)</span>
+            </div>
+            <p style="font-size: 12px; color: #666; margin-bottom: 14px;">Harici dosyaları (.csv, .sql, .json) veya ham metni doğrudan sütunsal .mgdb tablosuna aktarın.</p>
+            <div class="form-row" style="max-width: 600px; margin-bottom: 14px;">
+              <div class="form-group">
+                <label>Hedef Tablo Adı</label>
+                <input type="text" id="importTargetTable">
+              </div>
+              <div class="form-group">
+                <label>Format</label>
+                <select id="importFormatSelect">
+                  <option value="csv">CSV (.csv)</option>
+                  <option value="sql">SQL Dump (.sql)</option>
+                  <option value="json">JSON / JSONL (.json, .jsonl)</option>
+                </select>
+              </div>
             </div>
 
-            <div class="ops-card">
-              <h4>🧹 Tabloyu Boşalt (Truncate)</h4>
-              <p style="color: var(--text-muted); font-size: 0.78rem; margin-bottom: 1rem;">
-                Tablodaki tüm satırları siler, ancak tablo şemasını ve sütun tanımlarını korur.
-              </p>
-              <button class="btn-pma" style="border-color: var(--warning); color: var(--warning);" onclick="handleTruncateTable()">Tabloyu Boşalt (TRUNCATE)</button>
+            <div class="form-group">
+              <label>Dosyadan Seç</label>
+              <input type="file" id="importFileInput" accept=".csv,.sql,.json,.jsonl" style="background: #fff;">
             </div>
 
-            <div class="ops-card">
-              <h4>🗑️ Tabloyu Sil (Drop)</h4>
-              <p style="color: var(--text-muted); font-size: 0.78rem; margin-bottom: 1rem;">
-                Tabloyu ve diskteki .mgdb dosyasını kalıcı olarak siler. Bu işlem geri alınamaz!
-              </p>
-              <button class="btn-pma" style="border-color: var(--danger); color: var(--danger);" onclick="handleDropTable()">Tabloyu Kaldır (DROP)</button>
+            <div class="form-group">
+              <label>Veya Metin Yapıştır (Opsiyonel)</label>
+              <textarea id="importContentText" style="height: 100px; font-family: var(--font-code); font-size: 12px;" placeholder="id,name,age..."></textarea>
+            </div>
+
+            <button class="btn-submit" onclick="executeImportData()">📤 İçe Aktarmayı Başlat</button>
+            <div id="importResultStatus" style="margin-top: 12px; font-size: 12px; font-weight: 600;"></div>
+          </div>
+        </div>
+
+        <!-- 8. İŞLEMLER (OPERATIONS) TAB -->
+        <div class="tab-pane" id="pane-operations">
+          <div class="card-box">
+            <div class="card-title">
+              <span>Tablo İşlemleri (<span id="opTableName">Tablo</span>)</span>
+            </div>
+
+            <!-- Rename Table -->
+            <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #edf2f7;">
+              <h4 style="font-size: 13px; margin-bottom: 6px;">✏️ Tabloyu Yeniden Adlandır (RENAME TABLE)</h4>
+              <div style="display: flex; gap: 8px; max-width: 450px;">
+                <input type="text" id="opNewTableName" placeholder="Yeni tablo adı (örn: users_v2)">
+                <button class="btn-action" onclick="handleRenameTable()">Yeniden Adlandır</button>
+              </div>
+            </div>
+
+            <!-- Truncate Table -->
+            <div style="margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #edf2f7;">
+              <h4 style="font-size: 13px; margin-bottom: 6px; color: #b45309;">⚠️ Tabloyu Boşalt (TRUNCATE TABLE)</h4>
+              <p style="font-size: 12px; color: #666; margin-bottom: 8px;">Tablodaki tüm satırları sıfırlar ancak sütun şemasını ve tanımları korur.</p>
+              <button class="btn-action" style="color: #b45309; border-color: #f59e0b;" onclick="handleTruncateTable()">Tabloyu Boşalt (Truncate)</button>
+            </div>
+
+            <!-- Drop Table -->
+            <div>
+              <h4 style="font-size: 13px; margin-bottom: 6px; color: var(--pma-danger);">🗑️ Tabloyu Kalıcı Olarak Sil (DROP TABLE)</h4>
+              <p style="font-size: 12px; color: #666; margin-bottom: 8px;">Tabloyu ve diskteki tüm veri bloklarını kalıcı olarak siler.</p>
+              <button class="btn-danger" onclick="handleDropTable()">Tabloyu Tamamen Sil (Drop)</button>
             </div>
           </div>
         </div>
 
-        <!-- 7. STATUS TAB -->
+        <!-- 9. SUNUCU & TEST (STATUS) TAB -->
         <div class="tab-pane" id="pane-status">
-          <div class="form-panel" style="max-width: 750px;">
-            <h3 style="color: #fff; margin-bottom: 1.25rem;">🩺 Sunucu & Donanım Teşhis Bilgileri</h3>
-            <table class="pma-table">
-              <tbody id="serverMetricsBody">
-                <tr><td>İşletim Sistemi</td><td id="statOs">-</td></tr>
-                <tr><td>İşlemci Modeli</td><td id="statCpu">-</td></tr>
-                <tr><td>Sistem Belleği (RAM)</td><td id="statRam">-</td></tr>
-                <tr><td>Motor Sürümü</td><td id="statVersion">v0.5.9</td></tr>
-                <tr><td>Çalışma Dizini</td><td id="statDir">-</td></tr>
-                <tr><td>Toplam Tablo Sayısı</td><td id="statTablesCount">-</td></tr>
-                <tr><td>Toplam Disk Kullanımı</td><td id="statDiskBytes">-</td></tr>
-              </tbody>
-            </table>
+          <div class="card-box">
+            <div class="card-title">
+              <span>Sistem Bilgileri & Canlı Donanım Hız Testi (Profiler)</span>
+              <button class="btn-submit" onclick="runLiveHardwareBenchmark()">🚀 Canlı Hız Testi Başlat (Benchmark)</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px;">
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
+                <div style="font-size: 11px; color: #666;">İşlemci (CPU)</div>
+                <div id="statCpu" style="font-size: 13px; font-weight: 700; color: #1e293b; margin-top: 2px;">Algılanıyor...</div>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
+                <div style="font-size: 11px; color: #666;">Sistem Belleği (RAM)</div>
+                <div id="statRam" style="font-size: 13px; font-weight: 700; color: #1e293b; margin-top: 2px;">Algılanıyor...</div>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
+                <div style="font-size: 11px; color: #666;">İşletim Sistemi</div>
+                <div id="statOs" style="font-size: 13px; font-weight: 700; color: #1e293b; margin-top: 2px;">Algılanıyor...</div>
+              </div>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px;">
+                <div style="font-size: 11px; color: #666;">Motor Sürümü</div>
+                <div id="statVer" style="font-size: 13px; font-weight: 700; color: var(--pma-blue); margin-top: 2px;">v0.6.0</div>
+              </div>
+            </div>
+
+            <!-- Live Benchmark Results Area -->
+            <div id="liveBenchCard" style="display: none; background: #eef6fc; border: 1px solid #bce0fd; border-radius: 6px; padding: 16px;">
+              <h4 style="color: #0369a1; margin-bottom: 12px; font-size: 14px;">⚡ Bu Cihaz Üzerinde Ölçülen Hızlar:</h4>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px;">
+                <div style="background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                  <span style="font-size: 11px; color: #666;">Sıralı Veri Yazma (Append)</span>
+                  <div id="benchIngest" style="font-size: 16px; font-weight: 800; color: #0284c7;">-</div>
+                </div>
+                <div style="background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                  <span style="font-size: 11px; color: #666;">CSV / SQL Akış İçe Aktarma</span>
+                  <div id="benchImport" style="font-size: 16px; font-weight: 800; color: #0284c7;">-</div>
+                </div>
+                <div style="background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                  <span style="font-size: 11px; color: #666;">Dışa Aktarma (Export)</span>
+                  <div id="benchExport" style="font-size: 16px; font-weight: 800; color: #0284c7;">-</div>
+                </div>
+                <div style="background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                  <span style="font-size: 11px; color: #666;">Analitik Sütun Taraması (Scan)</span>
+                  <div id="benchScan" style="font-size: 16px; font-weight: 800; color: #16a34a;">-</div>
+                </div>
+              </div>
+              <div style="font-size: 12px; color: #334155; line-height: 1.4;">
+                <b>Performans Katmanı:</b> <span id="benchTier">-</span><br>
+                <b>Önerilen Blok Boyutu:</b> <span id="benchBlock">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 10. KILAVUZ & EKOSİSTEM (DOCS & LANGUAGES) TAB -->
+        <div class="tab-pane" id="pane-docs">
+          <div class="card-box">
+            <div class="card-title">
+              <span>Desteklenen Diller & Ekosistem Kullanım Kılavuzu</span>
+            </div>
+            <p style="font-size: 12px; color: #666; margin-bottom: 16px;">
+              MergenDB, sıfır dış bağımlılıkla Python, Node.js / TypeScript, Shell CLI ve REST API üzerinden %100 fonksiyon desteği sunar.
+            </p>
+
+            <div class="doc-lang-tabs">
+              <div class="doc-lang-tab active" data-lang="python" onclick="switchDocLang('python')">🐍 Python API</div>
+              <div class="doc-lang-tab" data-lang="nodejs" onclick="switchDocLang('nodejs')">⚡ Node.js / TypeScript</div>
+              <div class="doc-lang-tab" data-lang="cli" onclick="switchDocLang('cli')">💻 Mergen CLI</div>
+              <div class="doc-lang-tab" data-lang="rest" onclick="switchDocLang('rest')">🌐 HTTP / REST (cURL)</div>
+            </div>
+
+            <!-- Python Docs -->
+            <div id="doc-pane-python" class="doc-pane">
+              <div class="code-box">
+                <button class="btn-copy-code" onclick="copySnippet('pythonSnippet')">Kopyala</button>
+<pre id="pythonSnippet"># Kurulum: pip install --upgrade mergendb
+import mergendb
+
+# 1. Bağlantı kur veya tablo aç (Yoksa otomatik oluşturulur)
+db = mergendb.connect("users.mgdb")
+
+# 2. Satır Ekleme (Şema otomatik algılanır)
+db.insert([
+    {"id": 1, "name": "Alice", "role": "admin", "score": 95.5, "active": True},
+    {"id": 2, "name": "Bob", "role": "developer", "score": 88.0, "active": True},
+])
+
+# 3. Hızlı Arama & Filtreleme (Boilerplate yok)
+admins = db.find(role="admin", active=True)
+alice = db.find_one(name="Alice")
+matches = db.search("admin")  # Tüm metin sütunlarında LIKE araması
+
+# 4. Standart Analitik SQL
+res = db.sql("SELECT role, COUNT(*), AVG(score) FROM users GROUP BY role HAVING COUNT(*) > 0")
+res.show() # ASCII tablo çıktısı
+
+# 5. Güncelleme & Silme
+db.update({"score": 99.0}, where="name = 'Alice'")
+db.delete(where="active = False")
+
+# 6. Dışa ve İçe Aktarma
+db.export_csv("users.csv")
+mergendb.from_csv("users.csv", "users_backup.mgdb")
+
+# 7. Donanım Hız Testi
+mergendb.benchmark()</pre>
+              </div>
+            </div>
+
+            <!-- Node.js / TypeScript Docs -->
+            <div id="doc-pane-nodejs" class="doc-pane" style="display: none;">
+              <div class="code-box">
+                <button class="btn-copy-code" onclick="copySnippet('nodejsSnippet')">Kopyala</button>
+<pre id="nodejsSnippet">// Kurulum: npm install mergendb
+// 0 Dış Bağımlılık - Node.js yerleşik HTTP/HTTPS üzerinde çalışır
+const { connect } = require('mergendb');
+// veya TypeScript: import { connect } from 'mergendb';
+
+async function main() {
+  const db = connect('http://localhost:8765');
+
+  // 1. Bağlantı Sağlık Kontrolü & Donanım Hız Testi
+  const isHealthy = await db.ping();
+  const benchmark = await db.benchmark();
+
+  // 2. Tablo İşleyicisi
+  const users = db.table('users.mgdb');
+
+  // 3. Satır Ekleme (Direct Object Insert)
+  await users.insert([
+    { id: 1, name: 'Alice', role: 'admin', score: 95.5, active: true },
+    { id: 2, name: 'Bob', role: 'developer', score: 88.0, active: true }
+  ]);
+
+  // 4. Doküman Tarzı Filtreleme & Arama
+  const admins = await users.find({ role: 'admin', active: true });
+  const single = await users.findOne({ id: 1 });
+  const searchResults = await users.search('admin'); // Full-text substring search
+
+  // 5. Parametreli Güvenli SQL (Tagged Template Literal)
+  const targetRole = 'admin';
+  const sqlRes = await db.sql`SELECT * FROM users WHERE role = ${targetRole}`;
+  console.table(sqlRes.rows);
+
+  // 6. Güncelleme, Silme ve Şema Değişiklikleri
+  await users.update({ score: 99.5 }, "name = 'Alice'");
+  await users.delete("score < 50");
+  await users.addColumn('country', 'STRING', 'TR');
+  await users.renameColumn('country', 'nation');
+
+  // 7. Dışa Aktarma
+  const csvData = await users.export('csv');
+}
+
+main().catch(console.error);</pre>
+              </div>
+            </div>
+
+            <!-- CLI Docs -->
+            <div id="doc-pane-cli" class="doc-pane" style="display: none;">
+              <div class="code-box">
+                <button class="btn-copy-code" onclick="copySnippet('cliSnippet')">Kopyala</button>
+<pre id="cliSnippet"># 1. Mergen Studio & REST Sunucusunu Başlatma
+mergen serve
+mergen serve 8765
+
+# 2. Canlı Donanım ve Hız Testi
+mergen test
+mergen benchmark
+
+# 3. Tekil SQL Sorgusu Çalıştırma (REPL'e girmeden)
+mergen query "SELECT * FROM users WHERE role = 'admin';"
+
+# 4. Kabuk Otomatik Tamamlama (Completions)
+mergen completions bash >> ~/.bashrc
+mergen completions powershell >> $PROFILE
+
+# 5. Etkileşimli Terminal REPL
+mergen users.mgdb
+mergen> SELECT role, COUNT(*) FROM users GROUP BY role;
+mergen> EXPORT users TO csv users.csv;
+mergen> IMPORT users csv new_data.csv;</pre>
+              </div>
+            </div>
+
+            <!-- REST Docs -->
+            <div id="doc-pane-rest" class="doc-pane" style="display: none;">
+              <div class="code-box">
+                <button class="btn-copy-code" onclick="copySnippet('restSnippet')">Kopyala</button>
+<pre id="restSnippet"># 1. SQL Sorgusu Gönderme (POST /query)
+curl -X POST http://localhost:8765/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT * FROM users.mgdb WHERE score > 80;"}'
+
+# 2. Tablo Listesi & Blok İstatistikleri (GET /tables)
+curl http://localhost:8765/tables
+
+# 3. Sayfalı Veri Okuma (GET /table_data)
+curl "http://localhost:8765/table_data?table=users.mgdb&page=1&limit=50"
+
+# 4. Doğrudan CSV/JSON Dışa Aktarma (GET /export)
+curl "http://localhost:8765/export?table=users.mgdb&format=csv" -o users.csv
+
+# 5. Satır Ekleme (POST /operation)
+curl -X POST http://localhost:8765/operation \
+  -H "Content-Type: application/json" \
+  -d '{"op": "insert", "table": "users.mgdb", "row": {"id": 3, "name": "Charlie", "score": 91.0}}'</pre>
+              </div>
+            </div>
+
           </div>
         </div>
 
       </div>
-    </div>
+    </main>
   </div>
 
-  <!-- ============================================================== -->
-  <!-- UNIVERSAL REAL-TIME PERCENTAGE PROGRESS BAR MODAL (%0 -> %100) -->
-  <!-- ============================================================== -->
-  <div class="progress-modal-backdrop" id="progressModal">
-    <div class="progress-modal">
-      <div class="progress-title">
-        <span id="progTitle">İşlem Yürütülüyor...</span>
-        <span class="progress-percentage" id="progPercent">0.0%</span>
-      </div>
-      <div class="progress-track">
-        <div class="progress-bar-fill" id="progFill"></div>
-      </div>
-      <div class="progress-details">
-        <span class="progress-status-text" id="progStatus">Bağlanılıyor...</span>
-        <span id="progSpeed">~0 satır/sn</span>
-        <span id="progEta">ETA: --</span>
-      </div>
-    </div>
-  </div>
+  <!-- Toast Notification -->
+  <div id="toastMsg">✓ İşlem tamamlandı</div>
 
   <!-- New Table Modal -->
-  <div class="modal-backdrop" id="newTableModal">
-    <div class="modal-box">
-      <div class="modal-header">➕ Yeni .mgdb Tablosu Oluştur</div>
-      <div class="form-group">
-        <label class="form-label">Tablo Adı</label>
-        <input type="text" id="modalNewTableName" class="input-pma" style="width: 100%;" placeholder="musteriler.mgdb">
+  <div class="modal-overlay" id="newTableModal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>➕ Yeni .mgdb Tablosu Oluştur</span>
+        <button class="btn-icon" onclick="closeNewTableModal()">✕</button>
       </div>
-      <div class="form-group">
-        <label class="form-label">İlk Sütun Tanımları</label>
-        <div class="form-help" style="margin-bottom: 0.5rem;">Örn: id:INT64, isim:STRING, bakiye:FLOAT64</div>
-        <input type="text" id="modalNewTableCols" class="input-pma" style="width: 100%;" value="id:INT64, name:STRING, created_at:TIMESTAMP">
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
-        <button class="btn-pma" onclick="closeNewTableModal()">İptal</button>
-        <button class="btn-pma-primary" onclick="handleCreateNewTable()">Oluştur</button>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Tablo Adı</label>
+          <input type="text" id="modalNewTableName" placeholder="örn: orders, sensors, customers">
+        </div>
+        <div class="form-group">
+          <label>İlk Sütun Tanımı</label>
+          <div class="form-row">
+            <input type="text" id="modalColName1" value="id" placeholder="Sütun Adı">
+            <select id="modalColType1">
+              <option value="INT64">INT64</option>
+              <option value="STRING">STRING</option>
+              <option value="FLOAT64">FLOAT64</option>
+              <option value="BOOL">BOOL</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>İkinci Sütun Tanımı</label>
+          <div class="form-row">
+            <input type="text" id="modalColName2" value="name" placeholder="Sütun Adı">
+            <select id="modalColType2">
+              <option value="STRING">STRING</option>
+              <option value="INT64">INT64</option>
+              <option value="FLOAT64">FLOAT64</option>
+              <option value="BOOL">BOOL</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+          <button class="btn-action" onclick="closeNewTableModal()">İptal</button>
+          <button class="btn-submit" onclick="submitCreateNewTable()">Tabloyu Oluştur</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
-    // Global Application State
+    // State
+    let activeTable = '';
     let tablesList = [];
-    let activeTable = null;
     let currentPage = 1;
-    const pageLimit = 50;
+    let pageLimit = 50;
     let totalRows = 0;
     let totalPages = 1;
-    let activeTabName = 'browse';
+    let currentSchema = [];
+    let sortColumn = '';
+    let sortDirection = 'asc';
 
-    // Universal Progress Controller
-    let progressTimer = null;
-    function showProgress(title, estimatedSpeed = 240000) {
-      const modal = document.getElementById('progressModal');
-      const fill = document.getElementById('progFill');
-      const pct = document.getElementById('progPercent');
-      const titleEl = document.getElementById('progTitle');
-      const statusEl = document.getElementById('progStatus');
-      const speedEl = document.getElementById('progSpeed');
-      const etaEl = document.getElementById('progEta');
-
-      titleEl.textContent = title;
-      fill.style.width = '0%';
-      pct.textContent = '0.0%';
-      statusEl.textContent = 'İşlem başlatılıyor...';
-      speedEl.textContent = `~${estimatedSpeed.toLocaleString()} satır/sn`;
-      etaEl.textContent = 'ETA: Hesaplanıyor';
-      modal.style.display = 'flex';
-
-      let currentPct = 5.0;
-      let start = performance.now();
-
-      clearInterval(progressTimer);
-      progressTimer = setInterval(() => {
-        if (currentPct < 92) {
-          currentPct += Math.random() * 9.5;
-          if (currentPct > 92) currentPct = 92;
-        }
-        fill.style.width = currentPct.toFixed(1) + '%';
-        pct.textContent = currentPct.toFixed(1) + '%';
-
-        if (currentPct < 30) {
-          statusEl.textContent = 'Bloklar ve şema taranıyor...';
-        } else if (currentPct < 70) {
-          statusEl.textContent = 'Sütunsal veri işleniyor & bitmask uygulanıyor...';
-        } else {
-          statusEl.textContent = 'Sonuç veri seti derleniyor...';
-        }
-
-        const elapsed = (performance.now() - start) / 1000;
-        const remaining = Math.max(0.1, (100 - currentPct) / (currentPct / (elapsed || 0.1))).toFixed(1);
-        etaEl.textContent = `ETA: ${remaining}s`;
-      }, 70);
+    // Top progress bar (non-blocking, fast)
+    function startProgress() {
+      const p = document.getElementById('topProgressBar');
+      p.style.display = 'block';
+      p.style.width = '30%';
+    }
+    function endProgress() {
+      const p = document.getElementById('topProgressBar');
+      p.style.width = '100%';
+      setTimeout(() => {
+        p.style.display = 'none';
+        p.style.width = '0%';
+      }, 150);
     }
 
-    function finishProgress(callback) {
-      clearInterval(progressTimer);
-      const fill = document.getElementById('progFill');
-      const pct = document.getElementById('progPercent');
-      const statusEl = document.getElementById('progStatus');
-      const etaEl = document.getElementById('progEta');
+    function showToast(msg) {
+      const t = document.getElementById('toastMsg');
+      t.textContent = msg;
+      t.style.display = 'flex';
+      setTimeout(() => { t.style.display = 'none'; }, 2500);
+    }
 
-      fill.style.width = '100%';
-      pct.textContent = '100.0%';
-      statusEl.textContent = 'Tamamlandı!';
-      etaEl.textContent = 'Bitti';
-
-      setTimeout(() => {
-        document.getElementById('progressModal').style.display = 'none';
-        if (callback) callback();
-      }, 180);
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '<i style="color:#aaa">NULL</i>';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     // Init App
@@ -1027,17 +1284,16 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       loadTables();
 
       // Keyboard Shortcut Ctrl+Enter for SQL
-      document.getElementById('sqlQuery').addEventListener('keydown', (e) => {
+      document.getElementById('sqlQueryText').addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
-          executeSqlQuery();
+          runSqlQuery();
         }
       });
     });
 
     // Tab Switching
     function switchTab(tabId) {
-      activeTabName = tabId;
       document.querySelectorAll('.pma-tab').forEach(t => {
         t.classList.toggle('active', t.dataset.tab === tabId);
       });
@@ -1049,462 +1305,831 @@ STUDIO_HTML = r"""<!DOCTYPE html>
         loadBrowseData();
       } else if (tabId === 'structure') {
         loadStructureData();
+      } else if (tabId === 'search') {
+        renderSearchInputs();
+      } else if (tabId === 'insert') {
+        renderInsertInputs();
       } else if (tabId === 'export') {
-        document.getElementById('exportTargetTable').value = activeTable || '';
+        document.getElementById('exportTargetTable').value = activeTable;
       } else if (tabId === 'import') {
-        document.getElementById('importTargetTable').value = activeTable || '';
+        document.getElementById('importTargetTable').value = activeTable ? activeTable.replace(/\.mgdb$/, '') : '';
+      } else if (tabId === 'operations') {
+        document.getElementById('opTableName').textContent = activeTable || '(Seçilmedi)';
       } else if (tabId === 'status') {
         loadServerStatus();
       }
     }
 
-    // Load Tables List
+    // Load Tables
     async function loadTables() {
+      startProgress();
       try {
         const res = await fetch('/tables');
         const data = await res.json();
         tablesList = data.tables || [];
-        renderSidebarTables(tablesList);
-        updateActiveTableSelect();
+        renderSidebar();
+        updateActiveTableDropdown();
 
-        // If no active table selected, pick the first one
         if (!activeTable && tablesList.length > 0) {
           setActiveTable(tablesList[0].table);
         }
       } catch (err) {
-        console.error('Failed to load tables:', err);
+        console.error('Error loading tables:', err);
+      } finally {
+        endProgress();
       }
     }
 
-    function renderSidebarTables(tables) {
+    function renderSidebar() {
       const container = document.getElementById('sidebarTableList');
-      if (tables.length === 0) {
-        container.innerHTML = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted);">Dizinde .mgdb tablosu bulunamadı.</div>`;
+      if (tablesList.length === 0) {
+        container.innerHTML = `<div style="padding: 1rem; color: #888; text-align: center;">Tablo bulunamadı.</div>`;
         return;
       }
-
-      container.innerHTML = tables.map(t => {
-        const isActive = activeTable === t.table;
-        return `
-          <div class="tree-item ${isActive ? 'active' : ''}" onclick="setActiveTable('${t.table}')">
-            <div class="tree-name" title="${t.table}">
-              <span>📄</span>
-              <span>${t.table}</span>
-            </div>
-            <div class="tree-actions">
-              <span class="tree-badge">${Number(t.rows).toLocaleString()}</span>
-              <button class="tree-btn" onclick="event.stopPropagation(); setActiveTable('${t.table}'); switchTab('browse');" title="Gözat">👁️</button>
-              <button class="tree-btn" onclick="event.stopPropagation(); setActiveTable('${t.table}'); switchTab('structure');" title="Yapı">📋</button>
-            </div>
+      container.innerHTML = tablesList.map(t => `
+        <div class="table-node ${activeTable === t.table ? 'active' : ''}" onclick="setActiveTable('${t.table}')">
+          <div class="table-node-name" title="${t.table}">
+            <span>📄</span>
+            <span>${t.table}</span>
           </div>
-        `;
-      }).join('');
+          <span class="table-row-count">${Number(t.rows).toLocaleString()}</span>
+        </div>
+      `).join('');
     }
 
-    function filterSidebarTables() {
-      const q = document.getElementById('sidebarSearch').value.toLowerCase();
+    function filterTables() {
+      const q = document.getElementById('sidebarFilter').value.toLowerCase();
       const filtered = tablesList.filter(t => t.table.toLowerCase().includes(q));
-      renderSidebarTables(filtered);
+      const container = document.getElementById('sidebarTableList');
+      container.innerHTML = filtered.map(t => `
+        <div class="table-node ${activeTable === t.table ? 'active' : ''}" onclick="setActiveTable('${t.table}')">
+          <div class="table-node-name">
+            <span>📄</span>
+            <span>${t.table}</span>
+          </div>
+          <span class="table-row-count">${Number(t.rows).toLocaleString()}</span>
+        </div>
+      `).join('');
     }
 
-    function updateActiveTableSelect() {
+    function updateActiveTableDropdown() {
       const sel = document.getElementById('activeTableSelect');
-      sel.innerHTML = tablesList.map(t => `<option value="${t.table}" ${t.table === activeTable ? 'selected' : ''}>${t.table} (${Number(t.rows).toLocaleString()} satır)</option>`).join('');
+      sel.innerHTML = tablesList.map(t => `
+        <option value="${t.table}" ${t.table === activeTable ? 'selected' : ''}>${t.table} (${Number(t.rows).toLocaleString()} satır)</option>
+      `).join('');
       if (!activeTable && tablesList.length > 0) {
         sel.value = tablesList[0].table;
       }
     }
 
-    function changeActiveTable(tblName) {
-      if (tblName) {
-        setActiveTable(tblName);
-      }
+    function changeActiveTable(tbl) {
+      if (tbl) setActiveTable(tbl);
     }
 
-    function setActiveTable(tblName) {
-      activeTable = tblName;
-      renderSidebarTables(tablesList);
-      document.getElementById('activeTableSelect').value = tblName;
-      document.getElementById('structTableName').textContent = tblName;
-      document.getElementById('exportTargetTable').value = tblName;
-      document.getElementById('importTargetTable').value = tblName;
+    function setActiveTable(tbl) {
+      activeTable = tbl;
       currentPage = 1;
+      sortColumn = '';
+      sortDirection = 'asc';
+      renderSidebar();
+      document.getElementById('activeTableSelect').value = tbl;
+      document.getElementById('structTableName').textContent = tbl;
+      document.getElementById('insertTableName').textContent = tbl;
+      document.getElementById('opTableName').textContent = tbl;
+      document.getElementById('exportTargetTable').value = tbl;
+      document.getElementById('importTargetTable').value = tbl.replace(/\.mgdb$/, '');
 
-      if (activeTabName === 'browse') {
-        loadBrowseData();
-      } else if (activeTabName === 'structure') {
-        loadStructureData();
-      }
+      const activeTab = document.querySelector('.pma-tab.active');
+      const tabId = activeTab ? activeTab.dataset.tab : 'browse';
+      if (tabId === 'browse') loadBrowseData();
+      else if (tabId === 'structure') loadStructureData();
+      else if (tabId === 'search') renderSearchInputs();
+      else if (tabId === 'insert') renderInsertInputs();
     }
 
-    // Load Browse Data
+    // 1. Gözat (Browse)
     async function loadBrowseData() {
       if (!activeTable) return;
-      showProgress(`[Gözat] ${activeTable} taranıyor...`, 450000);
+      startProgress();
 
       try {
-        const res = await fetch(`/table_data?table=${encodeURIComponent(activeTable)}&page=${currentPage}&limit=${pageLimit}`);
+        let url = `/table_data?table=${encodeURIComponent(activeTable)}&page=${currentPage}&limit=${pageLimit}`;
+        if (sortColumn) {
+          url += `&sort_col=${encodeURIComponent(sortColumn)}&sort_dir=${sortDirection}`;
+        }
+        const res = await fetch(url);
         const data = await res.json();
 
-        finishProgress(() => {
-          totalRows = data.total_rows || 0;
-          totalPages = Math.max(1, Math.ceil(totalRows / pageLimit));
+        if (data.error) {
+          document.getElementById('browseGridContainer').innerHTML = `<div style="padding: 2rem; color: var(--pma-danger);">Hata: ${data.error}</div>`;
+          return;
+        }
 
-          document.getElementById('pageInfoText').textContent = `Sayfa ${currentPage} / ${totalPages}`;
-          document.getElementById('browseMetaText').textContent = `${((currentPage-1)*pageLimit + 1).toLocaleString()} - ${Math.min(currentPage*pageLimit, totalRows).toLocaleString()} satır gösteriliyor (Toplam: ${totalRows.toLocaleString()})`;
+        totalRows = data.total_rows || 0;
+        totalPages = Math.max(1, Math.ceil(totalRows / pageLimit));
+        if (currentPage > totalPages) currentPage = totalPages;
 
-          document.getElementById('btnPagePrev').disabled = currentPage <= 1;
-          document.getElementById('btnPageFirst').disabled = currentPage <= 1;
-          document.getElementById('btnPageNext').disabled = currentPage >= totalPages;
-          document.getElementById('btnPageLast').disabled = currentPage >= totalPages;
+        document.getElementById('pageNumberInput').value = currentPage;
+        document.getElementById('pageNumberInput').max = totalPages;
+        document.getElementById('pageTotalText').textContent = `/ ${totalPages}`;
+        
+        const startRow = totalRows === 0 ? 0 : (currentPage - 1) * pageLimit + 1;
+        const endRow = Math.min(currentPage * pageLimit, totalRows);
+        document.getElementById('browseInfoText').textContent = `${startRow.toLocaleString()} - ${endRow.toLocaleString()} / ${totalRows.toLocaleString()} satır gösteriliyor`;
 
-          renderGrid(document.getElementById('browseGridContainer'), data.columns, data.rows);
-        });
+        document.getElementById('btnFirst').disabled = currentPage <= 1;
+        document.getElementById('btnPrev').disabled = currentPage <= 1;
+        document.getElementById('btnNext').disabled = currentPage >= totalPages;
+        document.getElementById('btnLast').disabled = currentPage >= totalPages;
+
+        renderGridTable(document.getElementById('browseGridContainer'), data.columns, data.rows, true);
       } catch (err) {
-        finishProgress(() => {
-          document.getElementById('browseGridContainer').innerHTML = `<div style="padding: 2rem; color: var(--danger);">Hata: ${err.message}</div>`;
-        });
+        document.getElementById('browseGridContainer').innerHTML = `<div style="padding: 2rem; color: var(--pma-danger);">Bağlantı Hatası: ${err.message}</div>`;
+      } finally {
+        endProgress();
       }
     }
 
     function changePage(page) {
-      if (page >= 1 && page <= totalPages && page !== currentPage) {
-        currentPage = page;
-        loadBrowseData();
+      const p = Math.max(1, Math.min(totalPages, page));
+      currentPage = p;
+      loadBrowseData();
+    }
+
+    function handleSort(col) {
+      if (sortColumn === col) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortColumn = col;
+        sortDirection = 'asc';
+      }
+      loadBrowseData();
+    }
+
+    function renderGridTable(container, columns, rows, enableActions = false) {
+      if (!columns || columns.length === 0) {
+        container.innerHTML = `<div style="padding: 2rem; text-align: center; color: #888;">Tabloda sütun bulunamadı.</div>`;
+        return;
+      }
+      if (!rows || rows.length === 0) {
+        container.innerHTML = `<div style="padding: 2rem; text-align: center; color: #888;">Tabloda gösterilecek satır yok (0 kayıt).</div>`;
+        return;
+      }
+
+      let html = `<table class="pma-grid"><thead><tr>`;
+      if (enableActions) {
+        html += `<th style="width: 70px; text-align: center;">Eylemler</th>`;
+      }
+      columns.forEach(col => {
+        const isSorted = sortColumn === col;
+        const arrow = isSorted ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : '';
+        html += `<th onclick="handleSort('${col}')" title="Sıralamak için tıklayın">${col}${arrow}</th>`;
+      });
+      html += `</tr></thead><tbody>`;
+
+      rows.forEach((row, rowIdx) => {
+        html += `<tr>`;
+        if (enableActions) {
+          // Identify row identifier if present (id column or first column)
+          const firstVal = row[0];
+          const firstCol = columns[0];
+          html += `<td style="text-align: center;">
+            <button class="btn-row-action" title="Satırı Sil" onclick="deleteRow('${firstCol}', '${firstVal}')">🗑️</button>
+            <button class="btn-row-action" title="JSON Kopyala" onclick="copyRowJson(${rowIdx})">📋</button>
+          </td>`;
+        }
+        row.forEach(val => {
+          html += `<td>${escapeHtml(val)}</td>`;
+        });
+        html += `</tr>`;
+      });
+
+      html += `</tbody></table>`;
+      container.innerHTML = html;
+      container.dataset.cachedRows = JSON.stringify(rows);
+      container.dataset.cachedCols = JSON.stringify(columns);
+    }
+
+    function copyRowJson(idx) {
+      const container = document.getElementById('browseGridContainer');
+      const rows = JSON.parse(container.dataset.cachedRows || '[]');
+      const cols = JSON.parse(container.dataset.cachedCols || '[]');
+      if (rows[idx]) {
+        const obj = {};
+        cols.forEach((c, i) => { obj[c] = rows[idx][i]; });
+        navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
+        showToast('✓ Satır JSON olarak kopyalandı');
       }
     }
 
-    // Load Structure Data
+    async function deleteRow(colName, colVal) {
+      if (!confirm(`Bu satırı silmek istediğinize emin misiniz?\n(${colName} = ${colVal})`)) return;
+      startProgress();
+      try {
+        const whereClause = isNaN(colVal) ? `${colName} = '${colVal}'` : `${colName} = ${colVal}`;
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'delete', table: activeTable, where: whereClause })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          loadBrowseData();
+          loadTables();
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('Silme işlemi başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 2. Yapı (Structure)
     async function loadStructureData() {
       if (!activeTable) return;
-      showProgress(`[Yapı] ${activeTable} şeması alınıyor...`);
+      startProgress();
 
       try {
         const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}`);
         const data = await res.json();
+        currentSchema = data.columns || [];
 
-        finishProgress(() => {
-          document.getElementById('structTableName').textContent = data.table;
-          document.getElementById('structTableRows').textContent = `${Number(data.rows).toLocaleString()} satır • ${formatBytes(data.bytes)} • ${data.blocks_count} blok`;
+        document.getElementById('structTableInfo').textContent = `${data.blocks_count || 0} blok • ${(data.rows || 0).toLocaleString()} satır • ${formatBytes(data.bytes || 0)}`;
 
-          const tbody = document.getElementById('structureTableBody');
-          tbody.innerHTML = (data.columns || []).map((col, idx) => `
-            <tr>
-              <td><b>${idx + 1}</b></td>
-              <td><span style="font-family: var(--font-code); color: #fff;">${escapeHtml(col.name)}</span></td>
-              <td><span class="tree-badge" style="color: var(--primary);">${col.type}</span></td>
-              <td>${col.nullable ? 'Evet' : 'Hayır'}</td>
-              <td>
-                <button class="btn-pma" style="color: var(--danger); border-color: var(--danger);" onclick="handleDropColumn('${col.name}')">Sil</button>
-              </td>
-            </tr>
-          `).join('');
-        });
+        const tbody = document.getElementById('structureTableBody');
+        tbody.innerHTML = currentSchema.map((col, idx) => `
+          <tr>
+            <td><b>${idx + 1}</b></td>
+            <td><code style="font-weight: 700; color: var(--pma-blue);">${col.name}</code></td>
+            <td><span class="table-row-count" style="background:#e0f2fe; color:#0369a1; font-weight:600;">${col.type}</span></td>
+            <td>${col.nullable ? 'Evet' : 'Hayır'}</td>
+            <td>
+              <button class="btn-action" style="padding: 2px 6px; font-size: 11px;" onclick="promptRenameColumn('${col.name}')">✏️ Yeniden Adlandır</button>
+              <button class="btn-action" style="padding: 2px 6px; font-size: 11px; color: var(--pma-danger);" onclick="handleDropColumn('${col.name}')">🗑️ Sil</button>
+            </td>
+          </tr>
+        `).join('');
       } catch (err) {
-        finishProgress();
+        console.error('Failed to load structure:', err);
+      } finally {
+        endProgress();
       }
-    }
-
-    // Execute SQL Query
-    async function executeSqlQuery() {
-      const q = document.getElementById('sqlQuery').value.trim();
-      if (!q) return;
-
-      showProgress(`[Sorgu Çalıştırılıyor] MergenQL Motoru Devrede...`, 850000);
-
-      try {
-        const res = await fetch('/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q, active_table: activeTable })
-        });
-        const data = await res.json();
-
-        finishProgress(() => {
-          if (!data.success) {
-            document.getElementById('sqlResultContainer').innerHTML = `<div style="padding: 1.5rem; color: var(--danger); font-family: var(--font-code);"><b>Hata:</b><br>${data.error}</div>`;
-            return;
-          }
-
-          const stats = data.stats || {};
-          document.getElementById('sqlStatTime').textContent = `${stats.execution_time_ms || 0} ms`;
-          document.getElementById('sqlStatRows').textContent = (data.rows ? data.rows.length : 0).toLocaleString();
-          document.getElementById('sqlStatScanned').textContent = (stats.blocks_scanned || 0).toLocaleString();
-          document.getElementById('sqlStatSkipped').textContent = (stats.blocks_skipped || 0).toLocaleString();
-          document.getElementById('sqlStatBytes').textContent = formatBytes(stats.bytes_read || 0);
-
-          renderGrid(document.getElementById('sqlResultContainer'), data.columns, data.rows);
-        });
-      } catch (err) {
-        finishProgress(() => {
-          document.getElementById('sqlResultContainer').innerHTML = `<div style="padding: 1.5rem; color: var(--danger);">Ağ veya Sunucu Hatası: ${err.message}</div>`;
-        });
-      }
-    }
-
-    function insertSql(snippet) {
-      const tbl = activeTable || 'users.mgdb';
-      const code = snippet.replace(/{table}/g, tbl).replace(/{col1}/g, 'id').replace(/{col2}/g, 'score');
-      document.getElementById('sqlQuery').value = code;
-    }
-
-    // Render Data Grid
-    function renderGrid(container, columns, rows) {
-      if (!columns || columns.length === 0 || !rows || rows.length === 0) {
-        container.innerHTML = `<div style="padding: 2.5rem; text-align: center; color: var(--text-muted);">Sorgu başarıyla çalıştırıldı ancak 0 satır döndü.</div>`;
-        return;
-      }
-
-      const theadHtml = columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
-      const tbodyHtml = rows.map(r => {
-        const cells = r.map(v => v === null ? `<td style="color: #64748b; font-style: italic;">NULL</td>` : `<td>${escapeHtml(String(v))}</td>`).join('');
-        return `<tr>${cells}</tr>`;
-      }).join('');
-
-      container.innerHTML = `
-        <table class="pma-table">
-          <thead><tr>${theadHtml}</tr></thead>
-          <tbody>${tbodyHtml}</tbody>
-        </table>
-      `;
-    }
-
-    // Import Handling
-    async function handleImportSubmit() {
-      const targetTable = document.getElementById('importTargetTable').value.trim();
-      const format = document.getElementById('importFormat').value;
-      const fileInput = document.getElementById('importFileInput');
-      const filePath = document.getElementById('importFilePath').value.trim();
-
-      if (!targetTable) {
-        alert('Lütfen hedef tablo adını belirtin!');
-        return;
-      }
-
-      showProgress(`[İçe Aktarılıyor] ${targetTable} tablosuna yükleniyor...`, 180000);
-
-      try {
-        let payload = { table: targetTable, format: format };
-
-        if (fileInput.files.length > 0) {
-          const file = fileInput.files[0];
-          const text = await file.text();
-          payload.content = text;
-        } else if (filePath) {
-          payload.filepath = filePath;
-        } else {
-          finishProgress();
-          alert('Lütfen bir dosya seçin veya sunucu dosya yolu girin!');
-          return;
-        }
-
-        const res = await fetch('/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-
-        finishProgress(() => {
-          if (data.success) {
-            alert(`Başarılı! ${data.rows_imported.toLocaleString()} satır başarıyla aktarıldı (${data.execution_time_ms} ms).`);
-            loadTables();
-            setActiveTable(targetTable);
-            switchTab('browse');
-          } else {
-            alert(`İçe aktarma hatası: ${data.error}`);
-          }
-        });
-      } catch (err) {
-        finishProgress();
-        alert(`İçe aktarma sırasında hata: ${err.message}`);
-      }
-    }
-
-    // Export Handling
-    function handleExportSubmit() {
-      if (!activeTable) {
-        alert('Lütfen dışa aktarılacak bir tablo seçin!');
-        return;
-      }
-      const fmt = document.getElementById('exportFormat').value;
-      showProgress(`[Dışa Aktarılıyor] ${activeTable} -> .${fmt}`, 600000);
-
-      setTimeout(() => {
-        finishProgress(() => {
-          window.location.href = `/export?table=${encodeURIComponent(activeTable)}&format=${fmt}`;
-        });
-      }, 500);
-    }
-
-    // Operations Handling
-    async function handleRenameTable() {
-      const newName = document.getElementById('opsRenameNew').value.trim();
-      if (!newName || !activeTable) return;
-
-      showProgress(`[İşlem] Tablo yeniden adlandırılıyor...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'rename', table: activeTable, new_table: newName })
-      });
-      const data = await res.json();
-      finishProgress(() => {
-        if (data.success) {
-          loadTables();
-          setActiveTable(newName.endsWith('.mgdb') ? newName : newName + '.mgdb');
-          switchTab('browse');
-        } else {
-          alert('Hata: ' + data.error);
-        }
-      });
-    }
-
-    async function handleTruncateTable() {
-      if (!activeTable) return;
-      if (!confirm(`'${activeTable}' tablosundaki TÜM verileri silmek istediğinizden emin misiniz?`)) return;
-
-      showProgress(`[TRUNCATE] ${activeTable} boşaltılıyor...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'truncate', table: activeTable })
-      });
-      const data = await res.json();
-      finishProgress(() => {
-        if (data.success) {
-          loadTables();
-          loadBrowseData();
-        } else {
-          alert('Hata: ' + data.error);
-        }
-      });
-    }
-
-    async function handleDropTable() {
-      if (!activeTable) return;
-      if (!confirm(`DİKKAT: '${activeTable}' tablosu ve diski TAMAMEN SİLİNECEK! Emin misiniz?`)) return;
-
-      showProgress(`[DROP] ${activeTable} siliniyor...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'drop', table: activeTable })
-      });
-      const data = await res.json();
-      finishProgress(() => {
-        if (data.success) {
-          activeTable = null;
-          loadTables();
-          switchTab('browse');
-        } else {
-          alert('Hata: ' + data.error);
-        }
-      });
     }
 
     async function handleAddColumn() {
       const name = document.getElementById('newColName').value.trim();
       const type = document.getElementById('newColType').value;
-      const def = document.getElementById('newColDefault').value;
-      if (!name || !activeTable) return;
+      const defVal = document.getElementById('newColDefault').value.trim();
 
-      showProgress(`[Sütun Ekle] ${name} (${type})...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add_column', table: activeTable, name: name, type: type, default: def || null })
-      });
-      const data = await res.json();
-      finishProgress(() => {
+      if (!name) return alert('Lütfen sütun adını girin');
+      startProgress();
+
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'add_column',
+            table: activeTable,
+            name: name,
+            type: type,
+            default: defVal || null
+          })
+        });
+        const data = await res.json();
         if (data.success) {
+          showToast('✓ ' + data.message);
           document.getElementById('newColName').value = '';
+          document.getElementById('newColDefault').value = '';
           loadStructureData();
         } else {
           alert('Hata: ' + data.error);
         }
-      });
+      } catch (err) {
+        alert('Sütun ekleme başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    async function promptRenameColumn(oldName) {
+      const newName = prompt(`'${oldName}' sütununun yeni adını girin:`, oldName);
+      if (!newName || newName === oldName) return;
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'rename_column',
+            table: activeTable,
+            old_name: oldName,
+            new_name: newName
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          loadStructureData();
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('İşlem başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
     }
 
     async function handleDropColumn(colName) {
-      if (!confirm(`'${colName}' sütununu silmek istediğinizden emin misiniz?`)) return;
-      showProgress(`[Sütun Sil] ${colName}...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'drop_column', table: activeTable, name: colName })
-      });
-      const data = await res.json();
-      finishProgress(() => {
+      if (!confirm(`'${colName}' sütununu silmek istediğinize emin misiniz?`)) return;
+      startProgress();
+
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'drop_column', table: activeTable, name: colName })
+        });
+        const data = await res.json();
         if (data.success) {
+          showToast('✓ ' + data.message);
           loadStructureData();
         } else {
           alert('Hata: ' + data.error);
         }
-      });
+      } catch (err) {
+        alert('Sütun silme başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
     }
 
-    // Create New Table Modal
+    // 3. SQL Tab
+    function setSqlSnippet(type) {
+      const t = activeTable || 'table';
+      const pure = t.replace(/\.mgdb$/, '');
+      const editor = document.getElementById('sqlQueryText');
+      switch (type) {
+        case 'SELECT *':
+          editor.value = `SELECT * FROM ${pure} LIMIT 50;`; break;
+        case 'COUNT':
+          editor.value = `SELECT COUNT(*) AS total_rows FROM ${pure};`; break;
+        case 'WHERE':
+          editor.value = `SELECT * FROM ${pure} WHERE id > 0 LIMIT 25;`; break;
+        case 'GROUP_BY':
+          editor.value = `SELECT category, COUNT(*), AVG(amount) FROM ${pure} GROUP BY category HAVING COUNT(*) > 1;`; break;
+        case 'BLOOM':
+          editor.value = `SELECT * FROM ${pure} WHERE client = 'TargetClient';`; break;
+        case 'JOIN':
+          editor.value = `SELECT a.id, a.name, b.amount FROM table_a a INNER JOIN table_b b ON a.id = b.user_id;`; break;
+        case 'UPDATE':
+          editor.value = `UPDATE ${pure} SET status = 'ACTIVE' WHERE id = 1;`; break;
+        case 'DELETE':
+          editor.value = `DELETE FROM ${pure} WHERE id = 999;`; break;
+      }
+      editor.focus();
+    }
+
+    async function runSqlQuery() {
+      const sql = document.getElementById('sqlQueryText').value.trim();
+      if (!sql) return alert('Lütfen çalıştırılacak SQL sorgusunu yazın');
+
+      startProgress();
+      const tele = document.getElementById('sqlExecutionTelemetry');
+      const resContainer = document.getElementById('sqlResultContainer');
+
+      try {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: sql, active_table: activeTable })
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+          tele.style.display = 'none';
+          resContainer.style.display = 'block';
+          resContainer.innerHTML = `<div style="padding: 1rem; color: var(--pma-danger); font-family: var(--font-code);"><b>Hata:</b><br>${data.error}</div>`;
+          return;
+        }
+
+        const stats = data.stats || {};
+        document.getElementById('sqlTime').textContent = `${stats.execution_time_ms || 0} ms`;
+        document.getElementById('sqlRowsCount').textContent = (data.rows ? data.rows.length : (data.row_count || 0)).toLocaleString();
+        document.getElementById('sqlBlocksScanned').textContent = (stats.blocks_scanned || 0);
+        document.getElementById('sqlBlocksSkipped').textContent = (stats.blocks_skipped || 0);
+        document.getElementById('sqlBytesRead').textContent = formatBytes(stats.bytes_read || 0);
+
+        tele.style.display = 'flex';
+        resContainer.style.display = 'block';
+        renderGridTable(resContainer, data.columns, data.rows, false);
+      } catch (err) {
+        tele.style.display = 'none';
+        resContainer.style.display = 'block';
+        resContainer.innerHTML = `<div style="padding: 1rem; color: var(--pma-danger);">Bağlantı Hatası: ${err.message}</div>`;
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 4. Ara (Search)
+    async function renderSearchInputs() {
+      if (!activeTable) return;
+      if (currentSchema.length === 0) {
+        await loadStructureData();
+      }
+      const container = document.getElementById('columnFiltersContainer');
+      container.innerHTML = currentSchema.map(col => `
+        <div class="form-group" style="margin-bottom: 0;">
+          <label style="font-family: var(--font-code);">${col.name} (${col.type})</label>
+          <input type="text" class="search-col-input" data-col="${col.name}" placeholder="Değer...">
+        </div>
+      `).join('');
+    }
+
+    async function executeSearchFullText() {
+      const term = document.getElementById('fulltextSearchInput').value.trim();
+      if (!term) return alert('Lütfen arama terimi girin');
+
+      startProgress();
+      try {
+        if (currentSchema.length === 0) await loadStructureData();
+        const strCols = currentSchema.filter(c => c.type === 'STRING').map(c => c.name);
+        if (strCols.length === 0) {
+          alert('Bu tabloda metin (STRING) türünde aranabilir sütun bulunamadı.');
+          return;
+        }
+
+        const pure = activeTable.replace(/\.mgdb$/, '');
+        const conditions = strCols.map(c => `${c} LIKE '%${term}%'`).join(' OR ');
+        const sql = `SELECT * FROM ${pure} WHERE ${conditions} LIMIT 100;`;
+
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: sql, active_table: activeTable })
+        });
+        const data = await res.json();
+        const container = document.getElementById('searchResultContainer');
+        container.style.display = 'block';
+        renderGridTable(container, data.columns, data.rows, false);
+      } catch (err) {
+        alert('Arama başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    async function executeSearchColumns() {
+      const inputs = document.querySelectorAll('.search-col-input');
+      const conditions = [];
+      inputs.forEach(inp => {
+        const val = inp.value.trim();
+        const col = inp.dataset.col;
+        if (val) {
+          if (isNaN(val)) conditions.push(`${col} = '${val}'`);
+          else conditions.push(`${col} = ${val}`);
+        }
+      });
+
+      if (conditions.length === 0) return alert('Lütfen en az bir sütun için arama değeri girin');
+
+      startProgress();
+      try {
+        const pure = activeTable.replace(/\.mgdb$/, '');
+        const sql = `SELECT * FROM ${pure} WHERE ${conditions.join(' AND ')} LIMIT 100;`;
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: sql, active_table: activeTable })
+        });
+        const data = await res.json();
+        const container = document.getElementById('searchResultContainer');
+        container.style.display = 'block';
+        renderGridTable(container, data.columns, data.rows, false);
+      } catch (err) {
+        alert('Filtreleme başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 5. Ekle (Insert)
+    async function renderInsertInputs() {
+      if (!activeTable) return;
+      if (currentSchema.length === 0) {
+        await loadStructureData();
+      }
+      const container = document.getElementById('insertFieldsContainer');
+      container.innerHTML = currentSchema.map(col => {
+        let inputField = '';
+        if (col.type === 'BOOL') {
+          inputField = `<select name="${col.name}"><option value="true">True</option><option value="false">False</option></select>`;
+        } else if (col.type === 'INT64') {
+          inputField = `<input type="number" step="1" name="${col.name}" placeholder="örn: 100">`;
+        } else if (col.type === 'FLOAT64') {
+          inputField = `<input type="number" step="any" name="${col.name}" placeholder="örn: 49.99">`;
+        } else {
+          inputField = `<input type="text" name="${col.name}" placeholder="Metin girin...">`;
+        }
+        return `
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>${col.name} <span style="font-weight:normal; color:#888;">(${col.type})</span></label>
+            ${inputField}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function handleInsertRow(e) {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      const rowObj = {};
+
+      currentSchema.forEach(col => {
+        let raw = formData.get(col.name);
+        if (raw !== null && raw !== '') {
+          if (col.type === 'INT64') rowObj[col.name] = parseInt(raw);
+          else if (col.type === 'FLOAT64') rowObj[col.name] = parseFloat(raw);
+          else if (col.type === 'BOOL') rowObj[col.name] = (raw === 'true' || raw === '1');
+          else rowObj[col.name] = raw;
+        }
+      });
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'insert', table: activeTable, row: rowObj })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          form.reset();
+          loadTables();
+          if (confirm('Satır başarıyla eklendi! Gözat sekmesine geçip yeni satırı görmek ister misiniz?')) {
+            switchTab('browse');
+          }
+        } else {
+          alert('Ekleme Hatası: ' + data.error);
+        }
+      } catch (err) {
+        alert('İşlem başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 6. Dışa Aktar (Export)
+    function executeExportDownload() {
+      if (!activeTable) return alert('Lütfen aktif bir tablo seçin');
+      const fmt = document.getElementById('exportFormatSelect').value;
+      window.location.href = `/export?table=${encodeURIComponent(activeTable)}&format=${fmt}`;
+      showToast('📥 ' + activeTable + ' ' + fmt.toUpperCase() + ' olarak indiriliyor...');
+    }
+
+    // 7. İçe Aktar (Import)
+    async function executeImportData() {
+      const target = document.getElementById('importTargetTable').value.trim();
+      const fmt = document.getElementById('importFormatSelect').value;
+      const fileInp = document.getElementById('importFileInput');
+      const textInp = document.getElementById('importContentText').value.trim();
+      const statusEl = document.getElementById('importResultStatus');
+
+      if (!target) return alert('Lütfen hedef tablo adını girin');
+
+      let content = '';
+      if (fileInp.files.length > 0) {
+        content = await fileInp.files[0].text();
+      } else if (textInp) {
+        content = textInp;
+      } else {
+        return alert('Lütfen bir dosya seçin veya içeriği metin kutusuna yapıştırın');
+      }
+
+      startProgress();
+      statusEl.style.color = '#333';
+      statusEl.textContent = 'İçe aktarılıyor...';
+
+      try {
+        const res = await fetch('/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ table: target, format: fmt, content: content })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          statusEl.style.color = 'var(--pma-success)';
+          statusEl.textContent = `✓ Başarılı: ${data.rows_imported.toLocaleString()} satır aktarıldı (${data.execution_time_ms} ms)`;
+          showToast('✓ İçe aktarma tamamlandı');
+          loadTables();
+          setActiveTable(target.endsWith('.mgdb') ? target : target + '.mgdb');
+        } else {
+          statusEl.style.color = 'var(--pma-danger)';
+          statusEl.textContent = `Hata: ${data.error}`;
+        }
+      } catch (err) {
+        statusEl.style.color = 'var(--pma-danger)';
+        statusEl.textContent = `Bağlantı Hatası: ${err.message}`;
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 8. İşlemler (Operations)
+    async function handleRenameTable() {
+      const newName = document.getElementById('opNewTableName').value.trim();
+      if (!newName) return alert('Lütfen yeni tablo adını girin');
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'rename', table: activeTable, new_name: newName })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          document.getElementById('opNewTableName').value = '';
+          loadTables();
+          setActiveTable(newName.endsWith('.mgdb') ? newName : newName + '.mgdb');
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('İşlem başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    async function handleTruncateTable() {
+      if (!confirm(`DİKKAT: '${activeTable}' tablosundaki TÜM veriler silinecek!\nDevam etmek istiyor musunuz?`)) return;
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'truncate', table: activeTable })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          loadBrowseData();
+          loadTables();
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('İşlem başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    async function handleDropTable() {
+      if (!confirm(`DİKKAT: '${activeTable}' tablosu ve dosyası KALICI OLARAK silinecek!\nBu işlem geri alınamaz!`)) return;
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'drop', table: activeTable })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✓ ' + data.message);
+          activeTable = '';
+          loadTables();
+        } else {
+          alert('Hata: ' + data.error);
+        }
+      } catch (err) {
+        alert('İşlem başarısız: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // Modal Create Table
     function openNewTableModal() {
       document.getElementById('newTableModal').style.display = 'flex';
     }
     function closeNewTableModal() {
       document.getElementById('newTableModal').style.display = 'none';
     }
-    async function handleCreateNewTable() {
-      const tname = document.getElementById('modalNewTableName').value.trim();
-      const colStr = document.getElementById('modalNewTableCols').value.trim();
-      if (!tname || !colStr) return;
+    async function submitCreateNewTable() {
+      const name = document.getElementById('modalNewTableName').value.trim();
+      const col1Name = document.getElementById('modalColName1').value.trim();
+      const col1Type = document.getElementById('modalColType1').value;
+      const col2Name = document.getElementById('modalColName2').value.trim();
+      const col2Type = document.getElementById('modalColType2').value;
 
-      const cols = colStr.split(',').map(part => {
-        const [cname, ctype] = part.split(':').map(s => s.trim());
-        return { name: cname, type: (ctype || 'STRING').toUpperCase() };
-      });
+      if (!name) return alert('Lütfen tablo adını girin');
+      if (!col1Name) return alert('En az bir sütun adı gereklidir');
 
-      showProgress(`[Tablo Oluştur] ${tname}...`);
-      const res = await fetch('/operation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create_table', table: tname, columns: cols })
-      });
-      const data = await res.json();
-      finishProgress(() => {
-        closeNewTableModal();
+      const columns = [{ name: col1Name, type: col1Type }];
+      if (col2Name) columns.push({ name: col2Name, type: col2Type });
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'create_table', table: name, columns: columns })
+        });
+        const data = await res.json();
         if (data.success) {
-          loadTables();
-          setActiveTable(tname.endsWith('.mgdb') ? tname : tname + '.mgdb');
+          showToast('✓ ' + data.message);
+          closeNewTableModal();
+          await loadTables();
+          setActiveTable(name.endsWith('.mgdb') ? name : name + '.mgdb');
         } else {
           alert('Hata: ' + data.error);
         }
-      });
+      } catch (err) {
+        alert('Tablo oluşturulamadı: ' + err.message);
+      } finally {
+        endProgress();
+      }
     }
 
-    // Status Tab Data
+    // 9. Sunucu Durumu & Canlı Donanım Testi (Benchmark)
     async function loadServerStatus() {
       try {
         const res = await fetch('/status');
-        const data = await res.json();
-        document.getElementById('statOs').textContent = data.os || '-';
-        document.getElementById('statCpu').textContent = data.cpu || '-';
-        document.getElementById('statRam').textContent = data.ram_gb ? `${data.ram_gb} GB` : '-';
-        document.getElementById('statDir').textContent = data.working_dir || '-';
-        document.getElementById('statTablesCount').textContent = `${data.tables_count || 0} tablo`;
-        document.getElementById('statDiskBytes').textContent = formatBytes(data.total_disk_bytes);
-        document.getElementById('serverInfoText').textContent = `Çevrimiçi • ${data.tables_count} Tablo (${formatBytes(data.total_disk_bytes)})`;
-      } catch (err) {}
+        const st = await res.json();
+        document.getElementById('statCpu').textContent = st.cpu || 'Algılanamadı';
+        document.getElementById('statRam').textContent = st.ram_gb ? `${st.ram_gb} GB` : 'Bilinmiyor';
+        document.getElementById('statOs').textContent = st.os || 'OS';
+        document.getElementById('statVer').textContent = `v${st.version || st.engine_version || '0.6.0'}`;
+        document.getElementById('headerStatusText').textContent = `v${st.version || '0.6.0'} Çevrimiçi`;
+      } catch (e) {
+        console.error('Status fetch error:', e);
+      }
     }
 
-    // Utilities
+    async function runLiveHardwareBenchmark() {
+      startProgress();
+      showToast('⏳ Canlı donanım hız testi çalıştırılıyor...');
+
+      try {
+        const res = await fetch('/status?benchmark=1');
+        const data = await res.json();
+        const b = data.benchmark;
+
+        if (b) {
+          document.getElementById('liveBenchCard').style.display = 'block';
+          document.getElementById('benchIngest').textContent = `~${Number(b.ingest_rate).toLocaleString()} satır/sn`;
+          document.getElementById('benchImport').textContent = `~${Number(b.import_rate).toLocaleString()} satır/sn`;
+          document.getElementById('benchExport').textContent = `~${Number(b.export_rate).toLocaleString()} satır/sn`;
+          document.getElementById('benchScan').textContent = `~${Number(b.scan_rate).toLocaleString()} satır/sn`;
+          document.getElementById('benchTier').textContent = b.tier;
+          document.getElementById('benchBlock').textContent = b.rec_block;
+          showToast('✓ Hız testi tamamlandı!');
+        } else {
+          alert('Benchmark verisi alınamadı.');
+        }
+      } catch (err) {
+        alert('Benchmark hatası: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 10. Kılavuz (Docs)
+    function switchDocLang(lang) {
+      document.querySelectorAll('.doc-lang-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.lang === lang);
+      });
+      document.querySelectorAll('.doc-pane').forEach(p => {
+        p.style.display = (p.id === 'doc-pane-' + lang) ? 'block' : 'none';
+      });
+    }
+
+    function copySnippet(id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text);
+      showToast('✓ Kod panoya kopyalandı');
+    }
+
     function formatBytes(bytes) {
       if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
       const sizes = ['B', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-    }
-
-    function escapeHtml(str) {
-      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
   </script>
 </body>

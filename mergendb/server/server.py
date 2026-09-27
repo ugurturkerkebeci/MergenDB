@@ -87,12 +87,31 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_html(200, STUDIO_HTML)
             return
 
+        elif path == "/logo" or path == "/logo.png":
+            candidates = [
+                os.path.join(os.path.dirname(__file__), "..", "..", "docs", "images", "logo.png"),
+                os.path.join(os.getcwd(), "docs", "images", "logo.png"),
+            ]
+            for p in candidates:
+                if os.path.exists(p):
+                    with open(p, "rb") as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/png")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            self._send_response_json(404, {"error": "Logo not found"})
+            return
+
         elif path == "/status" or path == "/health":
             files = glob.glob("*.mgdb")
             total_size = sum(os.path.getsize(f) for f in files if os.path.isfile(f))
             from mergendb import __version__
             from mergendb.testing.suite import _detect_os_name, _detect_cpu_model, _detect_total_ram_gb
-            self._send_response_json(200, {
+            res_obj = {
                 "status": "healthy",
                 "server": "MergenDB",
                 "version": __version__,
@@ -105,7 +124,14 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                 "os": _detect_os_name(),
                 "cpu": _detect_cpu_model(),
                 "ram_gb": _detect_total_ram_gb(),
-            })
+            }
+            if params.get("benchmark", ["0"])[0] in ("1", "true"):
+                import tempfile
+                from mergendb.testing.suite import _profile_hardware
+                with tempfile.TemporaryDirectory() as tmp_bench:
+                    res_obj["benchmark"] = _profile_hardware(tmp_bench, verbose=False)
+
+            self._send_response_json(200, res_obj)
             return
 
         elif path == "/tables":
@@ -180,30 +206,44 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             try:
                 page = max(1, int(params.get("page", ["1"])[0]))
                 limit = max(1, min(500, int(params.get("limit", ["50"])[0])))
+                sort_col = params.get("sort_col", [""])[0]
+                sort_dir = params.get("sort_dir", ["asc"])[0].lower()
                 target_start = (page - 1) * limit
                 target_end = target_start + limit
 
                 with FileReader(table_name) as reader:
                     cols = [c.name for c in reader.schema.columns]
                     total_rows = reader.total_rows
-                    rows = []
-                    cur_idx = 0
 
-                    for batch, _ in reader.scan():
-                        b_count = batch.row_count
-                        if cur_idx + b_count > target_start and cur_idx < target_end:
+                    if sort_col and sort_col in cols:
+                        all_rows = []
+                        for batch, _ in reader.scan():
                             b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
-                            for r in b_rows:
-                                if target_start <= cur_idx < target_end:
-                                    rows.append(r)
-                                cur_idx += 1
-                                if cur_idx >= target_end:
-                                    break
-                        else:
-                            cur_idx += b_count
+                            all_rows.extend(b_rows)
+                        col_idx = cols.index(sort_col)
+                        all_rows.sort(
+                            key=lambda r: (r[col_idx] is None, str(r[col_idx]) if not isinstance(r[col_idx], (int, float)) else r[col_idx]),
+                            reverse=(sort_dir == "desc")
+                        )
+                        rows = all_rows[target_start:target_end]
+                    else:
+                        rows = []
+                        cur_idx = 0
+                        for batch, _ in reader.scan():
+                            b_count = batch.row_count
+                            if cur_idx + b_count > target_start and cur_idx < target_end:
+                                b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
+                                for r in b_rows:
+                                    if target_start <= cur_idx < target_end:
+                                        rows.append(r)
+                                    cur_idx += 1
+                                    if cur_idx >= target_end:
+                                        break
+                            else:
+                                cur_idx += b_count
 
-                        if cur_idx >= target_end:
-                            break
+                            if cur_idx >= target_end:
+                                break
 
                 self._send_response_json(200, {
                     "table": table_name,
@@ -477,6 +517,37 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     tbl = Table(target_table)
                     tbl.drop_column(col_name)
                     msg = f"Column '{col_name}' dropped successfully."
+
+                elif action == "rename_column":
+                    old_col = payload.get("old_name", "").strip()
+                    new_col = payload.get("new_name", "").strip()
+                    if not old_col or not new_col:
+                        self._send_response_json(400, {"error": "Missing old_name or new_name in rename_column"})
+                        return
+                    tbl = Table(target_table)
+                    tbl.rename_column(old_col, new_col)
+                    msg = f"Column '{old_col}' renamed to '{new_col}' successfully."
+
+                elif action == "insert":
+                    row_data = payload.get("row") or payload.get("data")
+                    if not row_data:
+                        self._send_response_json(400, {"error": "Missing 'row' data for insert"})
+                        return
+                    tbl = Table(target_table)
+                    if isinstance(row_data, dict):
+                        tbl.insert([row_data])
+                    elif isinstance(row_data, list):
+                        tbl.insert(row_data)
+                    msg = f"Inserted record into '{target_table}' successfully."
+
+                elif action in ("delete", "delete_row"):
+                    where_cond = payload.get("where", "").strip()
+                    if not where_cond:
+                        self._send_response_json(400, {"error": "Missing 'where' condition for delete"})
+                        return
+                    tbl = Table(target_table)
+                    del_count = tbl.delete(where=where_cond)
+                    msg = f"Deleted {del_count} row(s) from '{target_table}'."
 
                 elif action == "create_table":
                     cols_def = payload.get("columns", [])

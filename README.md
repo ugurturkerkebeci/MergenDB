@@ -4,11 +4,11 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.0-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.1-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
 [![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2012%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, ultra-fast embedded columnar database engine and ecosystem designed to run massive analytical queries and multi-million row table scans on small, resource-constrained hardware. It delivers **zero external runtime dependencies** — no C compilers, no native C++ libraries, and no bulky runtimes across both Python and Node.js.
@@ -664,6 +664,22 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ## 🚀 Version Updates & Release Comparisons
 
+### Version Comparison: v0.6.0 vs v0.6.1
+
+| Capability / Feature | v0.6.0 (Initial Node.js SDK Release) | v0.6.1 (phpMyAdmin Redesign & Full Ecosystem Parity) | Status & Impact |
+| :--- | :--- | :--- | :--- |
+| **Mergen Studio UI** | Heavy animations, blocking modal overlay stuck at 92% on page turns | ✅ **Authentic phpMyAdmin Architecture** | Clean, crisp, lightweight `#f5f7fa` styling with Mergen logo/icon; zero UI lockups |
+| **UI CLI Parity** | Read-only schema and basic queries | ✅ **100% Full CLI Parity in Browser** | 10 dedicated tabs: Gözat, Yapı, SQL, Ara, Ekle, Dışa Aktar, İçe Aktar, İşlemler, Sunucu, Kılavuz |
+| **Browser Pagination & Sort** | Blocked by progress modal, no sorting | ✅ **Instant Pagination & Column Sorting** | Instant `<< < [page] > >>` navigation; click headers to sort ASC/DESC on disk |
+| **Data Mutations in UI** | CLI only | ✅ **Direct Insert & Row Deletion in UI** | Schema-driven dynamic insert form + one-click delete row in Browse tab |
+| **Schema Alterations in UI** | CLI only | ✅ **Add, Drop, and Rename Columns in UI** | Full column lifecycle directly from the Yapı (Structure) tab |
+| **Node.js SDK Feature Parity** | `query()`, `find()`, `count()` only | ✅ **100% Full Python Parity in JS/TS** | Added `insert()`, `search()`, `update()`, `delete()`, `addColumn()`, `renameColumn()`, `dropColumn()`, `benchmark()` |
+| **Live Hardware Profiling** | CLI only | ✅ **Real-Time Profiler in UI & Node.js** | Browser-triggered benchmark test + `client.benchmark()` running live hardware speed test (1M+ rows/s) |
+| **Multi-Language Guides** | Separate docs | ✅ **Embedded Runnables for All 4 Runtimes** | Side-by-side executable code examples for Python, Node.js / TypeScript, CLI, and REST API |
+| **Total Test Suite** | 100 Tests (88 Py + 12 JS) | ✅ **106 Tests (88 Py + 18 JS, 100% Pass)** | Expanded end-to-end Node.js SDK test coverage with zero regressions |
+
+---
+
 ### Version Comparison: v0.5.9 vs v0.6.0
 
 | Capability / Architecture | v0.5.9 (Mergen Studio & Embedded Web UI) | v0.6.0 (Universal Node.js SDK & Production Polish) | Status & Impact |
@@ -687,13 +703,14 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
 | **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | ✅ Released |
-| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | ✅ Released (Milestone Complete) |
+| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | ✅ Released |
+| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | ✅ Released (Milestone Complete) |
 
 ---
 
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with **100 comprehensive tests** (88 Python unit tests covering storage, compression algorithms, query planning, Bloom filters, and analytical joins + 12 end-to-end Node.js SDK integration tests):
+MergenDB includes an embedded test suite with **106 comprehensive tests** (88 Python unit tests covering storage, compression algorithms, query planning, Bloom filters, and analytical joins + 18 end-to-end Node.js SDK integration tests):
 
 ```bash
 # Run Python unit tests & hardware profiler via CLI

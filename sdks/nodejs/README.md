@@ -1,6 +1,6 @@
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.0-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.6.1-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
@@ -10,11 +10,12 @@ The official **zero-dependency** Node.js and TypeScript client for **MergenDB** 
 
 ## ⚡ Features
 
-- **Zero Runtime Dependencies:** Built purely on native Node.js standard library.
+- **Zero Runtime Dependencies:** Built purely on native Node.js standard library (`http`, `url`, `child_process`).
 - **TypeScript First:** Complete typings, interfaces, and autocompletion out of the box.
-- **SQL & Document-Style APIs:** Run analytical SQL or use fluent `.find()` / `.count()` syntax.
+- **100% Feature Parity with Python CLI:** Insert, query, search, update, delete, schema alteration, and benchmarks.
+- **SQL & Document-Style APIs:** Run analytical SQL or use fluent `.find()` / `.findOne()` / `.search()` syntax.
 - **Tagged Template Literals (`db.sql`):** Safe parameter interpolation preventing SQL injection.
-- **Analytical Metrics:** Direct visibility into query execution time, ZoneMap pruned blocks, and bytes read.
+- **Live Hardware Profiling:** Direct access to `db.benchmark()` scanning over 1,000,000+ rows/sec.
 - **Full phpMyAdmin Studio Operations:** Truncate, Drop, Rename, Import, and Export directly from JS/TS.
 
 ---
@@ -46,24 +47,45 @@ async function main() {
   // Connect to local or remote MergenDB server
   const db = connect('http://localhost:8765');
 
-  // Check connection health
+  // Check connection health & CPU specs
   const isHealthy = await db.ping();
-  console.log('MergenDB connection status:', isHealthy ? 'ONLINE' : 'OFFLINE');
+  const status = await db.status();
+  console.log(`Connected to MergenDB ${status.version} on ${status.system?.cpu || 'system'}`);
+
+  // Insert records directly (auto-inferred schema)
+  const users = db.table('users.mgdb');
+  await users.insert([
+    { id: 1, name: 'Alice', role: 'admin', balance: 1500 },
+    { id: 2, name: 'Bob', role: 'engineer', balance: 2400 }
+  ]);
+
+  // Full-text substring search across all columns
+  const searchResults = await users.search('Ali');
+  console.log('Search matches:', searchResults.rows);
+
+  // Update records
+  await users.update({ balance: 1750 }, "name = 'Alice'");
+
+  // Delete records
+  await users.delete("balance < 1000");
+
+  // Schema alterations
+  await users.addColumn('last_login', 'TIMESTAMP');
+  await users.renameColumn('role', 'user_role');
 
   // Analytical SQL Query
-  const result = await db.query("SELECT country, COUNT(*), AVG(revenue) FROM sales GROUP BY country HAVING COUNT(*) > 10");
+  const result = await db.query("SELECT user_role, COUNT(*), AVG(balance) FROM users GROUP BY user_role");
   console.log(`Executed in ${result.stats.execution_time_ms} ms`);
   console.table(result.rows);
 
   // Tagged template literal with automatic escaping
-  const targetCountry = "TR";
-  const users = await db.sql`SELECT id, name, balance FROM accounts WHERE country = ${targetCountry}`;
-  console.log(`Found ${users.row_count} accounts`);
+  const targetId = 1;
+  const user = await db.sql`SELECT * FROM users WHERE id = ${targetId}`;
+  console.log('User found:', user.rows[0]);
 
-  // Document-style Table API
-  const telemetry = db.table('telemetry.mgdb');
-  const activeSensors = await telemetry.find({ status: 'ACTIVE' }, { limit: 10 });
-  console.log('Active sensors:', activeSensors);
+  // Live hardware benchmark
+  const bench = await db.benchmark();
+  console.log(`Hardware Scan Throughput: ${bench.scan_throughput}`);
 }
 
 main().catch(console.error);
@@ -82,6 +104,36 @@ const db = connect({
   activeTable: 'analytics.mgdb',
   timeout: 30000 // ms
 });
+```
+
+### Table CRUD & Search Operations
+
+```typescript
+const table = db.table('users.mgdb');
+
+// Insert rows
+await table.insert([{ id: 1, name: 'Charlie', balance: 500 }]);
+
+// Key-value filtering
+const active = await table.find({ role: 'admin' }, { limit: 10, offset: 0 });
+
+// Full-text search
+const matches = await table.search('engineering');
+
+// In-place updates
+await table.update({ balance: 600 }, "id = 1");
+
+// Deletion
+await table.delete("id = 1");
+
+// Schema alterations
+await table.addColumn('country', 'TEXT', 'TR');
+await table.renameColumn('country', 'nation');
+await table.dropColumn('nation');
+
+// Administrative
+await table.truncate();
+await table.drop();
 ```
 
 ### Analytical SQL Execution

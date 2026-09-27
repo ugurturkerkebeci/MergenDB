@@ -129,7 +129,67 @@ async function run() {
     }
     console.log('    [+] Fluent Table find() & findOne(): PASS');
 
-    // 10. Table Export (JSON & CSV)
+    // 10. Direct Object Insert
+    await sensorTable.insert({ id: 5, sensor: 'TEMP-05', temperature: 29.5, active: true });
+    const countAfterInsert = await sensorTable.count();
+    if (countAfterInsert !== 5) {
+      throw new Error(`Expected 5 rows after insert, got ${countAfterInsert}`);
+    }
+    console.log('    [+] Direct Object insert(): PASS');
+
+    // 11. Full-text Substring Search
+    const searchMatches = await sensorTable.search('05');
+    if (searchMatches.length !== 1 || searchMatches[0].sensor !== 'TEMP-05') {
+      throw new Error('search() did not find matching sensor');
+    }
+    console.log('    [+] Full-text search(): PASS');
+
+    // 12. Update Records
+    await sensorTable.update({ temperature: 31.0 }, "sensor = 'TEMP-05'");
+    const updatedRecord = await sensorTable.findOne({ sensor: 'TEMP-05' });
+    if (!updatedRecord || updatedRecord.temperature !== 31.0) {
+      throw new Error('update() did not update record properly');
+    }
+    console.log('    [+] Table update(): PASS');
+
+    // 13. Delete Records
+    await sensorTable.delete("sensor = 'TEMP-05'");
+    const countAfterDelete = await sensorTable.count();
+    if (countAfterDelete !== 4) {
+      throw new Error(`Expected 4 rows after delete, got ${countAfterDelete}`);
+    }
+    console.log('    [+] Table delete(): PASS');
+
+    // 14. Schema Alterations (Add, Rename, Drop Column)
+    await sensorTable.addColumn('battery_pct', 'FLOAT64', 100.0);
+    const schemaWithBattery = await sensorTable.schema();
+    if (!schemaWithBattery.columns.some(c => c.name === 'battery_pct')) {
+      throw new Error('addColumn() failed');
+    }
+    console.log('    [+] Table addColumn(): PASS');
+
+    await sensorTable.renameColumn('battery_pct', 'battery_level');
+    const schemaRenamed = await sensorTable.schema();
+    if (!schemaRenamed.columns.some(c => c.name === 'battery_level')) {
+      throw new Error('renameColumn() failed');
+    }
+    console.log('    [+] Table renameColumn(): PASS');
+
+    await sensorTable.dropColumn('battery_level');
+    const schemaDropped = await sensorTable.schema();
+    if (schemaDropped.columns.some(c => c.name === 'battery_level')) {
+      throw new Error('dropColumn() failed');
+    }
+    console.log('    [+] Table dropColumn(): PASS');
+
+    // 15. Live Hardware Benchmark via Node.js
+    const benchData = await client.benchmark();
+    if (!benchData || !benchData.benchmark || !benchData.benchmark.scan_rate) {
+      throw new Error('benchmark() did not return hardware scan rate');
+    }
+    console.log(`    [+] Live Hardware Benchmark (client.benchmark()): PASS (Scan: ${benchData.benchmark.scan_rate.toLocaleString()} rows/s)`);
+
+    // 16. Table Export (JSON & CSV)
     const exportedJson = await sensorTable.export('json');
     const parsedJson = typeof exportedJson === 'string' ? JSON.parse(exportedJson) : exportedJson;
     if (!Array.isArray(parsedJson) || parsedJson.length !== 4) {
@@ -137,7 +197,7 @@ async function run() {
     }
     console.log('    [+] Table Data Export (JSON): PASS');
 
-    // 11. Truncate Table
+    // 17. Truncate Table
     await sensorTable.truncate();
     const countAfterTruncate = await sensorTable.count();
     if (countAfterTruncate !== 0) {
@@ -145,7 +205,7 @@ async function run() {
     }
     console.log('    [+] Table Truncate Operation: PASS');
 
-    // 12. Drop Table
+    // 18. Drop Table
     await sensorTable.drop();
     const tablesList = await client.listTables();
     const stillExists = tablesList.some(t => t.name === tableName);
@@ -155,7 +215,7 @@ async function run() {
     console.log('    [+] Table Drop Operation: PASS');
 
     console.log('----------------------------------------------------------------');
-    console.log('   [SUCCESS] ALL 12 NODE.JS SDK TESTS PASSED WITH 0 ERRORS!');
+    console.log('   [SUCCESS] ALL 18 NODE.JS SDK TESTS PASSED WITH 0 ERRORS!');
     console.log('================================================================');
   } finally {
     // Terminate server process cleanly

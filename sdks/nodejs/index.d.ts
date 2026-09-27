@@ -85,7 +85,14 @@ export class TableHandle {
   data(page?: number, limit?: number): Promise<PageResult>;
   find<T = Record<string, any>>(filters?: Record<string, any>, options?: { limit?: number; columns?: string[] }): Promise<T[]>;
   findOne<T = Record<string, any>>(filters?: Record<string, any>): Promise<T | null>;
+  search<T = Record<string, any>>(term: string): Promise<T[]>;
   count(filters?: Record<string, any>): Promise<number>;
+  insert(records: Record<string, any> | Record<string, any>[]): Promise<{ status: string; message: string }>;
+  update(updates: Record<string, any>, where: string): Promise<QueryResult>;
+  delete(where: string): Promise<{ status: string; message: string }>;
+  addColumn(name: string, type?: string, defaultVal?: any): Promise<{ status: string; message: string }>;
+  dropColumn(name: string): Promise<{ status: string; message: string }>;
+  renameColumn(oldName: string, newName: string): Promise<{ status: string; message: string }>;
   export(format?: 'csv' | 'json' | 'jsonl' | 'sql'): Promise<string>;
   import(content: string, format?: 'csv' | 'json' | 'sql'): Promise<{ status: string; rows_imported: number }>;
   truncate(): Promise<{ status: string; message: string }>;
@@ -102,6 +109,7 @@ export class MergenDB {
   constructor(options?: MergenOptions | string);
   ping(): Promise<boolean>;
   status(): Promise<ServerStatus>;
+  benchmark(): Promise<any>;
   listTables(): Promise<TableInfo[]>;
   query<T = any>(sqlQuery: string, options?: { activeTable?: string }): Promise<QueryResult<T>>;
   sql<T = any>(strings: TemplateStringsArray, ...values: any[]): Promise<QueryResult<T>>;
