@@ -1,0 +1,35 @@
+{
+  "name": "mergendb",
+  "version": "0.6.0",
+  "description": "Official zero-dependency Node.js and TypeScript client SDK for MergenDB - the ultra-compact, columnar embedded database engine.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "mergendb",
+    "columnar",
+    "database",
+    "analytics",
+    "embedded",
+    "sql",
+    "client",
+    "typescript",
+    "zero-dependency"
+  ],
+  "author": "Uğur Türker Kebeci <ugurturkerkebeci@users.noreply.github.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ugurturkerkebeci/MergenDB.git",
+    "directory": "sdks/nodejs"
+  },
+  "bugs": {
+    "url": "https://github.com/ugurturkerkebeci/MergenDB/issues"
+  },
+  "homepage": "https://github.com/ugurturkerkebeci/MergenDB#readme"
+}

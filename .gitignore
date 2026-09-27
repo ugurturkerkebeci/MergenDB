@@ -43,3 +43,4 @@ ENV/
 *.mgdb.tmp
 *.jsonl
 *.csv
+scratch/

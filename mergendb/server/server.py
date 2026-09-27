@@ -9,6 +9,7 @@ import urllib.parse
 import csv
 import io
 import tempfile
+import re
 from typing import Optional, List, Dict, Any
 
 from mergendb.client import MergenDB, Table
@@ -93,6 +94,8 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             from mergendb.testing.suite import _detect_os_name, _detect_cpu_model, _detect_total_ram_gb
             self._send_response_json(200, {
                 "status": "healthy",
+                "server": "MergenDB",
+                "version": __version__,
                 "engine_version": __version__,
                 "tables_count": len(files),
                 "total_disk_bytes": total_size,
@@ -333,6 +336,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     "success": True,
                     "columns": result.column_names,
                     "rows": result.rows,
+                    "row_count": len(result.rows),
                     "stats": {
                         "execution_time_ms": round(elapsed_ms, 2),
                         "rows_returned": len(result.rows),
@@ -425,8 +429,8 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/operation":
             try:
                 payload = json.loads(post_data) if post_data else {}
-                action = payload.get("action", "").lower()
-                target_table = payload.get("table", "").strip()
+                action = (payload.get("action") or payload.get("op") or "").lower()
+                target_table = (payload.get("table") or "").strip()
 
                 if not target_table and action != "list":
                     self._send_response_json(400, {"error": "Missing 'table' in operation request"})
@@ -445,7 +449,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     msg = f"Table '{target_table}' dropped successfully."
 
                 elif action == "rename":
-                    new_table = payload.get("new_table", "").strip()
+                    new_table = (payload.get("new_table") or payload.get("new_name") or "").strip()
                     if not new_table:
                         self._send_response_json(400, {"error": "Missing 'new_table' in rename request"})
                         return
@@ -529,7 +533,7 @@ def start_server(host: str = "0.0.0.0", port: int = 8765, data_dir: Optional[str
 
     server = ThreadingMergenServer((host, port), MergenRequestHandler)
     print("=" * 70)
-    print("   🏹 MERGENDB SERVER (MergenQL & SQL Network Engine)")
+    print("   [+] MERGENDB SERVER (MergenQL & SQL Network Engine)")
     print("=" * 70)
     print(f"  * Status        : RUNNING")
     print(f"  * Listening on  : http://{host}:{port}")

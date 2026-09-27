@@ -4,10 +4,10 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.9-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.0-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-83%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-88%20Passing%20(%2B12%20Node.js)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
@@ -236,6 +236,55 @@ Open your browser to:
 - **📤 Export (Dışa Aktar):** One-click download of tables to `CSV`, `JSON`, `JSONL`, or `SQL Dump (INSERT statements)`.
 - **⚙️ Operations (İşlemler):** Rename tables (`RENAME`), clear data while keeping schema (`TRUNCATE`), or permanently delete (`DROP`).
 - **📈 Universal Percentage Progress Bar (%0.0 -> %100.0):** Active on **all waiting operations** (browse loading, SQL queries, import, export, table operations) showing live progress %, throughput (~rows/sec), and ETA countdown!
+
+---
+
+### 9. Universal Node.js & TypeScript Client SDK
+
+MergenDB includes an official **zero-dependency** Node.js and TypeScript client SDK (`mergendb`). Connect your Node.js, Express, Next.js, or NestJS backend to MergenDB with full analytical SQL and document-style APIs:
+
+```bash
+# Install via npm
+npm install mergendb
+```
+
+#### JavaScript / TypeScript Example:
+
+```typescript
+import { connect } from 'mergendb';
+
+async function run() {
+  // Connect to MergenDB server
+  const db = connect('http://localhost:8765');
+
+  // Ping server health
+  const isHealthy = await db.ping();
+  console.log('MergenDB status:', isHealthy ? 'ONLINE' : 'OFFLINE');
+
+  // Analytical SQL Query with execution telemetry
+  const result = await db.query(
+    "SELECT sensor, COUNT(*), AVG(temperature) FROM telemetry GROUP BY sensor HAVING COUNT(*) > 100"
+  );
+  console.log(`Scanned in ${result.stats.execution_time_ms} ms (Pruned blocks: ${result.stats.blocks_skipped})`);
+  console.table(result.rows);
+
+  // Safe tagged template literals with parameter escaping
+  const status = 'ACTIVE';
+  const sensors = await db.sql`SELECT id, sensor, temperature FROM telemetry WHERE status = ${status}`;
+  console.log(`Found ${sensors.row_count} active sensors`);
+
+  // Document-style Table API
+  const table = db.table('telemetry.mgdb');
+  const activeSensors = await table.find({ status: 'ACTIVE' }, { limit: 10 });
+  const count = await table.count({ status: 'ERROR' });
+
+  // Administrative actions
+  await table.truncate(); // Clear rows, preserve schema
+  await table.drop();     // Drop table file
+}
+
+run().catch(console.error);
+```
 
 ---
 
@@ -595,20 +644,17 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ## 🚀 Version Updates & Release Comparisons
 
-### Version Comparison: v0.5.8 vs v0.5.9
+### Version Comparison: v0.5.9 vs v0.6.0
 
-| Capability / Architecture | v0.5.8 (Analytical SQL & Hash JOIN) | v0.5.9 (Mergen Studio & Embedded Web UI) | Status & Impact |
+| Capability / Architecture | v0.5.9 (Mergen Studio & Embedded Web UI) | v0.6.0 (Universal Node.js SDK & Production Polish) | Status & Impact |
 | :--- | :--- | :--- | :--- |
-| **Interactive Web UI** | ❌ Not available | ✅ **Mergen Studio** (`http://localhost:8765/studio`) | Zero-dependency dark-mode visual interface in any web browser |
-| **Browser Content Negotiation** | JSON only | ✅ **Smart Content-Type Detection** | Browser visits to `/` auto-render Studio; API clients receive JSON |
-| **Table & Schema Explorer** | CLI/API queries only | ✅ **Interactive Sidebar Explorer** | Inspect `.mgdb` files, block counts, byte sizes, and column data types |
-| **Live SQL / MergenQL Editor** | Terminal REPL only | ✅ **Code Editor with Presets & Hotkeys** | Execute queries via `Ctrl+Enter`, pre-built analytical snippets |
-| **Execution Metrics Visualizer** | Text logs only | ✅ **Real-Time Query Stats Banner** | Displays latency (ms), rows returned, blocks scanned vs skipped (pruned), bytes read |
-| **Direct Browser Data Export** | CLI export only | ✅ **Client-side CSV & JSON Export** | Download result sets straight from the browser grid without server re-reads |
-| **phpMyAdmin Style Tabs** | ❌ Not available | ✅ **Browse, Structure, SQL, Import, Export, Operations** | Familiar, intuitive navigation with pagination, schema altering, and table actions |
-| **Active Data File Selector** | CLI flag only | ✅ **Dynamic Target Switcher** | Header dropdown and sidebar table tree to select active `.mgdb` table |
-| **Universal % Progress Bar** | Terminal only | ✅ **Real-Time Progress Modal (%0.0 -> %100.0)** | Live %, rows/sec transfer rate, and ETA on all waiting operations |
-| **Unit Test Suite** | 73 Tests (100% pass) | ✅ **83 Tests (100% pass)** | Added tests for phpMyAdmin REST APIs, schema, data pagination, operations & export |
+| **Node.js & TypeScript SDK** | ❌ Python only | ✅ **Official `mergendb` Client Package** | Zero-dependency TypeScript/Node.js client for Express, Next.js, and NestJS |
+| **Document-Style API in JS** | ❌ Not available | ✅ **Fluent `.find()`, `.count()` & Tagged SQL** | Safe parameterized queries via `db.sql\`...\`` and object-based row mapping |
+| **CLI Shell Autocompletions** | ❌ Not available | ✅ **`mergen completions <shell>`** | Tab autocompletion for Bash, Zsh, PowerShell, and Fish |
+| **One-Off Query Execution** | REPL only | ✅ **`mergen query "<SQL>"`** | Rapid shell querying without entering the interactive REPL prompt |
+| **Hardware Diagnostic Accuracies** | Architecture only | ✅ **Exact CPU Model & RAM Sizing** | Accurate detection of Intel/AMD/Apple Silicon models via WMI/sysfs/sysctl |
+| **Web UI (Mergen Studio)** | phpMyAdmin layout | ✅ **Standardized REST Payloads** | Consistent JSON error codes and `row_count` attributes across all endpoints |
+| **Total Test Suite** | 83 Tests (100% pass) | ✅ **100 Tests (88 Python + 12 Node.js SDK, 100% pass)** | Complete end-to-end integration verification across Python and Node.js runtimes |
 
 ---
 
@@ -621,20 +667,23 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
 | **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | ✅ Released |
-| **v0.6.0** | Universal Node.js SDK | Node.js client package + CLI completions + Production 0.6 Polish | ⏳ Up Next (Final Milestone) |
+| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | ✅ Released (Milestone Complete) |
 
 ---
 
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with 83 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
+MergenDB includes an embedded test suite with **100 comprehensive tests** (88 Python unit tests covering storage, compression algorithms, query planning, Bloom filters, and analytical joins + 12 end-to-end Node.js SDK integration tests):
 
 ```bash
-# Run via CLI
+# Run Python unit tests & hardware profiler via CLI
 mergen test
 
 # Or run via unittest
 python -m unittest discover -s tests
+
+# Run Node.js Client SDK integration tests
+node sdks/nodejs/test.js
 ```
 
 ---

@@ -778,21 +778,55 @@ class MergenCLI:
                 break
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1].lower() in ("serve", "server"):
-        port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
-        from mergendb.server.server import start_server
-        start_server(port=port)
-    elif len(sys.argv) > 1 and sys.argv[1].lower() in ("test", "benchmark", "diagnose", "check"):
-        from mergendb.testing.suite import run_diagnostics
-        res = run_diagnostics()
-        sys.exit(0 if res.get("success") else 1)
-    else:
-        cli = MergenCLI()
-        if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
-            target = cli._resolve_table_path(sys.argv[1])
-            if os.path.exists(target):
-                cli.active_table = target
-        cli.run()
+    import mergendb
+
+    if len(sys.argv) > 1:
+        arg1 = sys.argv[1].lower()
+        if arg1 in ("--version", "-v"):
+            print(f"MergenDB v{mergendb.__version__}")
+            sys.exit(0)
+        elif arg1 in ("--help", "-h"):
+            print(f"MergenDB v{mergendb.__version__} - Lightning Columnar Embedded Database\n")
+            print("Usage: mergen [command] [options]")
+            print("\nCommands:")
+            print("  serve [port]              Start REST and Mergen Studio Web UI server (default: 8765)")
+            print("  test, benchmark           Run full system diagnostics and hardware profiling")
+            print("  query \"<SQL>\"             Execute a one-off SQL or MergenQL query")
+            print("  completions <shell>       Generate autocompletion script (bash, zsh, powershell, fish)")
+            print("  [table.mgdb]              Launch interactive REPL (optionally with active table)")
+            sys.exit(0)
+        elif arg1 in ("completions", "--completions"):
+            shell = sys.argv[2] if len(sys.argv) > 2 else "powershell" if sys.platform == "win32" else "bash"
+            try:
+                from mergendb.cli.completions import generate_completions
+                print(generate_completions(shell))
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+        elif arg1 in ("query", "sql"):
+            if len(sys.argv) < 3:
+                print("Error: Missing query string. Usage: mergen query \"SELECT ...\"", file=sys.stderr)
+                sys.exit(1)
+            cli = MergenCLI()
+            cli.execute_command(sys.argv[2])
+            sys.exit(0)
+        elif arg1 in ("serve", "server"):
+            port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
+            from mergendb.server.server import start_server
+            start_server(port=port)
+            return
+        elif arg1 in ("test", "benchmark", "diagnose", "check"):
+            from mergendb.testing.suite import run_diagnostics
+            res = run_diagnostics()
+            sys.exit(0 if res.get("success") else 1)
+
+    cli = MergenCLI()
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        target = cli._resolve_table_path(sys.argv[1])
+        if os.path.exists(target):
+            cli.active_table = target
+    cli.run()
 
 if __name__ == "__main__":
     main()
