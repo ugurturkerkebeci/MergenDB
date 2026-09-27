@@ -568,9 +568,38 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ---
 
+## 🚀 Version Updates & Release Comparisons
+
+### Version Comparison: v0.5.7 vs v0.5.8
+
+| Capability / Architecture | v0.5.7 (Bloom Filter Lightning Engine) | v0.5.8 (Analytical SQL & Hash JOIN Engine) | Status & Impact |
+| :--- | :--- | :--- | :--- |
+| **Table JOINs** | ❌ Not supported | ✅ **Streaming Hash JOIN** (`INNER JOIN` & `LEFT JOIN`) | Query multiple `.mgdb` tables in one analytical statement |
+| **Column Resolution** | Single-table only | ✅ **Qualified & Unqualified** (`users.name`, `orders.amount`) | Zero name collision conflicts between joined tables |
+| **GROUP BY Clauses** | Single-column only | ✅ **Multi-Column GROUP BY** (`GROUP BY dept, city`) | Complex dimensional aggregation supported |
+| **HAVING Filter** | ❌ Not supported | ✅ **HAVING Filtering** (`HAVING total > 10000`) | Evaluate conditions directly against aggregated metric values |
+| **SQL Translation** | Simple `SELECT WHERE ORDER LIMIT` | ✅ **Full Analytical SQL Grammer** (JOIN, GROUP BY, HAVING) | Seamless translation of standard SQL into MergenQL |
+| **Hardware Profiler** | Basic generic architecture info | ✅ **Real CPU & RAM Detection** + Live 4-Step Disk Benchmark | Detects exact CPU name (e.g. 12th Gen Intel i5) & Windows 11 Build |
+| **Unit Test Suite** | 60 Tests (100% pass) | ✅ **73 Tests (100% pass)** | Added comprehensive tests for JOIN, HAVING, Bloom Filters & Audit |
+
+---
+
+### Roadmap & Version Progression
+
+| Version | Milestone | Key Deliverables | Status |
+| :--- | :--- | :--- | :--- |
+| **v0.5.5** | CLI & Ingestion Polish | Universal `EXPORT [csv\|json\|sql]` syntax & extension resolution | ✅ Released |
+| **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | ✅ Released |
+| **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
+| **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
+| **v0.5.9** | Embedded Web UI | **Mergen Studio**: Zero-dependency dark-mode dashboard on `mergen serve` | ⏳ Up Next |
+| **v0.6.0** | Universal Node.js SDK | Node.js client package + CLI completions + Production 0.6 Polish | 📅 Planned |
+
+---
+
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with 26 comprehensive unit tests covering storage, compression algorithms, query planning, type coercion, and friendly client APIs:
+MergenDB includes an embedded test suite with 73 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
 
 ```bash
 # Run via CLI
