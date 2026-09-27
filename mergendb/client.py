@@ -529,22 +529,43 @@ class Table:
         """Pretty-prints table contents to console."""
         self.query(f"| LIMIT {limit}").show()
 
-    def export(self, output_path: str):
-        """Automatically exports table data based on file extension (.csv, .json, .jsonl, .sql)."""
+    def _ensure_output_ext(self, path: str, expected_ext: str) -> str:
+        path = str(path).strip().strip('"').strip("'")
+        base, ext = os.path.splitext(path)
+        if not ext:
+            return f"{path}{expected_ext}"
+        if ext.lower() != expected_ext.lower() and ext.lower() in (".csv", ".json", ".jsonl", ".sql"):
+            return f"{base}{expected_ext}"
+        return path
+
+    def export(self, output_path: str, fmt: Optional[str] = None):
+        """Automatically exports table data based on file extension (.csv, .json, .jsonl, .sql) or fmt parameter."""
+        if fmt:
+            fmt_upper = fmt.upper()
+            if fmt_upper in ("CSV", "CVS"):
+                return self.export_csv(output_path)
+            elif fmt_upper == "JSON":
+                return self.export_json(output_path)
+            elif fmt_upper == "JSONL":
+                return self.export_jsonl(output_path)
+            elif fmt_upper == "SQL":
+                return self.export_sql(output_path)
+
         lower = output_path.lower()
         if lower.endswith(".csv"):
-            self.export_csv(output_path)
+            return self.export_csv(output_path)
         elif lower.endswith(".jsonl"):
-            self.export_jsonl(output_path)
+            return self.export_jsonl(output_path)
         elif lower.endswith(".json"):
-            self.export_json(output_path)
+            return self.export_json(output_path)
         elif lower.endswith(".sql"):
-            self.export_sql(output_path)
+            return self.export_sql(output_path)
         else:
-            raise ValueError(f"Unsupported export format for '{output_path}'. Use .csv, .json, .jsonl, or .sql.")
+            return self.export_csv(output_path)
 
     def export_csv(self, output_path: str):
         """Exports all rows to a CSV file."""
+        output_path = self._ensure_output_ext(output_path, ".csv")
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
             with builtins.open(output_path, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
@@ -556,6 +577,7 @@ class Table:
 
     def export_json(self, output_path: str):
         """Exports all rows to a standard JSON array file [ {...}, {...} ]."""
+        output_path = self._ensure_output_ext(output_path, ".json")
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
             with builtins.open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
@@ -574,6 +596,7 @@ class Table:
 
     def export_jsonl(self, output_path: str):
         """Exports all rows to a JSON Lines (JSONL) file."""
+        output_path = self._ensure_output_ext(output_path, ".jsonl")
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
             with builtins.open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
@@ -584,6 +607,7 @@ class Table:
 
     def export_sql(self, output_path: str):
         """Exports all rows to an SQL INSERT dump file."""
+        output_path = self._ensure_output_ext(output_path, ".sql")
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
             clean_tbl = os.path.splitext(os.path.basename(self.filepath))[0]

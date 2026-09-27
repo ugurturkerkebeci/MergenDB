@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.4 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.5.5 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -73,9 +73,11 @@ Data Ingestion & Export:
   IMPORT SQLITE <source.db> [tbl] <out.mgdb>;      - Ingest SQLite table
   IMPORT SQL <dump.sql> <out.mgdb>;                - Ingest MySQL / phpMyAdmin SQL dump
   IMPORT CSV <file.csv> <out.mgdb>;                - Ingest CSV file with auto-detect
-  EXPORT <table.mgdb> TO CSV <output.csv>;         - Export to CSV
-  EXPORT <table.mgdb> TO JSON <output.jsonl>;      - Export to JSON Lines
-  EXPORT <table.mgdb> TO SQL <output.sql>;         - Export to SQL dump (DDL + INSERTs)
+  EXPORT <table.mgdb> TO CSV [output.csv];         - Export table to CSV
+  EXPORT <table.mgdb> TO JSON [output.json];       - Export table to JSON array
+  EXPORT <table.mgdb> TO JSONL [output.jsonl];     - Export table to JSON Lines
+  EXPORT <table.mgdb> TO SQL [output.sql];         - Export table to SQL dump (DDL + INSERTs)
+  (Shortcut when inside 'USE <table>;': EXPORT JSON;, EXPORT CSV;, EXPORT SQL;)
 
 Diagnostics:
   BENCHMARK <table.mgdb>;                          - Run live speed & I/O benchmark
@@ -238,103 +240,115 @@ class MergenCLI:
         fmt = fmt.upper()
         if fmt == "CVS":
             fmt = "CSV"
+        if fmt not in ("CSV", "JSON", "JSONL", "SQL"):
+            fmt = "CSV"
+
+        expected_ext = f".{fmt.lower()}"
 
         if not out_file:
-            base = os.path.splitext(filepath)[0]
-            if fmt == "CSV":
-                out_file = f"{base}.csv"
-            elif fmt == "SQL":
-                out_file = f"{base}.sql"
-            elif fmt == "JSON":
-                out_file = f"{base}.json"
-            elif fmt == "JSONL":
-                out_file = f"{base}.jsonl"
-            else:
-                out_file = f"{base}.csv"
+            base = os.path.splitext(os.path.basename(filepath))[0]
+            out_file = f"{base}{expected_ext}"
+        else:
+            out_file = out_file.strip().strip('"').strip("'")
+            base, ext = os.path.splitext(out_file)
+            if not ext:
+                out_file = f"{out_file}{expected_ext}"
+            elif ext.lower() != expected_ext and ext.lower() in (".csv", ".json", ".jsonl", ".sql"):
+                out_file = f"{base}{expected_ext}"
 
-        with FileReader(filepath) as reader:
-            total_rows = reader.total_rows
-            col_names = reader.schema.column_names()
-            pbar = ProgressBar(f"Exporting to {fmt}", total_rows=total_rows)
-            exported = 0
+        print(f"[*] Target format : {fmt}")
+        print(f"[*] Output file   : {out_file}")
 
-            if fmt == "CSV":
-                with open(out_file, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
-                    writer = csv.writer(f)
-                    writer.writerow(col_names)
-                    for batch, _ in reader.scan():
-                        cols = batch.columns
-                        writer.writerows(zip(*(cols[c] for c in col_names)))
-                        exported += batch.row_count
-                        pbar.update(exported)
+        out_dir = os.path.dirname(out_file)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
 
-            elif fmt == "SQL":
-                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
-                    clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
-                    col_defs = []
-                    for c in reader.schema.columns:
-                        tname = "TEXT"
-                        if c.data_type in (DataType.INT64, DataType.INT32):
-                            tname = "BIGINT"
-                        elif c.data_type == DataType.FLOAT64:
-                            tname = "DOUBLE"
-                        elif c.data_type == DataType.BOOL:
-                            tname = "BOOLEAN"
-                        col_defs.append(f"  `{c.name}` {tname}")
-                    f.write(f"CREATE TABLE IF NOT EXISTS `{clean_tbl}` (\n" + ",\n".join(col_defs) + "\n);\n\n")
+        try:
+            with FileReader(filepath) as reader:
+                total_rows = reader.total_rows
+                col_names = reader.schema.column_names()
+                pbar = ProgressBar(f"Exporting to {fmt}", total_rows=total_rows)
+                exported = 0
 
-                    chunk_size = 1000
-                    chunk = []
-                    for batch, _ in reader.scan():
-                        cols = batch.columns
-                        for row_vals in zip(*(cols[c] for c in col_names)):
-                            formatted = []
-                            for val in row_vals:
-                                if val is None:
-                                    formatted.append("NULL")
-                                elif isinstance(val, (int, float)):
-                                    formatted.append(str(val))
-                                elif isinstance(val, bool):
-                                    formatted.append("1" if val else "0")
+                if fmt == "CSV":
+                    with open(out_file, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
+                        writer = csv.writer(f)
+                        writer.writerow(col_names)
+                        for batch, _ in reader.scan():
+                            cols = batch.columns
+                            writer.writerows(zip(*(cols[c] for c in col_names)))
+                            exported += batch.row_count
+                            pbar.update(exported)
+
+                elif fmt == "SQL":
+                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                        clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
+                        col_defs = []
+                        for c in reader.schema.columns:
+                            tname = "TEXT"
+                            if c.data_type in (DataType.INT64, DataType.INT32):
+                                tname = "BIGINT"
+                            elif c.data_type == DataType.FLOAT64:
+                                tname = "DOUBLE"
+                            elif c.data_type == DataType.BOOL:
+                                tname = "BOOLEAN"
+                            col_defs.append(f"  `{c.name}` {tname}")
+                        f.write(f"CREATE TABLE IF NOT EXISTS `{clean_tbl}` (\n" + ",\n".join(col_defs) + "\n);\n\n")
+
+                        chunk_size = 1000
+                        chunk = []
+                        for batch, _ in reader.scan():
+                            cols = batch.columns
+                            for row_vals in zip(*(cols[c] for c in col_names)):
+                                formatted = []
+                                for val in row_vals:
+                                    if val is None:
+                                        formatted.append("NULL")
+                                    elif isinstance(val, (int, float)):
+                                        formatted.append(str(val))
+                                    elif isinstance(val, bool):
+                                        formatted.append("1" if val else "0")
+                                    else:
+                                        esc = str(val).replace("\\", "\\\\").replace("'", "''")
+                                        formatted.append(f"'{esc}'")
+                                chunk.append("(" + ", ".join(formatted) + ")")
+                                if len(chunk) >= chunk_size:
+                                    f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
+                                    chunk = []
+                            exported += batch.row_count
+                            pbar.update(exported)
+                        if chunk:
+                            f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
+
+                elif fmt == "JSON":
+                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                        f.write("[\n")
+                        first = True
+                        for batch, _ in reader.scan():
+                            cols = batch.columns
+                            for row in zip(*(cols[c] for c in col_names)):
+                                record_str = json.dumps(dict(zip(col_names, row)))
+                                if not first:
+                                    f.write(",\n  " + record_str)
                                 else:
-                                    esc = str(val).replace("\\", "\\\\").replace("'", "''")
-                                    formatted.append(f"'{esc}'")
-                            chunk.append("(" + ", ".join(formatted) + ")")
-                            if len(chunk) >= chunk_size:
-                                f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
-                                chunk = []
-                        exported += batch.row_count
-                        pbar.update(exported)
-                    if chunk:
-                        f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
+                                    f.write("  " + record_str)
+                                    first = False
+                            exported += batch.row_count
+                            pbar.update(exported)
+                        f.write("\n]\n")
 
-            elif fmt == "JSON":
-                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
-                    f.write("[\n")
-                    first = True
-                    for batch, _ in reader.scan():
-                        cols = batch.columns
-                        for row in zip(*(cols[c] for c in col_names)):
-                            record_str = json.dumps(dict(zip(col_names, row)))
-                            if not first:
-                                f.write(",\n  " + record_str)
-                            else:
-                                f.write("  " + record_str)
-                                first = False
-                        exported += batch.row_count
-                        pbar.update(exported)
-                    f.write("\n]\n")
+                else:  # JSONL
+                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                        for batch, _ in reader.scan():
+                            cols = batch.columns
+                            lines = [json.dumps(dict(zip(col_names, row))) + "\n" for row in zip(*(cols[c] for c in col_names))]
+                            f.writelines(lines)
+                            exported += batch.row_count
+                            pbar.update(exported)
 
-            else:  # JSONL
-                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
-                    for batch, _ in reader.scan():
-                        cols = batch.columns
-                        lines = [json.dumps(dict(zip(col_names, row))) + "\n" for row in zip(*(cols[c] for c in col_names))]
-                        f.writelines(lines)
-                        exported += batch.row_count
-                        pbar.update(exported)
-
-            pbar.finish(f"[+] Successfully exported {exported:,} rows to '{out_file}'!")
+                pbar.finish(f"[+] Successfully exported {exported:,} rows to '{out_file}'!")
+        except KeyboardInterrupt:
+            print(f"\n[!] Export cancelled by user. Partial file saved to '{out_file}'.\n")
 
     def benchmark_table(self, table_name: str):
         filepath = self._resolve_table_path(table_name)
@@ -523,61 +537,90 @@ class MergenCLI:
 
         elif keyword == "EXPORT":
             rem = parts[1:]
-            if not rem:
-                if self.active_table:
-                    print("Usage: EXPORT <SQL|CSV|JSON|JSONL> [output_file]; or EXPORT TO <SQL|CSV|JSON>;\n")
-                else:
-                    print("Usage: EXPORT <table.mgdb> TO <SQL|CSV|JSON|JSONL> [output_file];\n")
-                return
+
+            # 1. Detect format if explicitly provided as a keyword
+            fmt_found = None
+            fmt_token_idx = -1
+            for i, tok in enumerate(rem):
+                u = tok.upper()
+                if u in ("CSV", "CVS", "JSON", "JSONL", "SQL"):
+                    fmt_found = "CSV" if u == "CVS" else u
+                    fmt_token_idx = i
+                    break
+
+            # 2. Filter out syntax noise (prepositions) and the format token
+            filtered = []
+            for i, tok in enumerate(rem):
+                if i == fmt_token_idx:
+                    continue
+                if tok.upper() in ("TO", "INTO", "AS", "TABLE"):
+                    continue
+                filtered.append(tok)
 
             tbl = None
-            fmt = "CSV"
             out = None
 
-            if rem[0].upper() == "TO":
-                if not self.active_table:
-                    print("Error: No active table selected. Use 'USE <table_name>;' or 'EXPORT <table> TO ...'.\n")
-                    return
+            # 3. Determine table and output file from filtered tokens
+            if len(filtered) == 0:
                 tbl = self.active_table
-                fmt = rem[1].upper() if len(rem) > 1 else "CSV"
-                out = rem[2] if len(rem) > 2 else None
+                if not tbl:
+                    mgdbs = glob.glob("*.mgdb")
+                    if len(mgdbs) == 1:
+                        tbl = mgdbs[0]
+                    else:
+                        print("Error: No active table selected. Use 'USE <table_name>;' or 'EXPORT <table> TO <format>;'.\n")
+                        return
+                fmt = fmt_found or "CSV"
+                out = None
 
-            elif rem[0].upper() in ("SQL", "CSV", "CVS", "JSON", "JSONL"):
-                if not self.active_table:
-                    print("Error: No active table selected. Use 'USE <table_name>;' or 'EXPORT <table> TO ...'.\n")
-                    return
-                tbl = self.active_table
-                fmt = rem[0].upper()
-                out = rem[1] if len(rem) > 1 else None
-
-            elif any(rem[0].lower().endswith(ext) for ext in (".sql", ".csv", ".json", ".jsonl")):
-                if not self.active_table:
-                    print("Error: No active table selected. Use 'USE <table_name>;' or specify table: 'EXPORT <table> <file>'.\n")
-                    return
-                tbl = self.active_table
-                out = rem[0]
-                ext = os.path.splitext(out)[1].lower().lstrip(".")
-                fmt = ext.upper()
-
-            else:
-                tbl = rem[0]
-                rest = rem[1:]
-                if rest and rest[0].upper() == "TO":
-                    rest = rest[1:]
-
-                if not rest:
-                    fmt = "SQL"
-                    out = None
-                elif rest[0].upper() in ("SQL", "CSV", "CVS", "JSON", "JSONL"):
-                    fmt = rest[0].upper()
-                    out = rest[1] if len(rest) > 1 else None
-                elif any(rest[0].lower().endswith(ext) for ext in (".sql", ".csv", ".json", ".jsonl")):
-                    out = rest[0]
-                    ext = os.path.splitext(out)[1].lower().lstrip(".")
-                    fmt = ext.upper()
+            elif len(filtered) == 1:
+                token = filtered[0]
+                token_lower = token.lower()
+                if any(token_lower.endswith(ext) for ext in (".csv", ".json", ".jsonl", ".sql")):
+                    out = token
+                    ext = os.path.splitext(token)[1].lower().lstrip(".")
+                    fmt = fmt_found or ext.upper()
+                    tbl = self.active_table
+                    if not tbl:
+                        mgdbs = glob.glob("*.mgdb")
+                        if len(mgdbs) == 1:
+                            tbl = mgdbs[0]
+                        else:
+                            print(f"Error: Table not specified for export to '{out}'. Use 'EXPORT <table> {out}'.\n")
+                            return
                 else:
-                    fmt = rest[0].upper()
-                    out = rest[1] if len(rest) > 1 else None
+                    resolved = self._resolve_table_path(token)
+                    if os.path.exists(resolved) or token.endswith(".mgdb"):
+                        tbl = token
+                        fmt = fmt_found or "CSV"
+                        out = None
+                    elif self.active_table:
+                        tbl = self.active_table
+                        out = token
+                        fmt = fmt_found or "CSV"
+                    else:
+                        tbl = token
+                        fmt = fmt_found or "CSV"
+                        out = None
+
+            else:  # len(filtered) >= 2
+                tok0, tok1 = filtered[0], filtered[1]
+                tok0_res = self._resolve_table_path(tok0)
+                tok1_res = self._resolve_table_path(tok1)
+
+                if os.path.exists(tok1_res) and not os.path.exists(tok0_res):
+                    tbl = tok1
+                    out = tok0
+                else:
+                    tbl = tok0
+                    out = tok1
+
+                if not fmt_found:
+                    for ext, f in [(".csv", "CSV"), (".json", "JSON"), (".jsonl", "JSONL"), (".sql", "SQL")]:
+                        if out.lower().endswith(ext):
+                            fmt_found = f
+                            break
+                fmt = fmt_found or "CSV"
 
             if fmt == "CVS":
                 fmt = "CSV"
@@ -687,6 +730,11 @@ class MergenCLI:
             except Exception:
                 pass
         print(BANNER)
+        if not self.active_table:
+            mgdbs = glob.glob("*.mgdb")
+            if len(mgdbs) == 1:
+                self.active_table = mgdbs[0]
+                print(f"[*] Context auto-set to table: '{self.active_table}'\n")
         buffer = []
 
         while True:
@@ -732,6 +780,10 @@ def main():
         sys.exit(0 if res.get("success") else 1)
     else:
         cli = MergenCLI()
+        if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+            target = cli._resolve_table_path(sys.argv[1])
+            if os.path.exists(target):
+                cli.active_table = target
         cli.run()
 
 if __name__ == "__main__":
