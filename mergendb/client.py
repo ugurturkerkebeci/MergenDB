@@ -73,6 +73,12 @@ class Table:
             filepath += ".mgdb"
         self.filepath = filepath
 
+    @classmethod
+    def create(cls, filepath: str, schema: Schema, block_size: int = 1024) -> 'Table':
+        """Creates a new empty table with the given schema."""
+        MergenDB.create_table(filepath, schema, block_size=block_size)
+        return cls(filepath)
+
     @property
     def schema(self) -> Schema:
         with FileReader(self.filepath) as reader:

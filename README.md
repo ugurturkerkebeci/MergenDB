@@ -7,7 +7,7 @@
 [![PyPI version](https://img.shields.io/badge/PyPI-v0.5.9-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-79%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-83%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
@@ -213,9 +213,9 @@ mergen> TEST;
 ==========================================================================
 ```
 
-### 8. Embedded Web UI: "Mergen Studio" (`mergen serve`)
+### 8. Embedded Web UI: "Mergen Studio" (phpMyAdmin Edition)
 
-MergenDB includes **Mergen Studio**, an ultra-fast, zero-dependency, dark-mode interactive web dashboard embedded directly into the engine. Launch it with a single command:
+MergenDB includes **Mergen Studio**, an ultra-fast, zero-dependency interactive web dashboard inspired by phpMyAdmin. Launch it with a single command:
 
 ```bash
 # Start server and launch Mergen Studio
@@ -227,12 +227,15 @@ mergen serve 8765
 Open your browser to:
 👉 **`http://localhost:8765/studio`** (or simply `http://localhost:8765/`)
 
-**What you can do in Mergen Studio:**
-- **📁 Table Explorer:** Instantly lists all `.mgdb` tables in the directory, showing file sizes, total row counts, block counts, and schema columns with data types.
-- **⚡ Interactive Query Editor:** Write standard SQL or MergenQL queries with keyboard shortcuts (`Ctrl+Enter`), pre-built analytical snippets (SELECT, GROUP BY + HAVING, Hash JOINs), and real-time execution feedback.
-- **📊 Real-Time Performance Telemetry:** Inspect query execution time in milliseconds, rows returned, blocks scanned vs skipped via Bloom filters / ZoneMaps (Zero I/O), and total bytes read.
-- **💾 Browser-Side Data Export:** Export result sets directly to `.csv` or `.json` with a single click.
-- **🌐 Dual Negotiation:** Automated content negotiation ensures curl / Node.js requests receive JSON while browser navigations automatically render Mergen Studio.
+**Key Capabilities in Mergen Studio (phpMyAdmin Edition):**
+- **🎯 Active Data File Selector:** Switch between `.mgdb` tables via the top navigation dropdown or sidebar. All tabs automatically bind to the selected table.
+- **👁️ Browse (Gözat):** Interactive spreadsheet grid with pagination (`<< < Page 1/10 > >>`), sortable column headers (`▲▼`), row range indicators, and inline inspection.
+- **📋 Structure (Yapı / Şema):** View column names, data types, nullability, block counts, and disk size. Add new columns dynamically with default values or drop unused columns.
+- **🔍 SQL:** Large interactive query editor with one-click snippets (`SELECT *`, `COUNT(*)`, `GROUP BY + HAVING`, `Bloom Filter`, `Hash JOIN`), execution stats (`ms`, blocks scanned vs skipped via ZoneMaps), and `Ctrl+Enter` hotkey.
+- **📥 Import (İçe Aktar):** Drag-and-drop or select `.csv`, `.sql`, or `.json` files to stream data directly into any `.mgdb` table.
+- **📤 Export (Dışa Aktar):** One-click download of tables to `CSV`, `JSON`, `JSONL`, or `SQL Dump (INSERT statements)`.
+- **⚙️ Operations (İşlemler):** Rename tables (`RENAME`), clear data while keeping schema (`TRUNCATE`), or permanently delete (`DROP`).
+- **📈 Universal Percentage Progress Bar (%0.0 -> %100.0):** Active on **all waiting operations** (browse loading, SQL queries, import, export, table operations) showing live progress %, throughput (~rows/sec), and ETA countdown!
 
 ---
 
@@ -602,7 +605,10 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **Live SQL / MergenQL Editor** | Terminal REPL only | ✅ **Code Editor with Presets & Hotkeys** | Execute queries via `Ctrl+Enter`, pre-built analytical snippets |
 | **Execution Metrics Visualizer** | Text logs only | ✅ **Real-Time Query Stats Banner** | Displays latency (ms), rows returned, blocks scanned vs skipped (pruned), bytes read |
 | **Direct Browser Data Export** | CLI export only | ✅ **Client-side CSV & JSON Export** | Download result sets straight from the browser grid without server re-reads |
-| **Unit Test Suite** | 73 Tests (100% pass) | ✅ **79 Tests (100% pass)** | Added tests for HTTP server, HTML content negotiation, and query API |
+| **phpMyAdmin Style Tabs** | ❌ Not available | ✅ **Browse, Structure, SQL, Import, Export, Operations** | Familiar, intuitive navigation with pagination, schema altering, and table actions |
+| **Active Data File Selector** | CLI flag only | ✅ **Dynamic Target Switcher** | Header dropdown and sidebar table tree to select active `.mgdb` table |
+| **Universal % Progress Bar** | Terminal only | ✅ **Real-Time Progress Modal (%0.0 -> %100.0)** | Live %, rows/sec transfer rate, and ETA on all waiting operations |
+| **Unit Test Suite** | 73 Tests (100% pass) | ✅ **83 Tests (100% pass)** | Added tests for phpMyAdmin REST APIs, schema, data pagination, operations & export |
 
 ---
 
@@ -614,14 +620,14 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 | **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | ✅ Released |
 | **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
-| **v0.5.9** | Embedded Web UI | **Mergen Studio**: Zero-dependency dark-mode dashboard on `mergen serve` | ✅ Released |
+| **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | ✅ Released |
 | **v0.6.0** | Universal Node.js SDK | Node.js client package + CLI completions + Production 0.6 Polish | ⏳ Up Next (Final Milestone) |
 
 ---
 
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with 79 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
+MergenDB includes an embedded test suite with 83 comprehensive unit tests covering storage, compression algorithms, query planning, Bloom filters, analytical joins, and friendly client APIs:
 
 ```bash
 # Run via CLI
