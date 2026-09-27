@@ -80,6 +80,13 @@ class QueryPlanner:
             for g in plan.aggregate.group_by:
                 required.add(g)
 
+        if plan.join:
+            required.add(plan.join.left_key)
+            required.add(plan.join.right_key)
+
+        if plan.aggregate and plan.aggregate.having_expr:
+            collect_from_expr(plan.aggregate.having_expr)
+
         if plan.sort:
             if plan.sort.column not in computed_names:
                 required.add(plan.sort.column)

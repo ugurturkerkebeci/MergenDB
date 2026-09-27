@@ -30,6 +30,12 @@ class TokenType(Enum):
     INTO = auto()
     VALUES = auto()
     LIKE = auto()
+    JOIN = auto()
+    ON = auto()
+    INNER = auto()
+    LEFT = auto()
+    HAVING = auto()
+    GROUP = auto()
 
     # Literals & Identifiers
     IDENTIFIER = auto()
@@ -74,6 +80,12 @@ KEYWORDS = {
     "into": TokenType.INTO,
     "values": TokenType.VALUES,
     "like": TokenType.LIKE,
+    "join": TokenType.JOIN,
+    "on": TokenType.ON,
+    "inner": TokenType.INNER,
+    "left": TokenType.LEFT,
+    "having": TokenType.HAVING,
+    "group": TokenType.GROUP,
     "true": TokenType.BOOL_LITERAL,
     "false": TokenType.BOOL_LITERAL,
 }

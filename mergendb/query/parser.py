@@ -5,7 +5,7 @@ from mergendb.core.types import DataType
 from mergendb.query.ast_nodes import (
     ASTNode, ExprNode, LiteralNode, ColumnRefNode, BinaryOpNode,
     ComputeNode, AggFuncNode, AggregateNode, SortNode, QueryPlan,
-    CreateTableNode, InsertNode
+    CreateTableNode, InsertNode, JoinNode
 )
 
 TYPE_MAP = {
@@ -75,7 +75,29 @@ class Parser:
         while self._match(TokenType.PIPE):
             stage_tok = self._current()
 
-            if self._match(TokenType.WHERE):
+            if self._current().type in (TokenType.JOIN, TokenType.INNER, TokenType.LEFT):
+                join_type = "INNER"
+                if self._match(TokenType.INNER):
+                    self._expect(TokenType.JOIN)
+                elif self._match(TokenType.LEFT):
+                    self._expect(TokenType.JOIN)
+                    join_type = "LEFT"
+                else:
+                    self._expect(TokenType.JOIN)
+
+                target_tok = self._current()
+                if target_tok.type not in (TokenType.IDENTIFIER, TokenType.STRING_LITERAL):
+                    raise SyntaxError(f"Expected table name after JOIN, got {target_tok.type.name}")
+                self.pos += 1
+                right_table = target_tok.value
+
+                self._expect(TokenType.ON, "Expected ON clause in JOIN")
+                left_key = self._expect(TokenType.IDENTIFIER, "Expected left key column name").value
+                self._expect(TokenType.EQ, "Expected '=' in JOIN condition")
+                right_key = self._expect(TokenType.IDENTIFIER, "Expected right key column name").value
+
+                plan.join = JoinNode(right_table=right_table, left_key=left_key, right_key=right_key, join_type=join_type)
+            elif self._match(TokenType.WHERE):
                 expr = self._parse_expression()
                 plan.where_expr = expr
             elif self._match(TokenType.COMPUTE):
@@ -93,6 +115,10 @@ class Parser:
                 plan.select_columns = cols
             elif self._match(TokenType.AGGREGATE):
                 plan.aggregate = self._parse_aggregate()
+            elif self._match(TokenType.HAVING):
+                if not plan.aggregate:
+                    raise SyntaxError("HAVING clause requires a preceding AGGREGATE stage.")
+                plan.aggregate.having_expr = self._parse_expression()
             elif self._match(TokenType.SORT):
                 col = self._expect(TokenType.IDENTIFIER).value
                 desc = False
@@ -132,14 +158,25 @@ class Parser:
                 break
 
         group_by: List[str] = []
-        if self._match(TokenType.BY):
+        if self._match(TokenType.GROUP):
+            self._expect(TokenType.BY)
+            while True:
+                g_col = self._expect(TokenType.IDENTIFIER).value
+                group_by.append(g_col)
+                if not self._match(TokenType.COMMA):
+                    break
+        elif self._match(TokenType.BY):
             while True:
                 g_col = self._expect(TokenType.IDENTIFIER).value
                 group_by.append(g_col)
                 if not self._match(TokenType.COMMA):
                     break
 
-        return AggregateNode(aggregations=aggs, group_by=group_by)
+        having_expr = None
+        if self._match(TokenType.HAVING):
+            having_expr = self._parse_expression()
+
+        return AggregateNode(aggregations=aggs, group_by=group_by, having_expr=having_expr)
 
     def _parse_create_table(self) -> CreateTableNode:
         self._expect(TokenType.CREATE)

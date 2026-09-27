@@ -35,9 +35,17 @@ class AggFuncNode(ASTNode):
     alias: str
 
 @dataclass
+class JoinNode(ASTNode):
+    right_table: str
+    left_key: str
+    right_key: str
+    join_type: str = "INNER"  # 'INNER' or 'LEFT'
+
+@dataclass
 class AggregateNode(ASTNode):
     aggregations: List[AggFuncNode]
     group_by: List[str]
+    having_expr: Optional[ExprNode] = None
 
 @dataclass
 class SortNode(ASTNode):
@@ -47,6 +55,7 @@ class SortNode(ASTNode):
 @dataclass
 class QueryPlan(ASTNode):
     table_source: str
+    join: Optional[JoinNode] = None
     where_expr: Optional[ExprNode] = None
     computes: List[ComputeNode] = None
     select_columns: Optional[List[str]] = None

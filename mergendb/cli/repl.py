@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.7 (Bloom Filter Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.5.8 (Analytical SQL & Hash JOIN Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -62,7 +62,10 @@ Data & Schema Mutations (SQL):
 
 Querying (MergenQL & SQL):
   FROM "table.mgdb" | WHERE ... | SELECT ...;      - Full pipeline query
+  FROM "t1.mgdb" | JOIN "t2.mgdb" ON id=uid | ...; - Streaming Hash JOIN (INNER / LEFT)
   SELECT col1, col2 FROM <table> WHERE ...;        - Standard SQL query syntax
+  SELECT a, b FROM t1 [INNER|LEFT] JOIN t2 ON ...; - Analytical SQL Hash JOIN
+  SELECT dept, COUNT(*), SUM(sal) FROM emp GROUP BY dept HAVING SUM(sal) > 50000; - SQL GROUP BY / HAVING
   EXPLAIN <query>;                                 - Display query optimization plan & pruning
   WHERE temp > 30 | SELECT col1, col2;             - Active table shortcut query (after USE)
 

@@ -112,9 +112,15 @@ class ExpressionEvaluator:
             return [expr.value] * row_count
 
         elif isinstance(expr, ColumnRefNode):
-            if expr.name not in cols:
-                raise KeyError(f"Column '{expr.name}' not found during evaluation.")
-            return cols[expr.name]
+            if expr.name in cols:
+                return cols[expr.name]
+            bare = expr.name.split(".")[-1]
+            if bare in cols:
+                return cols[bare]
+            for k in cols:
+                if k.split(".")[-1] == bare:
+                    return cols[k]
+            raise KeyError(f"Column '{expr.name}' not found during evaluation.")
 
         elif isinstance(expr, BinaryOpNode):
             op = expr.op
@@ -122,6 +128,15 @@ class ExpressionEvaluator:
             # Fast-path: ColumnRef OP Literal (most common query pattern)
             if isinstance(expr.left, ColumnRefNode) and isinstance(expr.right, LiteralNode):
                 col_name = expr.left.name
+                if col_name not in cols:
+                    bare = col_name.split(".")[-1]
+                    if bare in cols:
+                        col_name = bare
+                    else:
+                        for k in cols:
+                            if k.split(".")[-1] == bare:
+                                col_name = k
+                                break
                 if col_name not in cols:
                     raise KeyError(f"Column '{col_name}' not found during evaluation.")
                 r_val = expr.right.value
@@ -291,6 +306,7 @@ class QueryEngine:
 
         # Open storage reader
         reader = FileReader(plan.table_source)
+        right_reader = None
 
         try:
             # Pre-coerce literals to column schema types for zero-overhead evaluation
@@ -301,9 +317,75 @@ class QueryEngine:
             needed_columns = QueryPlanner.collect_required_columns(plan)
             filter_cols = QueryPlanner.collect_filter_columns(plan.where_expr)
 
+            # Prepare Hash JOIN if plan.join is specified
+            right_cols: List[str] = []
+            right_tbl = ""
+            left_tbl = os.path.splitext(os.path.basename(plan.table_source))[0]
+            l_key = ""
+            r_key = ""
+            right_hash: Dict[Any, List[Dict[str, Any]]] = {}
+
+            if plan.join:
+                right_path = plan.join.right_table
+                if not os.path.exists(right_path):
+                    if os.path.exists(right_path + ".mgdb"):
+                        right_path = right_path + ".mgdb"
+                    else:
+                        left_dir = os.path.dirname(plan.table_source)
+                        candidate = os.path.join(left_dir, plan.join.right_table)
+                        if os.path.exists(candidate):
+                            right_path = candidate
+                        elif os.path.exists(candidate + ".mgdb"):
+                            right_path = candidate + ".mgdb"
+
+                if not os.path.exists(right_path):
+                    raise FileNotFoundError(f"Right table '{plan.join.right_table}' not found for JOIN.")
+
+                right_reader = FileReader(right_path)
+                right_tbl = os.path.splitext(os.path.basename(right_path))[0]
+                right_cols = right_reader.schema.column_names()
+
+                l_key = plan.join.left_key.split(".")[-1]
+                r_key = plan.join.right_key.split(".")[-1]
+
+                # Auto-swap keys if user inverted them in ON clause
+                if not reader.schema.has_column(l_key) and right_reader.schema.has_column(l_key) and reader.schema.has_column(r_key):
+                    l_key, r_key = r_key, l_key
+
+                # Read right table into hash table
+                for r_batch, r_stats in right_reader.scan():
+                    r_cols_dict = r_batch.columns
+                    for r_idx in range(r_batch.row_count):
+                        k_val = r_cols_dict[r_key][r_idx]
+                        if k_val is not None:
+                            r_row_dict = {c: r_cols_dict[c][r_idx] for c in right_cols}
+                            if k_val not in right_hash:
+                                right_hash[k_val] = []
+                            right_hash[k_val].append(r_row_dict)
+
+                # Restrict pushdown and late materialization to safe left columns
+                pushdown_preds = [p for p in pushdown_preds if reader.schema.has_column(p[0])]
+                filter_cols = [c for c in filter_cols if reader.schema.has_column(c)]
+
+            def get_matches(k_val):
+                if k_val in right_hash:
+                    return right_hash[k_val]
+                if isinstance(k_val, str):
+                    try:
+                        iv = int(k_val)
+                        if iv in right_hash:
+                            return right_hash[iv]
+                    except ValueError:
+                        pass
+                elif isinstance(k_val, int):
+                    sv = str(k_val)
+                    if sv in right_hash:
+                        return right_hash[sv]
+                return None
+
             filter_fn = None
             late_mat_enabled = False
-            if filter_cols and plan.where_expr is not None:
+            if filter_cols and plan.where_expr is not None and not plan.join:
                 def filter_evaluator(cdata):
                     row_cnt = getattr(cdata, "row_count", None) or len(next(iter(cdata.values())))
                     return ExpressionEvaluator.evaluate(plan.where_expr, cdata, row_cnt)
@@ -327,7 +409,17 @@ class QueryEngine:
             is_aggregate = plan.aggregate is not None
             agg_state: Dict[Tuple, Dict[str, Any]] = {}
 
-            # Check column projection and sort needs
+            # Columns needed for scanning the left reader
+            if plan.select_columns is not None or plan.join is not None:
+                scan_reader_cols = [c.split(".")[-1] for c in needed_columns if reader.schema.has_column(c.split(".")[-1])]
+                if plan.join and l_key not in scan_reader_cols:
+                    scan_reader_cols.append(l_key)
+                if not scan_reader_cols:
+                    scan_reader_cols = None
+            else:
+                scan_reader_cols = None
+
+            # Determine projected scan columns
             needed_extra_sort = False
             if not is_aggregate and plan.select_columns is not None:
                 scan_cols = list(plan.select_columns)
@@ -338,7 +430,7 @@ class QueryEngine:
                 scan_cols = None
 
             for batch, scan_stats in reader.scan(
-                columns=needed_columns,
+                columns=scan_reader_cols,
                 predicates=pushdown_preds,
                 filter_columns=filter_cols if late_mat_enabled else None,
                 filter_fn=filter_fn if late_mat_enabled else None
@@ -354,7 +446,7 @@ class QueryEngine:
                 count = batch.row_count
 
                 # If late materialization was applied, batch is ALREADY filtered!
-                if plan.where_expr is not None and not late_mat_enabled:
+                if plan.where_expr is not None and not late_mat_enabled and not plan.join:
                     mask = ExpressionEvaluator.evaluate(plan.where_expr, current_cols, count)
                     for k in current_cols:
                         current_cols[k] = [v for v, m in zip(current_cols[k], mask) if m]
@@ -362,6 +454,60 @@ class QueryEngine:
 
                 if count == 0:
                     continue
+
+                # Hash Join Execution
+                if plan.join:
+                    joined_cols: Dict[str, List[Any]] = {}
+                    for c in current_cols:
+                        joined_cols[c] = []
+                        joined_cols[f"{left_tbl}.{c}"] = []
+                    for c in right_cols:
+                        joined_cols[f"{right_tbl}.{c}"] = []
+                        if c not in current_cols:
+                            joined_cols[c] = []
+
+                    matched_count = 0
+                    for i in range(count):
+                        l_val = current_cols[l_key][i]
+                        matches = get_matches(l_val)
+                        if matches:
+                            for r_row in matches:
+                                matched_count += 1
+                                for c in current_cols:
+                                    val = current_cols[c][i]
+                                    joined_cols[c].append(val)
+                                    joined_cols[f"{left_tbl}.{c}"].append(val)
+                                for c in right_cols:
+                                    r_val = r_row[c]
+                                    joined_cols[f"{right_tbl}.{c}"].append(r_val)
+                                    if c not in current_cols:
+                                        joined_cols[c].append(r_val)
+                        elif plan.join.join_type == "LEFT":
+                            matched_count += 1
+                            for c in current_cols:
+                                val = current_cols[c][i]
+                                joined_cols[c].append(val)
+                                joined_cols[f"{left_tbl}.{c}"].append(val)
+                            for c in right_cols:
+                                joined_cols[f"{right_tbl}.{c}"].append(None)
+                                if c not in current_cols:
+                                    joined_cols[c].append(None)
+
+                    current_cols = joined_cols
+                    count = matched_count
+
+                    if count == 0:
+                        continue
+
+                    # Filter with WHERE after join
+                    if plan.where_expr is not None:
+                        mask = ExpressionEvaluator.evaluate(plan.where_expr, current_cols, count)
+                        for k in current_cols:
+                            current_cols[k] = [v for v, m in zip(current_cols[k], mask) if m]
+                        count = mask.count(True) if hasattr(mask, "count") else sum(1 for m in mask if m)
+
+                    if count == 0:
+                        continue
 
                 # Compute expressions
                 for comp in plan.computes:
@@ -372,9 +518,23 @@ class QueryEngine:
                 if is_aggregate:
                     cls._accumulate_aggregate(plan.aggregate, current_cols, count, agg_state)
                 else:
-                    proj_cols = scan_cols if scan_cols is not None else list(current_cols.keys())
+                    if scan_cols is not None:
+                        proj_cols = scan_cols
+                    else:
+                        if plan.join:
+                            proj_cols = []
+                            for c in reader.schema.column_names():
+                                proj_cols.append(c)
+                            for c in right_cols:
+                                if c not in reader.schema.column_names():
+                                    proj_cols.append(c)
+                                else:
+                                    proj_cols.append(f"{right_tbl}.{c}")
+                        else:
+                            proj_cols = list(current_cols.keys())
+
                     for i in range(count):
-                        row = [current_cols[c][i] for c in proj_cols]
+                        row = [cls._get_col_value(current_cols, c, i) for c in proj_cols]
                         collected_rows.append(row)
 
                     # Early exit on LIMIT if no sort and no aggregate!
@@ -403,14 +563,32 @@ class QueryEngine:
                 if plan.select_columns is not None:
                     final_columns = plan.select_columns
                 else:
-                    final_columns = reader.schema.column_names() + [c.target_column for c in plan.computes]
+                    if plan.join:
+                        final_columns = []
+                        for c in reader.schema.column_names():
+                            final_columns.append(c)
+                        for c in right_cols:
+                            if c not in reader.schema.column_names():
+                                final_columns.append(c)
+                            else:
+                                final_columns.append(f"{right_tbl}.{c}")
+                    else:
+                        final_columns = reader.schema.column_names() + [c.target_column for c in plan.computes]
 
             # Sorting
             if plan.sort is not None:
                 sort_col = plan.sort.column
                 sort_target_cols = scan_cols if scan_cols is not None else final_columns
+                col_idx = None
                 if sort_col in sort_target_cols:
                     col_idx = sort_target_cols.index(sort_col)
+                else:
+                    bare = sort_col.split(".")[-1]
+                    for idx, sc in enumerate(sort_target_cols):
+                        if sc == bare or sc.split(".")[-1] == bare:
+                            col_idx = idx
+                            break
+                if col_idx is not None:
                     def sort_key(row):
                         v = row[col_idx]
                         return (1 if v is None else 0, v)
@@ -427,6 +605,8 @@ class QueryEngine:
 
         finally:
             reader.close()
+            if right_reader is not None:
+                right_reader.close()
 
         end_time = time.perf_counter()
         exec_ms = (end_time - start_time) * 1000.0
@@ -444,6 +624,18 @@ class QueryEngine:
         return QueryResult(final_columns, collected_rows, stats)
 
     @classmethod
+    def _get_col_value(cls, cols: Dict[str, List[Any]], col_name: str, idx: int) -> Any:
+        if col_name in cols:
+            return cols[col_name][idx]
+        bare = col_name.split(".")[-1]
+        if bare in cols:
+            return cols[bare][idx]
+        for k in cols:
+            if k.split(".")[-1] == bare:
+                return cols[k][idx]
+        raise KeyError(f"Column '{col_name}' not found.")
+
+    @classmethod
     def _accumulate_aggregate(
         cls,
         agg_node: AggregateNode,
@@ -455,7 +647,7 @@ class QueryEngine:
 
         for i in range(count):
             if group_cols:
-                key = tuple(cols[g][i] for g in group_cols)
+                key = tuple(cls._get_col_value(cols, g, i) for g in group_cols)
             else:
                 key = ()
 
@@ -474,7 +666,7 @@ class QueryEngine:
             for func_node in agg_node.aggregations:
                 alias = func_node.alias
                 fn = func_node.func
-                val = cols[func_node.column][i] if func_node.column and func_node.column != "*" else None
+                val = cls._get_col_value(cols, func_node.column, i) if func_node.column and func_node.column != "*" else None
 
                 if fn in ("sum", "avg"):
                     if val is not None:
@@ -551,5 +743,10 @@ class QueryEngine:
                     row.append(None)
 
             rows.append(row)
+
+        if agg_node.having_expr is not None and rows:
+            agg_cols = {col: [r[i] for r in rows] for i, col in enumerate(col_names)}
+            mask = ExpressionEvaluator.evaluate(agg_node.having_expr, agg_cols, len(rows))
+            rows = [r for r, m in zip(rows, mask) if m]
 
         return col_names, rows

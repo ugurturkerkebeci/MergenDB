@@ -669,24 +669,92 @@ class MergenDB:
     @staticmethod
     def _convert_sql_to_pipeline(sql: str) -> str:
         sql = sql.strip().rstrip(";")
-        m = re.match(r"SELECT\s+(.+?)\s+FROM\s+([^\s;]+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", sql, re.IGNORECASE)
+        pattern = (
+            r"^\s*SELECT\s+(?P<select>.+?)\s+"
+            r"FROM\s+(?P<from>[^\s;]+)"
+            r"(?:\s+(?P<join_type>LEFT(?:\s+OUTER)?|INNER)?\s*JOIN\s+(?P<join_tbl>[^\s]+)\s+ON\s+(?P<join_on>[^\s;]+(?:\s*=\s*[^\s;]+)?))?"
+            r"(?:\s+WHERE\s+(?P<where>.+?))?"
+            r"(?:\s+GROUP\s+BY\s+(?P<group>.+?))?"
+            r"(?:\s+HAVING\s+(?P<having>.+?))?"
+            r"(?:\s+ORDER\s+BY\s+(?P<order>.+?))?"
+            r"(?:\s+LIMIT\s+(?P<limit>\d+))?\s*$"
+        )
+        m = re.match(pattern, sql, re.IGNORECASE | re.DOTALL)
         if not m:
             return sql
 
-        cols, tbl, where_clause, order_by, limit_val = m.groups()
-        tbl = tbl.strip().strip("'\"`")
+        d = m.groupdict()
+        tbl = d["from"].strip().strip("'\"`")
         if not tbl.endswith(".mgdb") and not os.path.exists(tbl):
             tbl += ".mgdb"
         pipe = [f'FROM "{tbl}"']
 
-        if where_clause:
-            pipe.append(f"| WHERE {where_clause}")
-        if cols.strip() != "*":
-            pipe.append(f"| SELECT {cols}")
-        if order_by:
-            pipe.append(f"| SORT {order_by}")
-        if limit_val:
-            pipe.append(f"| LIMIT {limit_val}")
+        if d.get("join_tbl") and d.get("join_on"):
+            j_tbl = d["join_tbl"].strip().strip("'\"`")
+            if not j_tbl.endswith(".mgdb") and not os.path.exists(j_tbl):
+                j_tbl += ".mgdb"
+            j_type = "LEFT" if (d.get("join_type") and "LEFT" in d["join_type"].upper()) else "INNER"
+            pipe.append(f'| {j_type} JOIN "{j_tbl}" ON {d["join_on"].strip()}')
+
+        if d.get("where"):
+            pipe.append(f'| WHERE {d["where"].strip()}')
+
+        def split_commas(s: str) -> List[str]:
+            parts = []
+            curr = []
+            depth = 0
+            for ch in s:
+                if ch == '(':
+                    depth += 1
+                    curr.append(ch)
+                elif ch == ')':
+                    depth -= 1
+                    curr.append(ch)
+                elif ch == ',' and depth == 0:
+                    parts.append("".join(curr).strip())
+                    curr = []
+                else:
+                    curr.append(ch)
+            if curr:
+                parts.append("".join(curr).strip())
+            return [p for p in parts if p]
+
+        agg_funcs = ("count(", "sum(", "avg(", "min(", "max(", "median(", "stddev(")
+        select_items = split_commas(d["select"])
+        has_agg = any(any(af in s.lower() for af in agg_funcs) for s in select_items)
+
+        if has_agg or d.get("group"):
+            aggs = [s for s in select_items if any(af in s.lower() for af in agg_funcs)]
+            if not aggs:
+                aggs = ["count(*)"]
+            agg_clause = ", ".join(aggs)
+            if d.get("group"):
+                pipe.append(f'| AGGREGATE {agg_clause} BY {d["group"].strip()}')
+            else:
+                pipe.append(f'| AGGREGATE {agg_clause}')
+
+            if d.get("having"):
+                hav = d["having"].strip()
+                for a in aggs:
+                    parts = re.split(r"\s+as\s+", a, flags=re.IGNORECASE)
+                    if len(parts) == 2:
+                        fn_expr, alias = parts[0].strip(), parts[1].strip()
+                        hav = re.sub(re.escape(fn_expr), alias, hav, flags=re.IGNORECASE)
+                    else:
+                        fn_m = re.match(r"(\w+)\s*\((.*?)\)", a)
+                        if fn_m:
+                            fname, col = fn_m.group(1).lower(), fn_m.group(2).strip()
+                            alias = f"{fname}_{col}" if col and col != "*" else fname
+                            hav = re.sub(re.escape(a), alias, hav, flags=re.IGNORECASE)
+                pipe.append(f'| HAVING {hav}')
+        else:
+            if d["select"].strip() != "*":
+                pipe.append(f'| SELECT {d["select"].strip()}')
+
+        if d.get("order"):
+            pipe.append(f'| SORT {d["order"].strip()}')
+        if d.get("limit"):
+            pipe.append(f'| LIMIT {d["limit"].strip()}')
 
         return "\n".join(pipe)
 
