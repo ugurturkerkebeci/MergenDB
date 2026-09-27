@@ -12,6 +12,11 @@ from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
 from mergendb.io.progress import ProgressBar
 
+try:
+    from mergendb import __version__
+except Exception:
+    __version__ = "0.5.9"
+
 BANNER = r"""
                 _
                / \
@@ -23,7 +28,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.8 (Analytical SQL & Hash JOIN Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v__VERSION__ (Mergen Studio & Columnar Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -34,7 +39,7 @@ BANNER = r"""
 
                    "Target Acquired. Zero Waste. Pure Speed."
     Type SQL or MergenQL commands ending with ';'. Type 'HELP;' for command list.
-"""
+""".replace("__VERSION__", __version__)
 
 HELP_TEXT = """
 ================================ MERGENDB COMMANDS ================================

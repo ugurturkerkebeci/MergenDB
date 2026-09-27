@@ -1,11 +1,22 @@
 from setuptools import setup, find_packages
 
+import os
+
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
+def get_version():
+    init_path = os.path.join("mergendb", "__init__.py")
+    if os.path.exists(init_path):
+        with open(init_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("__version__"):
+                    return line.split("=")[1].strip().strip('"').strip("'")
+    return "0.5.9"
+
 setup(
     name="mergendb",
-    version="0.5.8",
+    version=get_version(),
     author="Uğur Türker Kebeci",
     author_email="ugurturkerkebeci@users.noreply.github.com",
     description="Ultra-compact, columnar, embedded database engine designed to run large workloads on small hardware.",
