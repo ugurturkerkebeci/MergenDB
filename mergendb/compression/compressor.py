@@ -131,7 +131,7 @@ class ColumnCompressor:
         return final_bytes, best_enc, zone_map, uncompressed_size
 
     @classmethod
-    def decompress(cls, data: bytes, enc_type: EncodingType, dtype: DataType) -> List[Any]:
+    def decompress(cls, data: Union[bytes, memoryview], enc_type: EncodingType, dtype: DataType) -> List[Any]:
         if not data:
             return []
 
@@ -139,21 +139,33 @@ class ColumnCompressor:
         is_zlib = (data[0] == 1)
         payload = data[1:]
 
-        if is_zlib:
-            payload = zlib.decompress(payload)
+        try:
+            if is_zlib:
+                payload = zlib.decompress(payload)
 
-        if enc_type == EncodingType.RAW:
-            return decode_raw(payload, dtype)
-        elif enc_type == EncodingType.BIT_PACKED_BOOL:
-            return decode_bitpacked_bool(payload)
-        elif enc_type == EncodingType.DELTA:
-            return decode_delta(payload, dtype)
-        elif enc_type == EncodingType.RLE:
-            return decode_rle(payload, dtype)
-        elif enc_type == EncodingType.DICTIONARY:
-            return decode_dict(payload, dtype)
-        else:
-            raise ValueError(f"Unknown encoding type: {enc_type}")
+            if enc_type == EncodingType.RAW:
+                return decode_raw(payload, dtype)
+            elif enc_type == EncodingType.BIT_PACKED_BOOL:
+                return decode_bitpacked_bool(payload)
+            elif enc_type == EncodingType.DELTA:
+                return decode_delta(payload, dtype)
+            elif enc_type == EncodingType.RLE:
+                return decode_rle(payload, dtype)
+            elif enc_type == EncodingType.DICTIONARY:
+                return decode_dict(payload, dtype)
+            else:
+                raise ValueError(f"Unknown encoding type: {enc_type}")
+        finally:
+            if hasattr(payload, "release"):
+                try:
+                    payload.release()
+                except Exception:
+                    pass
+            if hasattr(data, "release"):
+                try:
+                    data.release()
+                except Exception:
+                    pass
 
     @classmethod
     def evaluate_predicate(
@@ -175,10 +187,22 @@ class ColumnCompressor:
         is_zlib = (data[0] == 1)
         payload = data[1:]
 
-        if is_zlib:
-            payload = zlib.decompress(payload)
+        try:
+            if is_zlib:
+                payload = zlib.decompress(payload)
 
-        if enc_type == EncodingType.DICTIONARY:
-            return dict_predicate_pushdown(payload, dtype, op, target_val)
+            if enc_type == EncodingType.DICTIONARY:
+                return dict_predicate_pushdown(payload, dtype, op, target_val)
 
-        return None
+            return None
+        finally:
+            if hasattr(payload, "release"):
+                try:
+                    payload.release()
+                except Exception:
+                    pass
+            if hasattr(data, "release"):
+                try:
+                    data.release()
+                except Exception:
+                    pass

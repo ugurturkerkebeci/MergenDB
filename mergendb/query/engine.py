@@ -388,6 +388,12 @@ class QueryEngine:
             if pbar:
                 pbar.finish()
 
+            if getattr(reader, "last_scan_stats", None) is not None:
+                blocks_scanned = reader.last_scan_stats.blocks_scanned
+                blocks_skipped = reader.last_scan_stats.blocks_skipped
+                bytes_read = reader.last_scan_stats.bytes_read
+                rows_scanned = reader.last_scan_stats.rows_scanned
+
             # Post-Scan Processing
             final_columns: List[str] = []
 

@@ -190,6 +190,7 @@ class FileReader:
                 raise KeyError(f"Column '{col_name}' does not exist in schema.")
 
         stats = ScanStats(total_blocks=len(self.blocks))
+        self.last_scan_stats = stats
         filter_cols_set = set(filter_columns) if filter_columns else set()
 
         for block in self.blocks:

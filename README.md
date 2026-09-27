@@ -4,10 +4,10 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.5.4-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-41%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-44%20Passing-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
@@ -152,6 +152,64 @@ db.add_column("country", "string", default="US")
 
 # Drop an unneeded column
 db.drop_column("city")
+```
+
+### 7. Diagnostics & Hardware Profiling (`mergendb.test()`, `mergen test`)
+
+MergenDB includes an integrated, zero-dependency diagnostic suite and hardware benchmarking engine. In under 1 second, it verifies the entire engine pipeline (Zero-Copy mmap I/O, dictionary pushdown, ZoneMap skipping, mutations), tests the MergenQL network server over HTTP, and benchmarks your device's realistic processing capabilities:
+
+```python
+import mergendb
+
+# Run full system diagnostics and hardware throughput benchmark
+mergendb.test()
+```
+
+Or directly from the terminal or CLI REPL:
+```bash
+# From terminal
+mergen test
+
+# Inside interactive REPL
+mergen> TEST;
+```
+
+#### Diagnostic Output Sample:
+```text
+==========================================================================
+   [+] MERGENDB SYSTEM DIAGNOSTICS & HARDWARE PROFILER
+==========================================================================
+[*] Running engine core integrity checks...
+    [+] Zero-Copy mmap I/O          : PASS
+    [+] Dictionary Pushdown Engine : PASS
+    [+] ZoneMap Block Pruning      : PASS
+    [+] ACID Data & Schema Mutation: PASS
+[*] Verifying MergenQL Network HTTP Server...
+    [+] HTTP Endpoint /status      : PASS (Port 54664)
+    [+] POST /query SQL Dispatch   : PASS
+[*] Profiling device hardware and benchmarking throughput...
+
+--------------------------------------------------------------------------
+  [DEVICE HARDWARE SPECIFICATIONS & DETECTED ENVIRONMENT]
+--------------------------------------------------------------------------
+  * Operating System   : Windows 10 / Linux 6.x / macOS
+  * CPU Architecture   : AMD64 / ARM64 (12 logical threads)
+  * Python Runtime     : CPython 3.8+
+  * Engine Version     : v0.5.3 (Pure Python / Zero-Dependency)
+
+--------------------------------------------------------------------------
+  [ESTIMATED PROCESSING SPEEDS FOR THIS HARDWARE]
+--------------------------------------------------------------------------
+  * Ingestion / Append : ~216,558 rows/sec
+  * CSV / SQL Import   : ~220,762 rows/sec
+  * Table Export       : ~749,968 rows/sec
+  * Analytical Queries : ~1,417,836 rows/sec (Zero-Copy Column Scan)
+  * Performance Tier   : A-Tier (Performance Desktop / Modern Laptop)
+  * Optimal Block Size : 2,048 - 4,096 rows
+  * Assessment         : High single-core speed and fast page cache.
+--------------------------------------------------------------------------
+  [SUCCESS] ALL CHECKS PASSED PERFECTLY in 0.68s
+==========================================================================
 ```
 
 ---

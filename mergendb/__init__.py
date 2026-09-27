@@ -17,7 +17,22 @@ from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
 from mergendb.server.server import start_server
 
-__version__ = "0.5.3"
+def test(verbose: bool = True):
+    """Runs full system verification and device hardware benchmark."""
+    from mergendb.testing.suite import run_diagnostics
+    return run_diagnostics(verbose=verbose)
+
+def benchmark(verbose: bool = True):
+    """Benchmarks device capabilities, import/export speeds, and scan throughput."""
+    from mergendb.testing.suite import run_diagnostics
+    return run_diagnostics(verbose=verbose)
+
+def diagnose(verbose: bool = True):
+    """Alias for mergendb.test() / mergendb.benchmark()."""
+    from mergendb.testing.suite import run_diagnostics
+    return run_diagnostics(verbose=verbose)
+
+__version__ = "0.5.4"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     # Primary intuitive developer API
@@ -45,6 +60,9 @@ __all__ = [
     "export_json",
     "export_jsonl",
     "export_sql",
+    "test",
+    "benchmark",
+    "diagnose",
 
     # Original engine classes and functions
     "MergenDB",

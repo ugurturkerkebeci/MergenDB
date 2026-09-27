@@ -36,9 +36,10 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0].rstrip("/")
 
         if path in ("", "/"):
+            from mergendb import __version__
             self._send_response_json(200, {
                 "name": "MergenDB Server",
-                "version": "0.4.0",
+                "version": __version__,
                 "status": "online",
                 "engine": "Lightning Columnar Engine",
                 "docs": "/help"

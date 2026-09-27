@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.3 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.5.4 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -50,6 +50,7 @@ Database & Table Management:
   OPTIMIZE TABLE <table>;                           - Defragment and re-compress table blocks
   COUNT <table>;                                    - Instant O(1) total row count
   STATUS;                                           - Engine status, cache stats, and memory usage
+  TEST; (or BENCHMARK;)                             - Full system diagnostics, server check & hardware benchmark
 
 Data & Schema Mutations (SQL):
   UPDATE <table> SET col1 = val1, ... [WHERE ...];  - Update matching rows in table
@@ -618,8 +619,12 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.5.3 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.5.4 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
+
+        elif keyword in ("TEST", "BENCHMARK", "DIAGNOSE", "CHECK"):
+            from mergendb.testing.suite import run_diagnostics
+            run_diagnostics()
 
         else:
             # Query Execution (MergenQL or SQL)
@@ -721,6 +726,10 @@ def main():
         port = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 8765
         from mergendb.server.server import start_server
         start_server(port=port)
+    elif len(sys.argv) > 1 and sys.argv[1].lower() in ("test", "benchmark", "diagnose", "check"):
+        from mergendb.testing.suite import run_diagnostics
+        res = run_diagnostics()
+        sys.exit(0 if res.get("success") else 1)
     else:
         cli = MergenCLI()
         cli.run()
