@@ -33,7 +33,7 @@ class TestSystemAudit(unittest.TestCase):
             [1, "Uğur Türker Kebeci", "İstanbul", 9.8, True],
             [2, "Çınar Şahin", "İzmir", None, False],
             [3, "Özlem Dağ", "Ankara", 8.5, None],
-            [4, "Gökçe Yıldız 🚀", "Antalya", 9.2, True],
+            [4, "Gökçe Yıldız (Star)", "Antalya", 9.2, True],
             [5, "NULL User", None, None, False],
             [6, "Ahmet Çalık", "Konya", 7.0, True]
         ]
@@ -41,9 +41,9 @@ class TestSystemAudit(unittest.TestCase):
         res = tbl.sql("SELECT name, city FROM unicode WHERE city = 'İstanbul'")
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0][0], "Uğur Türker Kebeci")
-        res_emoji = tbl.sql("SELECT name FROM unicode WHERE name LIKE '%🚀%'")
-        self.assertEqual(len(res_emoji), 1)
-        self.assertIn("Gökçe", res_emoji[0][0])
+        res_sub = tbl.sql("SELECT name FROM unicode WHERE name LIKE '%(Star)%'")
+        self.assertEqual(len(res_sub), 1)
+        self.assertIn("Gökçe", res_sub[0][0])
 
     def test_bloom_filter_zero_io_skip(self):
         bloom_db = os.path.join(self.temp_dir, "bloom.mgdb")

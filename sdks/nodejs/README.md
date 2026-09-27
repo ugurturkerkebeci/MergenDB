@@ -4,7 +4,7 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.2-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.6.3-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
@@ -12,7 +12,7 @@ The official **zero-dependency** Node.js and TypeScript client for **MergenDB** 
 
 ---
 
-## ⚡ Features & Zero Extra Installation
+## Features & Zero Extra Installation
 
 - **Zero Runtime Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`). No external packages (`dependencies: {}`).
 - **Zero Configuration Runner:** Run `npx mergendb serve` or `npx mergendb studio` directly from your project without installing global CLI tools.
@@ -26,7 +26,7 @@ The official **zero-dependency** Node.js and TypeScript client for **MergenDB** 
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 npm install mergendb
@@ -34,7 +34,7 @@ npm install mergendb
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option A: Automatic Server Management (Zero Extra Setup)
 
@@ -110,7 +110,7 @@ main().catch(console.error);
 
 ---
 
-## 📖 API Reference
+## API Reference
 
 ### Connection
 
@@ -190,6 +190,6 @@ await table.drop();     // Delete .mgdb file
 
 ---
 
-## 📄 License
+## License
 
 MIT © [Uğur Türker Kebeci](https://github.com/ugurturkerkebeci)

@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.2-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.2-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.3-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -17,7 +17,7 @@ Whether you're querying a 10-million row dataset on a 500 MB RAM VPS, analyzing 
 
 ---
 
-## 📦 Installation & Zero-Dependency Quickstart
+## Installation & Zero-Dependency Quickstart
 
 MergenDB requires **ZERO external packages or compilers** (`dependencies: {}`). It runs purely on the standard library of Python and Node.js.
 
@@ -46,7 +46,7 @@ Requires **Python 3.8+** and/or **Node.js 16+**. Works out-of-the-box on Windows
 
 ---
 
-## 💡 Why MergenDB? (The Problem with Row Stores)
+## Why MergenDB? (The Problem with Row Stores)
 
 Traditional embedded databases like SQLite store data row-by-row (`[id, name, age, address, notes, ...]`). When you run an analytical query like:
 
@@ -65,7 +65,7 @@ Even though you only care about `name` and `balance`, row stores must read **eve
 
 ---
 
-## 🏛️ MergenDB v0.6+ Ecosystem Architecture
+## MergenDB v0.6+ Ecosystem Architecture
 
 ```text
 +---------------------------------------------------------------------------------+
@@ -229,7 +229,7 @@ mergen> TEST;
   * Operating System   : Windows 10 / Linux 6.x / macOS
   * CPU Architecture   : AMD64 / ARM64 (12 logical threads)
   * Python Runtime     : CPython 3.8+
-  * Engine Version     : v0.6.2 (Pure Python / Zero-Dependency)
+  * Engine Version     : v0.6.3 (Pure Python / Zero-Dependency)
 
 --------------------------------------------------------------------------
   [ESTIMATED PROCESSING SPEEDS FOR THIS HARDWARE]
@@ -246,7 +246,7 @@ mergen> TEST;
 ==========================================================================
 ```
 
-### 8. Embedded Web UI: "Mergen Studio" (phpMyAdmin Edition)
+### 8. Embedded Web UI: "Mergen Studio" (Mergen Studio)
 
 MergenDB includes **Mergen Studio**, an ultra-fast, zero-dependency interactive web dashboard inspired by phpMyAdmin. Launch it with a single command:
 
@@ -258,17 +258,17 @@ mergen serve 8765
 ```
 
 Open your browser to:
-👉 **`http://localhost:8765/studio`** (or simply `http://localhost:8765/`)
+ **`http://localhost:8765/studio`** (or simply `http://localhost:8765/`)
 
-**Key Capabilities in Mergen Studio (phpMyAdmin Edition):**
-- **🎯 Active Data File Selector:** Switch between `.mgdb` tables via the top navigation dropdown or sidebar. All tabs automatically bind to the selected table.
-- **👁️ Browse (Gözat):** Interactive spreadsheet grid with pagination (`<< < Page 1/10 > >>`), sortable column headers (`▲▼`), row range indicators, and inline inspection.
-- **📋 Structure (Yapı / Şema):** View column names, data types, nullability, block counts, and disk size. Add new columns dynamically with default values or drop unused columns.
-- **🔍 SQL:** Large interactive query editor with one-click snippets (`SELECT *`, `COUNT(*)`, `GROUP BY + HAVING`, `Bloom Filter`, `Hash JOIN`), execution stats (`ms`, blocks scanned vs skipped via ZoneMaps), and `Ctrl+Enter` hotkey.
-- **📥 Import (İçe Aktar):** Drag-and-drop or select `.csv`, `.sql`, or `.json` files to stream data directly into any `.mgdb` table.
-- **📤 Export (Dışa Aktar):** One-click download of tables to `CSV`, `JSON`, `JSONL`, or `SQL Dump (INSERT statements)`.
-- **⚙️ Operations (İşlemler):** Rename tables (`RENAME`), clear data while keeping schema (`TRUNCATE`), or permanently delete (`DROP`).
-- **📈 Universal Percentage Progress Bar (%0.0 -> %100.0):** Active on **all waiting operations** (browse loading, SQL queries, import, export, table operations) showing live progress %, throughput (~rows/sec), and ETA countdown!
+**Key Capabilities in Mergen Studio (Mergen Studio):**
+- ** Active Data File Selector:** Switch between `.mgdb` tables via the top navigation dropdown or sidebar. All tabs automatically bind to the selected table.
+- ** Browse (Gözat):** Interactive spreadsheet grid with pagination (`<< < Page 1/10 > >>`), sortable column headers (`▲▼`), row range indicators, and inline inspection.
+- ** Structure (Yapı / Şema):** View column names, data types, nullability, block counts, and disk size. Add new columns dynamically with default values or drop unused columns.
+- ** SQL:** Large interactive query editor with one-click snippets (`SELECT *`, `COUNT(*)`, `GROUP BY + HAVING`, `Bloom Filter`, `Hash JOIN`), execution stats (`ms`, blocks scanned vs skipped via ZoneMaps), and `Ctrl+Enter` hotkey.
+- ** Import (İçe Aktar):** Drag-and-drop or select `.csv`, `.sql`, or `.json` files to stream data directly into any `.mgdb` table.
+- ** Export (Dışa Aktar):** One-click download of tables to `CSV`, `JSON`, `JSONL`, or `SQL Dump (INSERT statements)`.
+- ** Operations (İşlemler):** Rename tables (`RENAME`), clear data while keeping schema (`TRUNCATE`), or permanently delete (`DROP`).
+- ** Universal Percentage Progress Bar (%0.0 -> %100.0):** Active on **all waiting operations** (browse loading, SQL queries, import, export, table operations) showing live progress %, throughput (~rows/sec), and ETA countdown!
 
 ---
 
@@ -675,18 +675,29 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 ---
 
-## 🚀 Version Updates & Release Comparisons
+## Version Updates & Release Comparisons
+
+### Version Comparison: v0.6.2 vs v0.6.3
+
+| Capability / Feature | v0.6.2 (Multi-Runtime & Zero-Dependency) | v0.6.3 (Official Identity & Zero-Emoji Internationalization) | Status & Impact |
+| :--- | :--- | :--- | :--- |
+| **Mergen Studio Identity** | "phpMyAdmin Edition" text badge | **Official MergenDB Logo & Crisp Emblem** | Rendered directly adjacent to MergenDB brand title in header; edition tags eliminated |
+| **Emoji Policy** | Scattered Unicode emojis across UI & docs | **Strict Zero-Emoji Policy Enforced** | 100% emoji-free codebase, UI, and documentation; zero Windows CP1254 terminal crashes |
+| **Language & Localization** | Turkish-centric UI strings | **Default English with Multi-Language Support** | Complete English default UI with instantaneous live translation for Deutsch (German) and Turkce (Turkish) |
+| **Cross-Language Parity** | Python & Node.js test suites | **106 Tests Verified (88 Py + 18 Node)** | Complete verification across all runtimes with zero dependency footprint |
+
+---
 
 ### Version Comparison: v0.6.1 vs v0.6.2
 
 | Capability / Feature | v0.6.1 (phpMyAdmin & Node SDK Parity) | v0.6.2 (Zero-Dependency & Multi-Runtime Optimization) | Status & Impact |
 | :--- | :--- | :--- | :--- |
-| **Plain Python Execution** | `mergen` script only | ✅ **Direct `python -m mergendb` Runner** | Run CLI, server, tests, and REPL without requiring PATH modifications (`mergendb/__main__.py`) |
-| **Plain Node.js Execution** | Programmatic HTTP client only | ✅ **Direct `npx mergendb` Executable CLI** | Run `npx mergendb serve`, `npx mergendb studio`, `benchmark`, and `query` directly (`sdks/nodejs/bin/mergendb.js`) |
-| **Node.js Server Auto-Spawn** | Manual server startup required | ✅ **Transparent `autoStart: true`** | Client auto-spawns and manages local MergenDB server in background with zero extra setup |
-| **REST Query Interface** | `POST /query` only | ✅ **Unified `GET /query?q=...` & `POST`** | Run instant queries from web browsers, simple curl scripts, or any programming language |
-| **Mergen Studio Versioning** | Hardcoded display strings | ✅ **Dynamic Runtime Engine Binding** | Studio UI automatically renders the exact engine version across header, status, and diagnostic tabs |
-| **Zero External Dependencies** | Verified | ✅ **100% Zero-Dependency across Python & Node** | Pure standard library across all supported environments (`dependencies: {}`) |
+| **Plain Python Execution** | `mergen` script only | **Direct `python -m mergendb` Runner** | Run CLI, server, tests, and REPL without requiring PATH modifications (`mergendb/__main__.py`) |
+| **Plain Node.js Execution** | Programmatic HTTP client only | **Direct `npx mergendb` Executable CLI** | Run `npx mergendb serve`, `npx mergendb studio`, `benchmark`, and `query` directly (`sdks/nodejs/bin/mergendb.js`) |
+| **Node.js Server Auto-Spawn** | Manual server startup required | **Transparent `autoStart: true`** | Client auto-spawns and manages local MergenDB server in background with zero extra setup |
+| **REST Query Interface** | `POST /query` only | **Unified `GET /query?q=...` & `POST`** | Run instant queries from web browsers, simple curl scripts, or any programming language |
+| **Mergen Studio Versioning** | Hardcoded display strings | **Dynamic Runtime Engine Binding** | Studio UI automatically renders the exact engine version across header, status, and diagnostic tabs |
+| **Zero External Dependencies** | Verified | **100% Zero-Dependency across Python & Node** | Pure standard library across all supported environments (`dependencies: {}`) |
 
 ---
 
@@ -694,15 +705,15 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 | Capability / Feature | v0.6.0 (Initial Node.js SDK Release) | v0.6.1 (phpMyAdmin Redesign & Full Ecosystem Parity) | Status & Impact |
 | :--- | :--- | :--- | :--- |
-| **Mergen Studio UI** | Heavy animations, blocking modal overlay stuck at 92% on page turns | ✅ **Authentic phpMyAdmin Architecture** | Clean, crisp, lightweight `#f5f7fa` styling with Mergen logo/icon; zero UI lockups |
-| **UI CLI Parity** | Read-only schema and basic queries | ✅ **100% Full CLI Parity in Browser** | 10 dedicated tabs: Gözat, Yapı, SQL, Ara, Ekle, Dışa Aktar, İçe Aktar, İşlemler, Sunucu, Kılavuz |
-| **Browser Pagination & Sort** | Blocked by progress modal, no sorting | ✅ **Instant Pagination & Column Sorting** | Instant `<< < [page] > >>` navigation; click headers to sort ASC/DESC on disk |
-| **Data Mutations in UI** | CLI only | ✅ **Direct Insert & Row Deletion in UI** | Schema-driven dynamic insert form + one-click delete row in Browse tab |
-| **Schema Alterations in UI** | CLI only | ✅ **Add, Drop, and Rename Columns in UI** | Full column lifecycle directly from the Yapı (Structure) tab |
-| **Node.js SDK Feature Parity** | `query()`, `find()`, `count()` only | ✅ **100% Full Python Parity in JS/TS** | Added `insert()`, `search()`, `update()`, `delete()`, `addColumn()`, `renameColumn()`, `dropColumn()`, `benchmark()` |
-| **Live Hardware Profiling** | CLI only | ✅ **Real-Time Profiler in UI & Node.js** | Browser-triggered benchmark test + `client.benchmark()` running live hardware speed test (1M+ rows/s) |
-| **Multi-Language Guides** | Separate docs | ✅ **Embedded Runnables for All 4 Runtimes** | Side-by-side executable code examples for Python, Node.js / TypeScript, CLI, and REST API |
-| **Total Test Suite** | 100 Tests (88 Py + 12 JS) | ✅ **106 Tests (88 Py + 18 JS, 100% Pass)** | Expanded end-to-end Node.js SDK test coverage with zero regressions |
+| **Mergen Studio UI** | Heavy animations, blocking modal overlay stuck at 92% on page turns | **Authentic phpMyAdmin Architecture** | Clean, crisp, lightweight `#f5f7fa` styling with Mergen logo/icon; zero UI lockups |
+| **UI CLI Parity** | Read-only schema and basic queries | **100% Full CLI Parity in Browser** | 10 dedicated tabs: Gözat, Yapı, SQL, Ara, Ekle, Dışa Aktar, İçe Aktar, İşlemler, Sunucu, Kılavuz |
+| **Browser Pagination & Sort** | Blocked by progress modal, no sorting | **Instant Pagination & Column Sorting** | Instant `<< < [page] > >>` navigation; click headers to sort ASC/DESC on disk |
+| **Data Mutations in UI** | CLI only | **Direct Insert & Row Deletion in UI** | Schema-driven dynamic insert form + one-click delete row in Browse tab |
+| **Schema Alterations in UI** | CLI only | **Add, Drop, and Rename Columns in UI** | Full column lifecycle directly from the Yapı (Structure) tab |
+| **Node.js SDK Feature Parity** | `query()`, `find()`, `count()` only | **100% Full Python Parity in JS/TS** | Added `insert()`, `search()`, `update()`, `delete()`, `addColumn()`, `renameColumn()`, `dropColumn()`, `benchmark()` |
+| **Live Hardware Profiling** | CLI only | **Real-Time Profiler in UI & Node.js** | Browser-triggered benchmark test + `client.benchmark()` running live hardware speed test (1M+ rows/s) |
+| **Multi-Language Guides** | Separate docs | **Embedded Runnables for All 4 Runtimes** | Side-by-side executable code examples for Python, Node.js / TypeScript, CLI, and REST API |
+| **Total Test Suite** | 100 Tests (88 Py + 12 JS) | **106 Tests (88 Py + 18 JS, 100% Pass)** | Expanded end-to-end Node.js SDK test coverage with zero regressions |
 
 ---
 
@@ -710,14 +721,15 @@ Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: int
 
 | Version | Milestone | Key Deliverables | Status |
 | :--- | :--- | :--- | :--- |
-| **v0.5.5** | CLI & Ingestion Polish | Universal `EXPORT [csv\|json\|sql]` syntax & extension resolution | ✅ Released |
-| **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | ✅ Released |
-| **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | ✅ Released |
-| **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | ✅ Released |
-| **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | ✅ Released |
-| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | ✅ Released |
-| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | ✅ Released |
-| **v0.6.2** | Multi-Runtime & Zero-Dependency | **Direct `python -m mergendb` & `npx mergendb` runners**, `autoStart: true`, `GET /query`, zero-dependency optimization | ✅ Released (Milestone Complete) |
+| **v0.5.5** | CLI & Ingestion Polish | Universal `EXPORT [csv\|json\|sql]` syntax & extension resolution | Released |
+| **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | Released |
+| **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | Released |
+| **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | Released |
+| **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | Released |
+| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | Released |
+| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | Released |
+| **v0.6.2** | Multi-Runtime & Zero-Dependency | **Direct `python -m mergendb` & `npx mergendb` runners**, `autoStart: true`, `GET /query`, zero-dependency optimization | Released |
+| **v0.6.3** | Identity & Zero-Emoji i18n | **Official Logo Integration**, removal of edition badges, strict zero-emoji policy, English/German/Turkish localization | Released (Current) |
 
 ---
 
@@ -742,4 +754,4 @@ node sdks/nodejs/test.js
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-Developed with ❤️ by [Uğur Türker Kebeci](https://github.com/ugurturkerkebeci).
+Developed by [Uğur Türker Kebeci](https://github.com/ugurturkerkebeci).
