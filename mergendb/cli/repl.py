@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.0 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.5.1 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -39,39 +39,47 @@ BANNER = r"""
 HELP_TEXT = """
 ================================ MERGENDB COMMANDS ================================
 Database & Table Management:
-  SHOW TABLES;                           - List all .mgdb tables with rows, size, blocks
-  SHOW DATABASES;                        - List databases / directories
-  SHOW COLUMNS FROM <table>; (or DESC)   - Inspect columns, data types, nullability
-  USE <table_name>;                      - Set active table context
-  CREATE TABLE <name> (col TYPE, ...);   - Create a new columnar table
-  RENAME TABLE <old> TO <new>;           - Rename a table
-  TRUNCATE TABLE <table>;                - Clear all rows in a table keeping schema
-  DROP TABLE <table>;                    - Delete a table permanently
-  OPTIMIZE TABLE <table>;                - Defragment and re-compress table blocks
-  COUNT <table>;                         - Instant O(1) total row count
-  STATUS;                                - Engine status, cache stats, and memory usage
+  SHOW TABLES;                                      - List all .mgdb tables with rows, size, blocks
+  SHOW DATABASES;                                   - List databases / directories
+  SHOW COLUMNS FROM <table>; (or DESC)              - Inspect columns, data types, nullability
+  USE <table_name>;                                 - Set active table context
+  CREATE TABLE <name> (col TYPE, ...);              - Create a new columnar table
+  RENAME TABLE <old> TO <new>;                      - Rename a table
+  TRUNCATE TABLE <table>; (or TRUNCATE;)            - Clear all rows in a table keeping schema
+  DROP TABLE <table>; (or DROP;)                    - Delete a table permanently
+  OPTIMIZE TABLE <table>;                           - Defragment and re-compress table blocks
+  COUNT <table>;                                    - Instant O(1) total row count
+  STATUS;                                           - Engine status, cache stats, and memory usage
+
+Data & Schema Mutations (SQL):
+  UPDATE <table> SET col1 = val1, ... [WHERE ...];  - Update matching rows in table
+  DELETE FROM <table> [WHERE ...];                  - Delete matching rows from table
+  ALTER TABLE <table> RENAME COLUMN <old> TO <new>; - Rename a column without data loss
+  ALTER TABLE <table> DROP COLUMN <col>;            - Drop a column from table
+  ALTER TABLE <table> ADD COLUMN <col> <type> [DEFAULT <val>]; - Add column with default
+  (When inside 'USE <table>;', active table name is optional: UPDATE SET..., DELETE WHERE..., etc.)
 
 Querying (MergenQL & SQL):
-  FROM "table.mgdb" | WHERE ... | SELECT ...;   - Full pipeline query
-  SELECT col1, col2 FROM <table> WHERE ...;     - Standard SQL query syntax
-  EXPLAIN <query>;                              - Display query optimization plan & pruning
-  WHERE temp > 30 | SELECT col1, col2;          - Active table shortcut query (after USE)
+  FROM "table.mgdb" | WHERE ... | SELECT ...;      - Full pipeline query
+  SELECT col1, col2 FROM <table> WHERE ...;        - Standard SQL query syntax
+  EXPLAIN <query>;                                 - Display query optimization plan & pruning
+  WHERE temp > 30 | SELECT col1, col2;             - Active table shortcut query (after USE)
 
 Network & Server:
-  SERVE [port];                                 - Start MergenQL TCP/HTTP server (default: 8765)
+  SERVE [port];                                    - Start MergenQL TCP/HTTP server (default: 8765)
 
 Data Ingestion & Export:
-  IMPORT SQLITE <source.db> [tbl] <out.mgdb>;   - Ingest SQLite table
-  IMPORT SQL <dump.sql> <out.mgdb>;             - Ingest MySQL / phpMyAdmin SQL dump
-  IMPORT CSV <file.csv> <out.mgdb>;             - Ingest CSV file with auto-detect
-  EXPORT <table.mgdb> TO CSV <output.csv>;      - Export to CSV
-  EXPORT <table.mgdb> TO JSON <output.jsonl>;   - Export to JSON Lines
-  EXPORT <table.mgdb> TO SQL <output.sql>;      - Export to SQL dump (DDL + INSERTs)
+  IMPORT SQLITE <source.db> [tbl] <out.mgdb>;      - Ingest SQLite table
+  IMPORT SQL <dump.sql> <out.mgdb>;                - Ingest MySQL / phpMyAdmin SQL dump
+  IMPORT CSV <file.csv> <out.mgdb>;                - Ingest CSV file with auto-detect
+  EXPORT <table.mgdb> TO CSV <output.csv>;         - Export to CSV
+  EXPORT <table.mgdb> TO JSON <output.jsonl>;      - Export to JSON Lines
+  EXPORT <table.mgdb> TO SQL <output.sql>;         - Export to SQL dump (DDL + INSERTs)
 
 Diagnostics:
-  BENCHMARK <table.mgdb>;                       - Run live speed & I/O benchmark
-  INFO <table.mgdb>;                            - Compression ratio & block telemetry
-  EXIT; (or QUIT;)                              - Exit MergenDB CLI
+  BENCHMARK <table.mgdb>;                          - Run live speed & I/O benchmark
+  INFO <table.mgdb>;                               - Compression ratio & block telemetry
+  EXIT; (or QUIT;)                                 - Exit MergenDB CLI
 ===================================================================================
 """
 
@@ -380,8 +388,89 @@ class MergenCLI:
         elif keyword == "COUNT" and len(parts) > 1:
             self.count_table(parts[1])
 
-        elif keyword == "TRUNCATE" and len(parts) >= 3 and parts[1].upper() == "TABLE":
-            self.truncate_table(parts[2])
+        elif keyword == "TRUNCATE":
+            if len(parts) == 1 and self.active_table:
+                self.truncate_table(self.active_table)
+            elif len(parts) >= 2 and parts[1].upper() != "TABLE":
+                self.truncate_table(parts[1])
+            elif len(parts) >= 3 and parts[1].upper() == "TABLE":
+                self.truncate_table(parts[2])
+            else:
+                print("Error: Specify a table name or use 'USE <table_name>;'.\n")
+
+        elif keyword == "DROP":
+            if len(parts) == 1 and self.active_table:
+                tbl = self.active_table
+                if os.path.exists(tbl):
+                    os.remove(tbl)
+                self.active_table = None
+                print(f"Table '{tbl}' dropped successfully.\n")
+            elif len(parts) == 2 and parts[1].upper() != "TABLE":
+                tbl = self._resolve_table_path(parts[1])
+                if os.path.exists(tbl):
+                    os.remove(tbl)
+                    if self.active_table == tbl:
+                        self.active_table = None
+                    print(f"Table '{tbl}' dropped successfully.\n")
+                else:
+                    print(f"Table '{tbl}' not found.\n")
+            elif len(parts) >= 3 and parts[1].upper() == "TABLE":
+                tbl = self._resolve_table_path(parts[2])
+                if os.path.exists(tbl):
+                    os.remove(tbl)
+                    if self.active_table == tbl:
+                        self.active_table = None
+                    print(f"Table '{tbl}' dropped successfully.\n")
+                else:
+                    print(f"Table '{tbl}' not found.\n")
+            else:
+                print("Error: Specify a table name or use 'USE <table_name>;'.\n")
+
+        elif keyword == "UPDATE":
+            query_str = cmd
+            if re.match(r"^UPDATE\s+SET\b", query_str, re.IGNORECASE):
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or 'UPDATE <table> SET ...'.\n")
+                    return
+                query_str = f'UPDATE "{self.active_table}" ' + query_str[7:]
+            try:
+                res = MergenDB.query(query_str, show_progress=True)
+                print(res.display())
+            except Exception as e:
+                print(f"Error: {e}")
+
+        elif keyword == "DELETE":
+            query_str = cmd
+            del_m = re.match(r"^DELETE(?:\s+WHERE\s+(.+))?$", query_str, re.IGNORECASE)
+            if del_m:
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or 'DELETE FROM <table> ...'.\n")
+                    return
+                wh = del_m.group(1)
+                query_str = f'DELETE FROM "{self.active_table}"' + (f" WHERE {wh}" if wh else "")
+            try:
+                res = MergenDB.query(query_str, show_progress=True)
+                print(res.display())
+            except Exception as e:
+                print(f"Error: {e}")
+
+        elif keyword == "ALTER":
+            try:
+                res = MergenDB.query(cmd, show_progress=True)
+                print(res.display())
+            except Exception as e:
+                print(f"Error: {e}")
+
+        elif keyword in ("RENAME", "DROP", "ADD") and len(parts) > 1 and parts[1].upper() == "COLUMN":
+            if not self.active_table:
+                print(f"Error: No active table selected. Use 'USE <table_name>;' or 'ALTER TABLE <table> {cmd};'.\n")
+                return
+            alter_cmd = f'ALTER TABLE "{self.active_table}" {cmd}'
+            try:
+                res = MergenDB.query(alter_cmd, show_progress=True)
+                print(res.display())
+            except Exception as e:
+                print(f"Error: {e}")
 
         elif keyword == "RENAME" and len(parts) >= 5 and parts[1].upper() == "TABLE" and parts[3].upper() == "TO":
             self.rename_table(parts[2], parts[4])
@@ -402,16 +491,6 @@ class MergenCLI:
                 print(f"Database/Table context set to: {tbl}")
             else:
                 print(f"Error: Table '{tbl}' does not exist.")
-
-        elif keyword == "DROP" and len(parts) > 2 and parts[1].upper() == "TABLE":
-            tbl = self._resolve_table_path(parts[2])
-            if os.path.exists(tbl):
-                os.remove(tbl)
-                if self.active_table == tbl:
-                    self.active_table = None
-                print(f"Table '{tbl}' dropped successfully.")
-            else:
-                print(f"Table '{tbl}' not found.")
 
         elif keyword == "INFO" and len(parts) > 1:
             self.show_info(parts[1])
@@ -460,7 +539,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.5.0 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.5.1 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:

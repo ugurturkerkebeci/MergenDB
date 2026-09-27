@@ -2,15 +2,62 @@ import os
 import re
 import csv
 import json
+import time
 from typing import List, Dict, Any, Union, Optional
 from mergendb.core.schema import Schema, ColumnDef
-from mergendb.core.types import DataType
+from mergendb.core.types import DataType, cast_value
 from mergendb.storage.writer import FileWriter
 from mergendb.storage.reader import FileReader
-from mergendb.query.engine import QueryEngine, QueryResult
+from mergendb.query.engine import QueryEngine, QueryResult, ExecutionStats, ExpressionEvaluator
 from mergendb.query.parser import Parser
 from mergendb.query.lexer import Lexer
 from mergendb.query.ast_nodes import QueryPlan, CreateTableNode, InsertNode
+
+
+def _parse_set_clause(clause: str) -> Dict[str, Any]:
+    items = []
+    current = []
+    in_quote = False
+    quote_char = None
+    for ch in clause:
+        if ch in ("'", '"'):
+            if not in_quote:
+                in_quote = True
+                quote_char = ch
+            elif quote_char == ch:
+                in_quote = False
+                quote_char = None
+        if ch == ',' and not in_quote:
+            items.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        items.append("".join(current).strip())
+
+    result = {}
+    for item in items:
+        if "=" not in item:
+            raise SyntaxError(f"Invalid SET expression: '{item}'. Expected 'column = value'")
+        col, val = item.split("=", 1)
+        col = col.strip().strip("'\"`")
+        val = val.strip()
+        if (val.startswith("'") and val.endswith("'")) or (val.startswith('"') and val.endswith('"')):
+            parsed_val = val[1:-1].replace("''", "'")
+        elif val.upper() == "NULL":
+            parsed_val = None
+        elif val.upper() == "TRUE":
+            parsed_val = True
+        elif val.upper() == "FALSE":
+            parsed_val = False
+        else:
+            try:
+                parsed_val = float(val) if "." in val else int(val)
+            except ValueError:
+                parsed_val = val
+        result[col] = parsed_val
+    return result
+
 
 
 class Table:
@@ -20,6 +67,7 @@ class Table:
     """
 
     def __init__(self, filepath: str):
+        filepath = filepath.strip().strip("'\"`")
         if not filepath.endswith(".mgdb") and not os.path.exists(filepath):
             filepath += ".mgdb"
         self.filepath = filepath
@@ -97,26 +145,263 @@ class Table:
 
     def insert_many(self, rows: List[Any], block_size: int = 1024):
         """
-        Appends rows to the table. If file exists, merges existing blocks with new ones.
+        Appends rows to the table with streaming block preservation.
         """
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' does not exist. Call create_table first.")
 
+        temp_path = self.filepath + ".tmp"
         with FileReader(self.filepath) as reader:
             schema = reader.schema
-            existing_rows = []
-            for batch, _ in reader.scan():
-                cols = batch.columns
-                col_names = schema.column_names()
-                for i in range(batch.row_count):
-                    existing_rows.append([cols[c][i] for c in col_names])
-
-        all_rows = existing_rows + rows
-        temp_path = self.filepath + ".tmp"
-        with FileWriter(temp_path, schema, block_size=block_size) as writer:
-            writer.write_rows(all_rows)
+            with FileWriter(temp_path, schema, block_size=block_size) as writer:
+                for batch, _ in reader.scan():
+                    writer.write_columns(batch.columns, batch.row_count)
+                writer.write_rows(rows)
 
         os.replace(temp_path, self.filepath)
+
+    def rename_column(self, old_name: str, new_name: str) -> "Table":
+        """
+        Renames an existing column in the table schema and data.
+        """
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+
+        temp_path = self.filepath + ".tmp"
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            if not schema.has_column(old_name):
+                raise KeyError(f"Column '{old_name}' not found in table schema.")
+            if schema.has_column(new_name):
+                raise ValueError(f"Column '{new_name}' already exists in table schema.")
+
+            new_columns = [
+                ColumnDef(new_name, c.data_type, c.nullable) if c.name == old_name else c
+                for c in schema.columns
+            ]
+            new_schema = Schema(new_columns)
+
+            with FileWriter(temp_path, new_schema) as writer:
+                for batch, _ in reader.scan():
+                    cols = dict(batch.columns)
+                    cols[new_name] = cols.pop(old_name)
+                    writer.write_columns(cols, batch.row_count)
+
+        os.replace(temp_path, self.filepath)
+        return self
+
+    def drop_column(self, column_name: str) -> "Table":
+        """
+        Permanently drops a column from the table schema and data.
+        """
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+
+        temp_path = self.filepath + ".tmp"
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            if not schema.has_column(column_name):
+                raise KeyError(f"Column '{column_name}' not found in table schema.")
+            if len(schema.columns) <= 1:
+                raise ValueError("Cannot drop the only column in the table.")
+
+            new_columns = [c for c in schema.columns if c.name != column_name]
+            new_schema = Schema(new_columns)
+
+            with FileWriter(temp_path, new_schema) as writer:
+                for batch, _ in reader.scan():
+                    cols = dict(batch.columns)
+                    cols.pop(column_name, None)
+                    writer.write_columns(cols, batch.row_count)
+
+        os.replace(temp_path, self.filepath)
+        return self
+
+    def add_column(self, column_name: str, data_type: Union[DataType, str], default: Any = None, nullable: bool = True) -> "Table":
+        """
+        Adds a new column with a default value to the table.
+        """
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+
+        dt_map = {
+            "int": DataType.INT32,
+            "int32": DataType.INT32,
+            "int64": DataType.INT64,
+            "bigint": DataType.INT64,
+            "float": DataType.FLOAT64,
+            "float32": DataType.FLOAT32,
+            "float64": DataType.FLOAT64,
+            "double": DataType.FLOAT64,
+            "string": DataType.STRING,
+            "text": DataType.STRING,
+            "bool": DataType.BOOL,
+            "boolean": DataType.BOOL,
+            "timestamp": DataType.TIMESTAMP,
+        }
+        if isinstance(data_type, str):
+            dt_key = data_type.strip().lower()
+            if dt_key not in dt_map:
+                raise ValueError(f"Unknown data type '{data_type}'. Valid: {list(dt_map.keys())}")
+            dt = dt_map[dt_key]
+        else:
+            dt = data_type
+
+        temp_path = self.filepath + ".tmp"
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            if schema.has_column(column_name):
+                raise ValueError(f"Column '{column_name}' already exists in table schema.")
+
+            new_columns = list(schema.columns) + [ColumnDef(column_name, dt, nullable)]
+            new_schema = Schema(new_columns)
+            cast_default = cast_value(default, dt)
+
+            with FileWriter(temp_path, new_schema) as writer:
+                for batch, _ in reader.scan():
+                    cols = dict(batch.columns)
+                    cols[column_name] = [cast_default] * batch.row_count
+                    writer.write_columns(cols, batch.row_count)
+
+        os.replace(temp_path, self.filepath)
+        return self
+
+    def update(self, set_values: Dict[str, Any], where: Optional[str] = None) -> int:
+        """
+        Updates matching rows in the table.
+        set_values: dictionary of {column_name: new_value}
+        where: optional filter condition (e.g. "id = 5 AND active = true")
+        Returns total number of rows updated.
+        """
+        if not set_values:
+            return 0
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+
+        temp_path = self.filepath + ".tmp"
+        updated_count = 0
+
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            col_map = {c.name: c for c in schema.columns}
+            for col in set_values:
+                if col not in col_map:
+                    raise KeyError(f"Column '{col}' does not exist in table schema.")
+
+            casted_updates = {
+                col: cast_value(val, col_map[col].data_type)
+                for col, val in set_values.items()
+            }
+
+            where_expr = None
+            if where and where.strip():
+                tokens = Lexer(where).tokenize()
+                where_expr = Parser(tokens)._parse_expression()
+                QueryEngine._coerce_expr_literals(where_expr, schema)
+
+            with FileWriter(temp_path, schema) as writer:
+                for batch, _ in reader.scan():
+                    cols = dict(batch.columns)
+                    count = batch.row_count
+
+                    if where_expr is not None:
+                        mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
+                        matches = [i for i, m in enumerate(mask) if m]
+                        if matches:
+                            for col_name, new_val in casted_updates.items():
+                                col_list = list(cols[col_name])
+                                for idx in matches:
+                                    col_list[idx] = new_val
+                                cols[col_name] = col_list
+                            updated_count += len(matches)
+                    else:
+                        for col_name, new_val in casted_updates.items():
+                            cols[col_name] = [new_val] * count
+                        updated_count += count
+
+                    writer.write_columns(cols, count)
+
+        os.replace(temp_path, self.filepath)
+        return updated_count
+
+    def delete(self, where: Optional[str] = None) -> int:
+        """
+        Deletes matching rows from the table.
+        where: optional filter condition. If omitted or None, truncates all rows.
+        Returns total number of rows deleted.
+        """
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+
+        if where is None or not where.strip():
+            return self.truncate()
+
+        temp_path = self.filepath + ".tmp"
+        deleted_count = 0
+
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            tokens = Lexer(where).tokenize()
+            where_expr = Parser(tokens)._parse_expression()
+            QueryEngine._coerce_expr_literals(where_expr, schema)
+
+            with FileWriter(temp_path, schema) as writer:
+                for batch, _ in reader.scan():
+                    cols = dict(batch.columns)
+                    count = batch.row_count
+                    mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
+                    match_count = sum(1 for m in mask if m)
+
+                    if match_count == 0:
+                        writer.write_columns(cols, count)
+                    elif match_count == count:
+                        deleted_count += match_count
+                    else:
+                        filtered = {c: [v for v, m in zip(vals, mask) if not m] for c, vals in cols.items()}
+                        deleted_count += match_count
+                        writer.write_columns(filtered, count - match_count)
+
+        os.replace(temp_path, self.filepath)
+        return deleted_count
+
+    def truncate(self) -> int:
+        """
+        Removes all rows from the table while preserving schema.
+        Returns number of rows removed.
+        """
+        if not os.path.exists(self.filepath):
+            raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
+        with FileReader(self.filepath) as reader:
+            schema = reader.schema
+            total = reader.total_rows
+
+        temp_path = self.filepath + ".tmp"
+        with FileWriter(temp_path, schema) as writer:
+            pass
+
+        os.replace(temp_path, self.filepath)
+        return total
+
+    def drop(self) -> bool:
+        """
+        Permanently deletes the table file from disk.
+        """
+        if os.path.exists(self.filepath):
+            os.remove(self.filepath)
+            return True
+        return False
+
+    def rename(self, new_filepath: str) -> "Table":
+        """
+        Renames the table file on disk.
+        """
+        if not new_filepath.endswith(".mgdb"):
+            new_filepath += ".mgdb"
+        if os.path.exists(new_filepath):
+            raise FileExistsError(f"Target table file '{new_filepath}' already exists.")
+        os.rename(self.filepath, new_filepath)
+        self.filepath = new_filepath
+        return self
 
     def query(self, pipeline: str, show_progress: bool = False) -> QueryResult:
         """Runs a MergenQL pipeline query against this table."""
@@ -130,13 +415,16 @@ class Table:
     def sql(self, query_str: str, show_progress: bool = False) -> QueryResult:
         """Executes a standard SQL query against this table."""
         tbl_base = os.path.splitext(os.path.basename(self.filepath))[0]
+        tbl_name = os.path.basename(self.filepath)
         clean_path = self.filepath.replace("\\", "/")
-        query_fixed = re.sub(rf"\bFROM\s+[`\"']?{re.escape(tbl_base)}[`\"']?\b", lambda m: f'FROM "{clean_path}"', query_str, flags=re.IGNORECASE)
+        pattern = rf"\b(FROM|UPDATE|DELETE\s+FROM|ALTER\s+TABLE|TRUNCATE\s+TABLE|DROP\s+TABLE)\s+[`\"']?(?:{re.escape(tbl_name)}|{re.escape(tbl_base)})(?:\.mgdb)?[`\"']?\b"
+        query_fixed = re.sub(pattern, lambda m: f'{m.group(1)} "{clean_path}"', query_str, flags=re.IGNORECASE)
         return MergenDB.query(query_fixed, show_progress=show_progress)
 
     def execute(self, query_or_sql: str, show_progress: bool = False) -> QueryResult:
         """Alias for sql / query."""
-        if query_or_sql.strip().upper().startswith("SELECT "):
+        cmd_u = query_or_sql.strip().upper()
+        if any(cmd_u.startswith(kw) for kw in ("SELECT ", "UPDATE ", "DELETE ", "ALTER ", "DROP ", "TRUNCATE ", "RENAME ")):
             return self.sql(query_or_sql, show_progress=show_progress)
         return self.query(query_or_sql, show_progress=show_progress)
 
@@ -360,6 +648,94 @@ class MergenDB:
     @staticmethod
     def query(sql_or_pipeline: str, show_progress: bool = False) -> QueryResult:
         query_str = sql_or_pipeline.strip().rstrip(";")
+        t0 = time.perf_counter()
+
+        # 1. UPDATE statement
+        update_m = re.match(r"^UPDATE\s+([^\s]+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$", query_str, re.IGNORECASE | re.DOTALL)
+        if update_m:
+            tbl_name, set_str, where_clause = update_m.groups()
+            tbl = Table(tbl_name.strip().strip("'\"`"))
+            set_dict = _parse_set_clause(set_str)
+            updated = tbl.update(set_dict, where=where_clause)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["rows_affected"], [[updated]], ExecutionStats(0, 0, 0, 0, 0, updated, elapsed_ms))
+
+        # 2. DELETE statement
+        delete_m = re.match(r"^DELETE\s+(?:FROM\s+)?([^\s]+)(?:\s+WHERE\s+(.+))?$", query_str, re.IGNORECASE | re.DOTALL)
+        if delete_m:
+            tbl_name, where_clause = delete_m.groups()
+            tbl = Table(tbl_name.strip().strip("'\"`"))
+            deleted = tbl.delete(where=where_clause)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["rows_affected"], [[deleted]], ExecutionStats(0, 0, 0, 0, 0, deleted, elapsed_ms))
+
+        # 3. ALTER TABLE statement
+        alter_m = re.match(r"^ALTER\s+TABLE\s+([^\s]+)\s+(RENAME\s+COLUMN|DROP\s+COLUMN|ADD\s+COLUMN)\s+(.+)$", query_str, re.IGNORECASE | re.DOTALL)
+        if alter_m:
+            tbl_name, action, rest = alter_m.groups()
+            tbl = Table(tbl_name.strip().strip("'\"`"))
+            action_upper = action.upper()
+            if "RENAME" in action_upper:
+                ren_m = re.match(r"^([^\s]+)\s+TO\s+([^\s]+)$", rest.strip(), re.IGNORECASE)
+                if not ren_m:
+                    raise SyntaxError(f"Invalid RENAME syntax: ALTER TABLE {tbl_name} RENAME COLUMN {rest}")
+                old_col, new_col = ren_m.groups()
+                tbl.rename_column(old_col.strip().strip("'\"`"), new_col.strip().strip("'\"`"))
+            elif "DROP" in action_upper:
+                col_to_drop = rest.strip().strip("'\"`")
+                tbl.drop_column(col_to_drop)
+            elif "ADD" in action_upper:
+                add_m = re.match(r"^([^\s]+)\s+([^\s]+)(?:\s+DEFAULT\s+(.+))?$", rest.strip(), re.IGNORECASE)
+                if not add_m:
+                    raise SyntaxError(f"Invalid ADD COLUMN syntax: ALTER TABLE {tbl_name} ADD COLUMN {rest}")
+                col_name, col_type, def_val = add_m.groups()
+                parsed_def = None
+                if def_val is not None:
+                    def_str = def_val.strip()
+                    if (def_str.startswith("'") and def_str.endswith("'")) or (def_str.startswith('"') and def_str.endswith('"')):
+                        parsed_def = def_str[1:-1].replace("''", "'")
+                    elif def_str.upper() == "NULL":
+                        parsed_def = None
+                    elif def_str.upper() == "TRUE":
+                        parsed_def = True
+                    elif def_str.upper() == "FALSE":
+                        parsed_def = False
+                    else:
+                        try:
+                            parsed_def = float(def_str) if "." in def_str else int(def_str)
+                        except ValueError:
+                            parsed_def = def_str
+                tbl.add_column(col_name.strip().strip("'\"`"), col_type.strip(), default=parsed_def)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
+        # 4. DROP TABLE statement
+        drop_m = re.match(r"^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
+        if drop_m:
+            tbl_name = drop_m.group(1).strip().strip("'\"`")
+            tbl = Table(tbl_name)
+            tbl.drop()
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
+        # 5. TRUNCATE TABLE statement
+        trunc_m = re.match(r"^TRUNCATE\s+(?:TABLE\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
+        if trunc_m:
+            tbl_name = trunc_m.group(1).strip().strip("'\"`")
+            tbl = Table(tbl_name)
+            cnt = tbl.truncate()
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["rows_affected"], [[cnt]], ExecutionStats(0, 0, 0, 0, 0, cnt, elapsed_ms))
+
+        # 6. RENAME TABLE statement
+        ren_tbl_m = re.match(r"^RENAME\s+TABLE\s+([^\s]+)\s+TO\s+([^\s;]+)$", query_str, re.IGNORECASE)
+        if ren_tbl_m:
+            old_tbl, new_tbl = ren_tbl_m.groups()
+            tbl = Table(old_tbl.strip().strip("'\"`"))
+            tbl.rename(new_tbl.strip().strip("'\"`"))
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
         if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
             query_str = MergenDB._convert_sql_to_pipeline(query_str)
 
@@ -371,11 +747,11 @@ class MergenDB:
         elif isinstance(ast, CreateTableNode):
             schema = Schema(ast.columns)
             MergenDB.create_table(ast.table_path, schema)
-            return QueryResult([], [], None)
+            return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, 0.0))
         elif isinstance(ast, InsertNode):
             table = MergenDB.open_table(ast.table_path)
             table.insert_many(ast.rows)
-            return QueryResult([], [], None)
+            return QueryResult(["rows_affected"], [[len(ast.rows)]], ExecutionStats(0, 0, 0, 0, 0, len(ast.rows), 0.0))
         else:
             raise TypeError(f"Unhandled statement type: {type(ast)}")
 
@@ -419,6 +795,38 @@ def search(filepath: str, text: str, limit: Optional[int] = None, show_progress:
     """Performs full-text search across all string columns."""
     return Table(filepath).search(text, limit=limit, show_progress=show_progress)
 
+def update(filepath: str, set_values: Dict[str, Any], where: Optional[str] = None) -> int:
+    """Updates matching rows in a table."""
+    return Table(filepath).update(set_values, where=where)
+
+def delete(filepath: str, where: Optional[str] = None) -> int:
+    """Deletes matching rows in a table."""
+    return Table(filepath).delete(where=where)
+
+def rename_column(filepath: str, old_name: str, new_name: str) -> Table:
+    """Renames an existing column in a table."""
+    return Table(filepath).rename_column(old_name, new_name)
+
+def drop_column(filepath: str, column_name: str) -> Table:
+    """Drops a column from a table."""
+    return Table(filepath).drop_column(column_name)
+
+def add_column(filepath: str, column_name: str, data_type: Union[DataType, str], default: Any = None, nullable: bool = True) -> Table:
+    """Adds a new column to a table."""
+    return Table(filepath).add_column(column_name, data_type, default=default, nullable=nullable)
+
+def truncate(filepath: str) -> int:
+    """Clears all rows from a table while keeping schema."""
+    return Table(filepath).truncate()
+
+def drop_table(filepath: str) -> bool:
+    """Deletes a table file from disk."""
+    return Table(filepath).drop()
+
+def rename_table(old_filepath: str, new_filepath: str) -> Table:
+    """Renames a table file on disk."""
+    return Table(old_filepath).rename(new_filepath)
+
 def create_table(filepath: str, schema: Schema, block_size: int = 1024) -> Table:
     return MergenDB.create_table(filepath, schema, block_size)
 
@@ -447,3 +855,4 @@ def export_sql(mgdb_path: str, output_sql_path: str):
 from_sqlite = import_sqlite
 from_sql_dump = import_sql
 from_csv = import_csv
+

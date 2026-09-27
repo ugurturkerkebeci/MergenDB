@@ -125,6 +125,35 @@ for row in result:
 df = result.to_df()
 ```
 
+### 5. Updating & Deleting Records (`.update`, `.delete`)
+
+All row mutations execute with streaming block preservation to keep memory under 20 MB:
+
+```python
+# Update balance for matching records
+updated = db.update({"balance": 999}, where="name = 'Abdurrezzak'")
+print(f"Updated {updated} records")
+
+# Delete inactive or zero-balance records
+deleted = db.delete(where="balance <= 0 OR active = false")
+print(f"Deleted {deleted} records")
+```
+
+### 6. Modifying Table Schema (`.rename_column`, `.drop_column`, `.add_column`)
+
+Instantly alter table layout without losing data:
+
+```python
+# Rename a column
+db.rename_column("name", "full_name")
+
+# Add a new column with a default value
+db.add_column("country", "string", default="Turkey")
+
+# Drop an unneeded column
+db.drop_column("city")
+```
+
 ---
 
 ## Python API Reference
@@ -177,6 +206,14 @@ The primary object representing an `.mgdb` table.
 | `db.execute(query_or_sql)` | Executes SQL or MergenQL pipeline query. |
 | `db.insert(data)` | Inserts a single dict, list of dicts, or list of row lists. Auto-creates table if missing. |
 | `db.insert_many(rows, block_size=1024)` | Inserts a list of raw value rows into the columnar storage. |
+| `db.update(set_values, where=None)` | Updates matching rows with `{col: val}` mapping. Returns updated count. |
+| `db.delete(where=None)` | Deletes matching rows from the table. Returns deleted count. |
+| `db.rename_column(old_name, new_name)` | Renames an existing column without data loss. |
+| `db.drop_column(column_name)` | Removes a column from the schema and table file. |
+| `db.add_column(column_name, data_type, default=None)` | Adds a new column with a default value. |
+| `db.truncate()` | Clears all rows while keeping schema and structure intact. |
+| `db.drop()` | Permanently deletes the table file from disk. |
+| `db.rename(new_filepath)` | Renames the table file on disk. |
 | `db.all(limit=None)` | Returns all rows as a list of dictionaries (`List[Dict[str, Any]]`). |
 | `db.to_dicts(limit=None)` | Returns rows as dictionaries. |
 | `db.to_list(limit=None)` | Returns rows as a raw list of lists (`List[List[Any]]`). |
@@ -243,6 +280,10 @@ All commands can be terminated with an optional semicolon (`;`).
 | **`SHOW COLUMNS;`** <br> **`DESCRIBE;`** | Displays schema (columns, types, nullability) for the active table. <br>`SHOW COLUMNS;` or `SHOW COLUMNS FROM users;` |
 | **`WHERE <condition>;`** | Instant query against the active table without typing `SELECT * FROM`. <br>`WHERE balance > 500 AND status = 'active';` |
 | **`SELECT ...;`** | Standard SQL query with projection, filtering, ordering, and limits. <br>`SELECT id, name, balance WHERE balance > 100 ORDER BY balance DESC LIMIT 10;` |
+| **`UPDATE ...;`** | Updates matching rows with streaming block safety. <br>`UPDATE users SET balance = 500 WHERE id = 1;` or `UPDATE SET balance = 500;` |
+| **`DELETE ...;`** | Deletes matching rows from the active or specified table. <br>`DELETE FROM users WHERE balance <= 0;` or `DELETE WHERE balance <= 0;` |
+| **`ALTER TABLE ...;`** | Modify table schema without data loss. <br>`ALTER TABLE users RENAME COLUMN old TO new;`<br>`ALTER TABLE users ADD COLUMN age INT DEFAULT 18;`<br>`ALTER TABLE users DROP COLUMN old_col;` |
+| **`RENAME COLUMN ...;`**<br>**`DROP COLUMN ...;`**<br>**`ADD COLUMN ...;`** | Short forms directly against active table context.<br>`RENAME COLUMN old TO new;` |
 | **`FROM ...;`** | MergenQL pipeline query. <br>`FROM users.mgdb \| WHERE age >= 18 \| SELECT name, age \| LIMIT 5` |
 | **`IMPORT SQL <file.sql> <table.mgdb>;`** | Stream-imports raw MySQL / phpMyAdmin SQL dump into MergenDB with a live progress bar. <br>`IMPORT SQL backup.sql users.mgdb;` |
 | **`IMPORT SQLITE <file.db> <table.mgdb> [tbl];`** | Imports an SQLite table into MergenDB. <br>`IMPORT SQLITE app.db customers.mgdb users;` |

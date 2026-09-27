@@ -5,6 +5,8 @@ MergenDB: Ultra-compact, columnar embedded database engine for edge and resource
 from mergendb.client import (
     MergenDB, Table, Database, Connection,
     connect, open, query, sql, find, search,
+    update, delete, rename_column, drop_column, add_column,
+    truncate, drop_table, rename_table,
     create_table, open_table,
     import_sql, import_sqlite, import_csv,
     export_csv, export_json, export_sql,
@@ -15,7 +17,7 @@ from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
 from mergendb.server.server import start_server
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     # Primary intuitive developer API
@@ -25,6 +27,14 @@ __all__ = [
     "search",
     "sql",
     "query",
+    "update",
+    "delete",
+    "rename_column",
+    "drop_column",
+    "add_column",
+    "truncate",
+    "drop_table",
+    "rename_table",
     "Table",
     "Database",
     "Connection",
