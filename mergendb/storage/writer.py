@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Union, Optional, Tuple
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import cast_value
 from mergendb.core.block import ZoneMap, ColumnChunkMeta, BlockMeta
+from mergendb.core.bloom import BlockBloomFilter
 from mergendb.compression.compressor import ColumnCompressor
 from mergendb.storage.format import MAGIC_HEADER, MAGIC_FOOTER, FORMAT_VERSION
 
@@ -153,6 +154,8 @@ class FileWriter:
             offset = self._file.tell()
             self._file.write(compressed_bytes)
 
+            bloom = BlockBloomFilter.build_from_values(values)
+
             chunk_meta = ColumnChunkMeta(
                 column_name=col.name,
                 encoding=int(enc_type),
@@ -160,7 +163,8 @@ class FileWriter:
                 compressed_bytes=len(compressed_bytes),
                 uncompressed_bytes=uncomp_size,
                 row_count=self._buffered_count,
-                zone_map=zone_map
+                zone_map=zone_map,
+                bloom_filter=bloom
             )
             col_chunks_meta[col.name] = chunk_meta
 

@@ -182,7 +182,7 @@ class FileReader:
             for col_name, op, val in predicates:
                 if col_name in block.columns:
                     chunk_meta = block.columns[col_name]
-                    if chunk_meta.zone_map.can_prune(op, val):
+                    if chunk_meta.can_prune(op, val):
                         return None, 0, True
 
         # 2. Late Materialization via Demand-Driven Lazy Column Loading

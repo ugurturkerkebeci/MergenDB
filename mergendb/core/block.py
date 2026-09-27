@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Dict
 import json
 from mergendb.core.types import DataType
+from mergendb.core.bloom import BlockBloomFilter
 
 @dataclass
 class ZoneMap:
@@ -73,9 +74,24 @@ class ColumnChunkMeta:
     uncompressed_bytes: int
     row_count: int
     zone_map: ZoneMap
+    bloom_filter: Optional[BlockBloomFilter] = None
+
+    def can_prune(self, op: str, value: Any) -> bool:
+        """
+        Determines if the entire block chunk can be skipped without reading or decompressing.
+        Combines ZoneMap min/max range pruning with deterministic Bloom Filter hashing.
+        """
+        # 1. ZoneMap check
+        if self.zone_map.can_prune(op, value):
+            return True
+        # 2. Bloom Filter check for equality predicates ('==' or '=')
+        if op in ("==", "=") and self.bloom_filter is not None:
+            if not self.bloom_filter.contains(value):
+                return True
+        return False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "col": self.column_name,
             "enc": self.encoding,
             "offset": self.offset,
@@ -84,9 +100,14 @@ class ColumnChunkMeta:
             "rows": self.row_count,
             "zm": self.zone_map.to_dict()
         }
+        if self.bloom_filter is not None:
+            d["bf"] = self.bloom_filter.to_hex()
+        return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ColumnChunkMeta":
+        bf_hex = d.get("bf")
+        bf = BlockBloomFilter.from_hex(bf_hex) if bf_hex else None
         return cls(
             column_name=d["col"],
             encoding=d["enc"],
@@ -94,7 +115,8 @@ class ColumnChunkMeta:
             compressed_bytes=d["c_bytes"],
             uncompressed_bytes=d["u_bytes"],
             row_count=d["rows"],
-            zone_map=ZoneMap.from_dict(d["zm"])
+            zone_map=ZoneMap.from_dict(d["zm"]),
+            bloom_filter=bf
         )
 
 @dataclass
