@@ -23,7 +23,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v0.5.1 (Lightning Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v0.5.2 (Lightning Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -235,8 +235,8 @@ class MergenCLI:
             return
 
         fmt = fmt.upper()
-        if fmt == "JSON":
-            fmt = "JSONL"
+        if fmt == "CVS":
+            fmt = "CSV"
 
         if not out_file:
             base = os.path.splitext(filepath)[0]
@@ -244,8 +244,12 @@ class MergenCLI:
                 out_file = f"{base}.csv"
             elif fmt == "SQL":
                 out_file = f"{base}.sql"
-            else:
+            elif fmt == "JSON":
+                out_file = f"{base}.json"
+            elif fmt == "JSONL":
                 out_file = f"{base}.jsonl"
+            else:
+                out_file = f"{base}.csv"
 
         with FileReader(filepath) as reader:
             total_rows = reader.total_rows
@@ -262,10 +266,10 @@ class MergenCLI:
                         writer.writerows(zip(*(cols[c] for c in col_names)))
                         exported += batch.row_count
                         pbar.update(exported)
+
             elif fmt == "SQL":
                 with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                     clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
-                    # Write CREATE TABLE DDL
                     col_defs = []
                     for c in reader.schema.columns:
                         tname = "TEXT"
@@ -302,7 +306,25 @@ class MergenCLI:
                         pbar.update(exported)
                     if chunk:
                         f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
-            else: # JSONL
+
+            elif fmt == "JSON":
+                with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                    f.write("[\n")
+                    first = True
+                    for batch, _ in reader.scan():
+                        cols = batch.columns
+                        for row in zip(*(cols[c] for c in col_names)):
+                            record_str = json.dumps(dict(zip(col_names, row)))
+                            if not first:
+                                f.write(",\n  " + record_str)
+                            else:
+                                f.write("  " + record_str)
+                                first = False
+                        exported += batch.row_count
+                        pbar.update(exported)
+                    f.write("\n]\n")
+
+            else:  # JSONL
                 with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                     for batch, _ in reader.scan():
                         cols = batch.columns
@@ -498,10 +520,67 @@ class MergenCLI:
         elif keyword == "BENCHMARK" and len(parts) > 1:
             self.benchmark_table(parts[1])
 
-        elif keyword == "EXPORT" and len(parts) >= 4 and parts[2].upper() == "TO":
-            tbl = parts[1]
-            fmt = parts[3]
-            out = parts[4] if len(parts) > 4 else None
+        elif keyword == "EXPORT":
+            rem = parts[1:]
+            if not rem:
+                if self.active_table:
+                    print("Usage: EXPORT <SQL|CSV|JSON|JSONL> [output_file]; or EXPORT TO <SQL|CSV|JSON>;\n")
+                else:
+                    print("Usage: EXPORT <table.mgdb> TO <SQL|CSV|JSON|JSONL> [output_file];\n")
+                return
+
+            tbl = None
+            fmt = "CSV"
+            out = None
+
+            if rem[0].upper() == "TO":
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or 'EXPORT <table> TO ...'.\n")
+                    return
+                tbl = self.active_table
+                fmt = rem[1].upper() if len(rem) > 1 else "CSV"
+                out = rem[2] if len(rem) > 2 else None
+
+            elif rem[0].upper() in ("SQL", "CSV", "CVS", "JSON", "JSONL"):
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or 'EXPORT <table> TO ...'.\n")
+                    return
+                tbl = self.active_table
+                fmt = rem[0].upper()
+                out = rem[1] if len(rem) > 1 else None
+
+            elif any(rem[0].lower().endswith(ext) for ext in (".sql", ".csv", ".json", ".jsonl")):
+                if not self.active_table:
+                    print("Error: No active table selected. Use 'USE <table_name>;' or specify table: 'EXPORT <table> <file>'.\n")
+                    return
+                tbl = self.active_table
+                out = rem[0]
+                ext = os.path.splitext(out)[1].lower().lstrip(".")
+                fmt = ext.upper()
+
+            else:
+                tbl = rem[0]
+                rest = rem[1:]
+                if rest and rest[0].upper() == "TO":
+                    rest = rest[1:]
+
+                if not rest:
+                    fmt = "SQL"
+                    out = None
+                elif rest[0].upper() in ("SQL", "CSV", "CVS", "JSON", "JSONL"):
+                    fmt = rest[0].upper()
+                    out = rest[1] if len(rest) > 1 else None
+                elif any(rest[0].lower().endswith(ext) for ext in (".sql", ".csv", ".json", ".jsonl")):
+                    out = rest[0]
+                    ext = os.path.splitext(out)[1].lower().lstrip(".")
+                    fmt = ext.upper()
+                else:
+                    fmt = rest[0].upper()
+                    out = rest[1] if len(rest) > 1 else None
+
+            if fmt == "CVS":
+                fmt = "CSV"
+
             self.export_table(tbl, fmt, out)
 
         elif keyword == "IMPORT" and len(parts) >= 4:
@@ -539,7 +618,7 @@ class MergenCLI:
             print(f"Active Table Context : {self.active_table or '(None)'}")
             print(f"Local Tables Count   : {len(files)}")
             print(f"Total Local Data Size: {total_size / 1024:.2f} KB")
-            print(f"Engine Version       : 0.5.1 (Lightning Columnar Engine)")
+            print(f"Engine Version       : 0.5.2 (Lightning Columnar Engine)")
             print(f"Process PID          : {os.getpid()}\n")
 
         else:

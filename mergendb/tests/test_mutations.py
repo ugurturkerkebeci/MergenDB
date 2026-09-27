@@ -151,6 +151,58 @@ class TestMutations(unittest.TestCase):
         res_trunc = mergendb.sql(f"TRUNCATE TABLE {self.test_file}")
         self.assertEqual(self.tbl.row_count, 0)
 
+    def test_exports_all_formats(self):
+        import json
+        from mergendb.cli.repl import MergenCLI
+
+        sql_path = "export_test.sql"
+        csv_path = "export_test.csv"
+        json_path = "export_test.json"
+        jsonl_path = "export_test.jsonl"
+
+        # 1. Python Table.export() by file extension
+        self.tbl.export(sql_path)
+        self.assertTrue(os.path.exists(sql_path))
+        with open(sql_path, "r", encoding="utf-8") as f:
+            sql_txt = f.read()
+            self.assertIn("CREATE TABLE", sql_txt)
+            self.assertIn("INSERT INTO", sql_txt)
+
+        self.tbl.export(csv_path)
+        self.assertTrue(os.path.exists(csv_path))
+
+        self.tbl.export(json_path)
+        self.assertTrue(os.path.exists(json_path))
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            self.assertIsInstance(data, list)
+            self.assertEqual(len(data), 5)
+            self.assertEqual(data[0]["name"], "Alice")
+
+        self.tbl.export(jsonl_path)
+        self.assertTrue(os.path.exists(jsonl_path))
+
+        # 2. CLI flexible commands
+        cli = MergenCLI()
+        cli.active_table = self.test_file
+        cli.execute_command("EXPORT SQL;")
+        self.assertTrue(os.path.exists("test_mutation_db.sql"))
+
+        cli.execute_command("EXPORT CSV;")
+        self.assertTrue(os.path.exists("test_mutation_db.csv"))
+
+        cli.execute_command("EXPORT JSON;")
+        self.assertTrue(os.path.exists("test_mutation_db.json"))
+        with open("test_mutation_db.json", "r", encoding="utf-8") as f:
+            cli_json_data = json.load(f)
+            self.assertIsInstance(cli_json_data, list)
+            self.assertEqual(len(cli_json_data), 5)
+
+        # Cleanup generated test export files
+        for f in [sql_path, csv_path, json_path, jsonl_path, "test_mutation_db.sql", "test_mutation_db.csv", "test_mutation_db.json"]:
+            if os.path.exists(f):
+                os.remove(f)
+
 
 if __name__ == "__main__":
     unittest.main()

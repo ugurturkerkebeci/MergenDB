@@ -2,6 +2,7 @@ import unittest
 import os
 import shutil
 import tempfile
+import json
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.storage.writer import FileWriter
@@ -88,9 +89,18 @@ class TestStorage(unittest.TestCase):
         self.assertTrue(os.path.exists(csv_out))
         self.assertGreater(os.path.getsize(csv_out), 0)
 
+        # Test valid JSON array export
+        json_out = os.path.join(self.test_dir, "out.json")
+        cli.export_table(self.filepath, "JSON", json_out)
+        self.assertTrue(os.path.exists(json_out))
+        with open(json_out, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            self.assertEqual(len(data), 250)
+            self.assertEqual(data[0]["id"], 0)
+
         # Test JSONL export
         jsonl_out = os.path.join(self.test_dir, "out.jsonl")
-        cli.export_table(self.filepath, "JSON", jsonl_out)
+        cli.export_table(self.filepath, "JSONL", jsonl_out)
         self.assertTrue(os.path.exists(jsonl_out))
         self.assertGreater(os.path.getsize(jsonl_out), 0)
 

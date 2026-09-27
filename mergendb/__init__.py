@@ -9,7 +9,7 @@ from mergendb.client import (
     truncate, drop_table, rename_table,
     create_table, open_table,
     import_sql, import_sqlite, import_csv,
-    export_csv, export_json, export_sql,
+    export_csv, export_json, export_jsonl, export_sql,
     from_sqlite, from_sql_dump, from_csv
 )
 from mergendb.core.schema import Schema, ColumnDef
@@ -17,7 +17,7 @@ from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
 from mergendb.server.server import start_server
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     # Primary intuitive developer API
@@ -43,6 +43,7 @@ __all__ = [
     "import_csv",
     "export_csv",
     "export_json",
+    "export_jsonl",
     "export_sql",
 
     # Original engine classes and functions

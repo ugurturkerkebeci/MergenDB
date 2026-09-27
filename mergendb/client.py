@@ -3,6 +3,7 @@ import re
 import csv
 import json
 import time
+import builtins
 from typing import List, Dict, Any, Union, Optional
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType, cast_value
@@ -533,18 +534,20 @@ class Table:
         lower = output_path.lower()
         if lower.endswith(".csv"):
             self.export_csv(output_path)
-        elif lower.endswith(".json") or lower.endswith(".jsonl"):
+        elif lower.endswith(".jsonl"):
+            self.export_jsonl(output_path)
+        elif lower.endswith(".json"):
             self.export_json(output_path)
         elif lower.endswith(".sql"):
             self.export_sql(output_path)
         else:
-            raise ValueError(f"Unsupported export format for '{output_path}'. Use .csv, .json, or .sql.")
+            raise ValueError(f"Unsupported export format for '{output_path}'. Use .csv, .json, .jsonl, or .sql.")
 
     def export_csv(self, output_path: str):
         """Exports all rows to a CSV file."""
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
-            with open(output_path, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
+            with builtins.open(output_path, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
                 writer = csv.writer(f)
                 writer.writerow(col_names)
                 for batch, _ in reader.scan():
@@ -552,10 +555,28 @@ class Table:
                     writer.writerows(zip(*(cols[c] for c in col_names)))
 
     def export_json(self, output_path: str):
-        """Exports all rows to a JSONL file."""
+        """Exports all rows to a standard JSON array file [ {...}, {...} ]."""
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
-            with open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
+            with builtins.open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
+                f.write("[\n")
+                first = True
+                for batch, _ in reader.scan():
+                    cols = batch.columns
+                    for row in zip(*(cols[c] for c in col_names)):
+                        record_str = json.dumps(dict(zip(col_names, row)))
+                        if not first:
+                            f.write(",\n  " + record_str)
+                        else:
+                            f.write("  " + record_str)
+                            first = False
+                f.write("\n]\n")
+
+    def export_jsonl(self, output_path: str):
+        """Exports all rows to a JSON Lines (JSONL) file."""
+        with FileReader(self.filepath) as reader:
+            col_names = reader.schema.column_names()
+            with builtins.open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
                 for batch, _ in reader.scan():
                     cols = batch.columns
                     lines = [json.dumps(dict(zip(col_names, row))) + "\n" for row in zip(*(cols[c] for c in col_names))]
@@ -566,7 +587,7 @@ class Table:
         with FileReader(self.filepath) as reader:
             col_names = reader.schema.column_names()
             clean_tbl = os.path.splitext(os.path.basename(self.filepath))[0]
-            with open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
+            with builtins.open(output_path, "w", encoding="utf-8", buffering=256*1024) as f:
                 col_defs = []
                 for c in reader.schema.columns:
                     tname = "TEXT"
@@ -847,6 +868,9 @@ def export_csv(mgdb_path: str, output_csv_path: str):
 
 def export_json(mgdb_path: str, output_json_path: str):
     Table(mgdb_path).export_json(output_json_path)
+
+def export_jsonl(mgdb_path: str, output_jsonl_path: str):
+    Table(mgdb_path).export_jsonl(output_jsonl_path)
 
 def export_sql(mgdb_path: str, output_sql_path: str):
     Table(mgdb_path).export_sql(output_sql_path)
