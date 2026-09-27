@@ -124,6 +124,26 @@ def _verify_server(temp_dir: str) -> Dict[str, Any]:
     }
 
 
+def _detect_os_name() -> str:
+    system = platform.system()
+    if system == "Windows":
+        try:
+            win_ver = sys.getwindowsversion()
+            if win_ver.major >= 10 and win_ver.build >= 22000:
+                return f"Windows 11 (Build {win_ver.build})"
+            elif win_ver.major >= 10:
+                return f"Windows 10 (Build {win_ver.build})"
+            else:
+                return f"Windows {platform.release()} (Build {win_ver.build})"
+        except Exception:
+            return f"Windows {platform.release()}"
+    elif system == "Darwin":
+        return f"macOS {platform.mac_ver()[0]}"
+    elif system == "Linux":
+        return f"Linux {platform.release()}"
+    return f"{system} {platform.release()}"
+
+
 def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
     N_ROWS = 10_000
     db_path = os.path.join(temp_dir, "profile_bench.mgdb")
@@ -155,6 +175,8 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
 
     # 2. Measure Analytical Scan Rate (mmap zero-copy + Late Materialization)
     table = mergendb.open(db_path)
+    # Warmup query planner & JIT
+    table.sql("SELECT id FROM profile_bench WHERE id = 1;")
     t_scan_start = time.perf_counter()
     q_res = table.sql("SELECT id, client, amount FROM profile_bench WHERE category = 'ENTERPRISE' AND amount > 2500;")
     scan_time = max(time.perf_counter() - t_scan_start, 0.0001)
@@ -190,16 +212,16 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
-    # Tier Classification
-    if scan_rate >= 2_000_000 and import_rate >= 100_000:
+    # Tier Classification (realistic for pure-Python memory-safe execution)
+    if scan_rate >= 1_000_000 and import_rate >= 50_000:
         tier = "S-Tier (Server-Grade / High-Throughput Cloud)"
         rec_block = "4,096 - 8,192 rows"
         desc = "Exceptional CPU & I/O cache bandwidth. Easily processes 10M+ row workloads."
-    elif scan_rate >= 800_000 and import_rate >= 50_000:
+    elif scan_rate >= 300_000 and import_rate >= 15_000:
         tier = "A-Tier (Performance Desktop / Modern Laptop)"
         rec_block = "2,048 - 4,096 rows"
         desc = "High single-core speed and fast page cache. Excellent for local analytics."
-    elif scan_rate >= 250_000:
+    elif scan_rate >= 100_000:
         tier = "B-Tier (Standard Hardware / Edge Device)"
         rec_block = "1,024 - 2,048 rows"
         desc = "Balanced throughput. Low memory footprint (<15 MB RAM) guaranteed."
@@ -209,7 +231,7 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
         desc = "Optimized for minimal RAM usage and continuous battery/thermal stability."
 
     return {
-        "platform": f"{platform.system()} {platform.release()}",
+        "platform": _detect_os_name(),
         "architecture": platform.machine(),
         "cpu_cores": os.cpu_count() or 1,
         "python_runtime": f"{platform.python_implementation()} {sys.version.split()[0]}",
