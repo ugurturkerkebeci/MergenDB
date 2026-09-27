@@ -44,3 +44,4 @@ ENV/
 *.jsonl
 *.csv
 scratch/
+.npmrc

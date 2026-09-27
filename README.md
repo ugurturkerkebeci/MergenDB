@@ -5,60 +5,80 @@
 # MergenDB
 
 [![PyPI version](https://img.shields.io/badge/PyPI-v0.6.0-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-88%20Passing%20(%2B12%20Node.js)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2012%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
-**MergenDB** is a lightweight, pure-Python embedded columnar database engine designed to run heavy analytical queries and massive table scans on small, resource-constrained hardware. It requires **zero external dependencies** — no C compilers, no native libraries, and no bulky runtimes. Just standard Python.
+**MergenDB** is a lightweight, ultra-fast embedded columnar database engine and ecosystem designed to run massive analytical queries and multi-million row table scans on small, resource-constrained hardware. It delivers **zero external runtime dependencies** — no C compilers, no native C++ libraries, and no bulky runtimes across both Python and Node.js.
 
-Whether you're querying a 10-million row dataset on a 500 MB RAM VPS, analyzing sensor telemetry on a Raspberry Pi, or embedding a blazing-fast local analytics store inside your Python app, MergenDB gives you columnar performance without the operational headache.
+Whether you're querying a 10-million row dataset on a 500 MB RAM VPS, analyzing sensor telemetry on a Raspberry Pi, streaming analytics inside a modern Next.js/Express app, or embedding a blazing-fast local analytical store inside your Python application, MergenDB gives you columnar performance without the operational headache.
 
 ---
 
-## Why MergenDB? (The Problem with Row Stores)
+## 📦 Installation
 
-Traditional embedded databases like SQLite store data row-by-row (`[id, name, age, address, notes, ...]`). When you run a query like:
+### Python Engine & CLI
+```bash
+pip install --upgrade mergendb
+```
+
+### Node.js & TypeScript SDK
+```bash
+npm install mergendb
+```
+
+Requires **Python 3.8** or newer. Works seamlessly on Windows, macOS, Linux, and Docker.
+
+---
+
+## 💡 Why MergenDB? (The Problem with Row Stores)
+
+Traditional embedded databases like SQLite store data row-by-row (`[id, name, age, address, notes, ...]`). When you run an analytical query like:
 
 ```sql
 SELECT name, balance FROM users WHERE balance > 1000;
 ```
 
-Even though you only care about `name` and `balance`, SQLite has to read **every single column of every row** off your disk — including massive text columns like `address` and `notes`. On a 10-million row database, that translates to gigabytes of useless disk I/O and heavy memory pressure.
+Even though you only care about `name` and `balance`, row stores must read **every single column of every row** off disk — including massive text columns like `address` and `notes`. On a 10-million row database, that translates to gigabytes of useless disk I/O and heavy memory exhaustion.
 
-**MergenDB takes the columnar approach:**
+**MergenDB takes the modern columnar approach:**
 1. **Column-Isolated I/O:** Every column is stored and compressed independently. Unqueried columns are never read from disk.
-2. **ZoneMap Pruning:** Every block records `min_value` and `max_value`. If a block doesn't contain rows matching your filter, it is skipped with zero disk reads.
-3. **Demand-Driven Late Materialization (`LazyColumnDict`):** In multi-column filters like `WHERE name = 'Alice' AND balance > 50`, MergenDB checks `name` first. If no rows in the block match, `balance` and all other 20+ columns are never decompressed.
-4. **Strictly Bounded Memory:** Data streams in small, tunable blocks (1,024–8,192 rows). Memory usage stays under **15–20 MB RAM**, whether your database is 100 MB or 100 GB.
+2. **ZoneMap Pruning:** Every block records `min_value` and `max_value`. If a block cannot contain matching rows, it is skipped with zero disk reads.
+3. **1024-bit Block Bloom Filters:** Instant single-pass lookup index skips blocks that do not contain a queried ID, text, or UUID.
+4. **Demand-Driven Late Materialization (`LazyColumnDict`):** In multi-column filters (`WHERE status = 'ACTIVE' AND balance > 50`), MergenDB checks `status` first. If no rows in the block match, `balance` and all other columns are never decompressed.
+5. **Strictly Bounded Memory:** Data streams in small, tunable blocks (1,024–8,192 rows). Memory usage stays under **15–20 MB RAM**, whether your database is 100 MB or 100 GB.
 
 ---
 
-## Key Highlights
+## 🏛️ MergenDB v0.6+ Ecosystem Architecture
 
-- **Zero External Dependencies:** Built entirely with Python's built-in libraries (`struct`, `array`, `zlib`, `csv`, `sqlite3`, `http.server`).
-- **Embedded Web UI (Mergen Studio):** Interactive zero-dependency dark-mode visual interface (`mergen serve`) with table explorer, query editor, execution stats, and browser export.
-- **Developer-Friendly API:** Simple, intuitive Python interface (`db = mergendb.connect(...)`, `db.find(name="Alice")`, `db.to_df()`, `db.search("text")`).
-- **Auto-Schema Inference:** Pass plain Python dictionaries to `db.insert(...)` and MergenDB creates the table and infers column types automatically.
-- **Adaptive Compression Encodings:**
-  - **Bit-Packing:** Compresses 8 booleans into a single byte.
-  - **Delta / Frame-of-Reference (FoR):** Compresses sequential IDs, integers, and timestamps into tiny deltas.
-  - **Dictionary Encoding:** Replaces repeated text values (cities, statuses, categories) with 1- or 2-byte integer IDs.
-  - **Run-Length Encoding (RLE):** Collapses consecutive duplicate values into `(count, value)` pairs.
-  - **Secondary Zlib Compression:** Fast C-level streaming compression for maximum disk space savings.
-- **Real-Time Live Progress Bars:** Live percentage (`0.0%` to `100.0%`), transfer speed (`rows/s`), and ETA for imports, exports, and CLI queries.
-- **Full SQL & MergenQL Support:** Standard SQL queries alongside a clean Unix-style pipeline syntax (`FROM | WHERE | COMPUTE | AGGREGATE | SORT | LIMIT`).
-- **Built-in HTTP Query Server:** Query your `.mgdb` files from Node.js, Go, PHP, Rust, C#, or browser frontends via simple JSON HTTP requests.
-
----
-
-## Installation
-
-```bash
-pip install --upgrade mergendb
+```text
++---------------------------------------------------------------------------------+
+|                                 CLIENT LAYER                                    |
+|   Python Library (mergendb)   |   Node.js / TS SDK   |   Mergen Studio (Web)    |
+|   db.find() / db.sql()        |   db.sql`...`        |   phpMyAdmin UI Grid     |
++---------------------------------------+-----------------------------------------+
+                                        | HTTP / REST (Zero-Dependency)
++---------------------------------------v-----------------------------------------+
+|                                SERVER ENGINE                                    |
+|   Multi-threaded HTTP Server  |  Smart Content-Negotiation  |  Progress Stream  |
++---------------------------------------+-----------------------------------------+
+                                        | Analytical AST / Execution Plans
++---------------------------------------v-----------------------------------------+
+|                              ANALYTICAL ENGINE                                  |
+|   In-Memory Hash JOINs        |  Multi-Column GROUP BY / HAVING                 |
+|   ZoneMap & Bloom Pruning     |  Vectorized Column Evaluation                   |
++---------------------------------------+-----------------------------------------+
+                                        | Zero-Copy mmap & Block I/O
++---------------------------------------v-----------------------------------------+
+|                        STORAGE & ADAPTIVE COMPRESSION                           |
+|   Bit-Packed Booleans         |  Delta / Frame-of-Reference (FoR)               |
+|   Block Dictionary Encoding   |  Run-Length Encoding (RLE)                      |
+|   Secondary Zlib Stream       |  ZoneMap & Bloom Header (.mgdb)                 |
++---------------------------------------------------------------------------------+
 ```
-
-Requires **Python 3.8** or newer. Works seamlessly on Windows, macOS, Linux, and Docker.
 
 ---
 
