@@ -144,7 +144,77 @@ def _detect_os_name() -> str:
     return f"{system} {platform.release()}"
 
 
-def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
+def _detect_cpu_model() -> str:
+    system = platform.system()
+    if system == "Windows":
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0")
+            proc_name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+            winreg.CloseKey(key)
+            if proc_name and proc_name.strip():
+                return proc_name.strip()
+        except Exception:
+            pass
+        ident = os.environ.get("PROCESSOR_IDENTIFIER")
+        if ident:
+            return ident
+    elif system == "Linux":
+        try:
+            with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    if "model name" in line:
+                        return line.split(":", 1)[1].strip()
+        except Exception:
+            pass
+    elif system == "Darwin":
+        try:
+            import subprocess
+            out = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], stderr=subprocess.DEVNULL).decode().strip()
+            if out:
+                return out
+        except Exception:
+            pass
+    return f"{platform.processor() or platform.machine()}"
+
+
+def _detect_total_ram_gb() -> Optional[float]:
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+            stat = MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return round(stat.ullTotalPhys / (1024 ** 3), 1)
+        elif platform.system() == "Linux":
+            with open("/proc/meminfo", "r", encoding="utf-8") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        kb = int(line.split()[1])
+                        return round(kb / (1024 ** 2), 1)
+        elif platform.system() == "Darwin":
+            import subprocess
+            out = subprocess.check_output(["sysctl", "-n", "hw.memsize"], stderr=subprocess.DEVNULL).decode().strip()
+            if out:
+                return round(int(out) / (1024 ** 3), 1)
+    except Exception:
+        pass
+    return None
+
+
+def _profile_hardware(temp_dir: str, verbose: bool = False) -> Dict[str, Any]:
     N_ROWS = 10_000
     db_path = os.path.join(temp_dir, "profile_bench.mgdb")
     csv_path = os.path.join(temp_dir, "profile_data.csv")
@@ -160,6 +230,9 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
     cats = ["RETAIL", "WHOLESALE", "ENTERPRISE", "GOV", "SUBSCRIPTION"]
 
     # 1. Measure Ingestion / Append Rate
+    if verbose:
+        print("[*] Running live device hardware benchmarks...")
+        print("    [1/4] Benchmarking Ingestion & Append Rate (10,000 rows)...", end="", flush=True)
     t_write_start = time.perf_counter()
     with FileWriter(db_path, schema, block_size=2000) as writer:
         for i in range(N_ROWS):
@@ -172,25 +245,12 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
             ])
     write_time = max(time.perf_counter() - t_write_start, 0.0001)
     write_rate = int(N_ROWS / write_time)
+    if verbose:
+        print(f" {write_rate:,} rows/s")
 
-    # 2. Measure Analytical Scan Rate (mmap zero-copy + Late Materialization)
-    table = mergendb.open(db_path)
-    # Warmup query planner & JIT
-    table.sql("SELECT id FROM profile_bench WHERE id = 1;")
-    t_scan_start = time.perf_counter()
-    q_res = table.sql("SELECT id, client, amount FROM profile_bench WHERE category = 'ENTERPRISE' AND amount > 2500;")
-    scan_time = max(time.perf_counter() - t_scan_start, 0.0001)
-    scan_rate = int(N_ROWS / scan_time)
-
-    # 3. Measure Export Speed (CSV)
-    out_csv = os.path.join(temp_dir, "export_test.csv")
-    t_export_start = time.perf_counter()
-    mergendb.export_csv(db_path, out_csv)
-    export_time = max(time.perf_counter() - t_export_start, 0.0001)
-    export_rate = int(N_ROWS / export_time)
-
-    # 4. Measure Import Speed (CSV Streaming)
-    # Generate 5000 rows CSV
+    # 2. Measure Import Speed (CSV Streaming)
+    if verbose:
+        print("    [2/4] Benchmarking CSV Streaming Import (5,000 rows)...", end="", flush=True)
     with open(csv_path, "w", encoding="utf-8") as f:
         f.write("id,client,category,amount,is_cleared\n")
         for i in range(5000):
@@ -203,6 +263,32 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
         mergendb.from_csv(csv_path, in_mgdb)
     import_time = max(time.perf_counter() - t_import_start, 0.0001)
     import_rate = int(5000 / import_time)
+    if verbose:
+        print(f" {import_rate:,} rows/s")
+
+    # 3. Measure Export Speed (CSV)
+    if verbose:
+        print("    [3/4] Benchmarking Table Export Throughput (10,000 rows)...", end="", flush=True)
+    out_csv = os.path.join(temp_dir, "export_test.csv")
+    t_export_start = time.perf_counter()
+    mergendb.export_csv(db_path, out_csv)
+    export_time = max(time.perf_counter() - t_export_start, 0.0001)
+    export_rate = int(N_ROWS / export_time)
+    if verbose:
+        print(f" {export_rate:,} rows/s")
+
+    # 4. Measure Analytical Scan Rate (mmap zero-copy + Late Materialization)
+    if verbose:
+        print("    [4/4] Benchmarking Analytical Columnar Scan (Zero-Copy)...", end="", flush=True)
+    table = mergendb.open(db_path)
+    # Warmup query planner & JIT
+    table.sql("SELECT id FROM profile_bench WHERE id = 1;")
+    t_scan_start = time.perf_counter()
+    q_res = table.sql("SELECT id, client, amount FROM profile_bench WHERE category = 'ENTERPRISE' AND amount > 2500;")
+    scan_time = max(time.perf_counter() - t_scan_start, 0.0001)
+    scan_rate = int(N_ROWS / scan_time)
+    if verbose:
+        print(f" {scan_rate:,} rows/s")
 
     # Clean up large profile files
     for p in (db_path, csv_path, out_csv, in_mgdb):
@@ -217,7 +303,7 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
         tier = "S-Tier (Server-Grade / High-Throughput Cloud)"
         rec_block = "4,096 - 8,192 rows"
         desc = "Exceptional CPU & I/O cache bandwidth. Easily processes 10M+ row workloads."
-    elif scan_rate >= 300_000 and import_rate >= 15_000:
+    elif scan_rate >= 280_000 and import_rate >= 15_000:
         tier = "A-Tier (Performance Desktop / Modern Laptop)"
         rec_block = "2,048 - 4,096 rows"
         desc = "High single-core speed and fast page cache. Excellent for local analytics."
@@ -230,8 +316,11 @@ def _profile_hardware(temp_dir: str) -> Dict[str, Any]:
         rec_block = "512 - 1,024 rows"
         desc = "Optimized for minimal RAM usage and continuous battery/thermal stability."
 
+    ram_gb = _detect_total_ram_gb()
     return {
         "platform": _detect_os_name(),
+        "cpu_model": _detect_cpu_model(),
+        "ram_gb": f"{ram_gb} GB" if ram_gb is not None else "Unknown",
         "architecture": platform.machine(),
         "cpu_cores": os.cpu_count() or 1,
         "python_runtime": f"{platform.python_implementation()} {sys.version.split()[0]}",
@@ -276,9 +365,7 @@ def run_diagnostics(verbose: bool = True) -> Dict[str, Any]:
             print(f"    [+] HTTP Endpoint /status      : PASS (Port {server_res['port']})" if server_res["endpoint_status"] else "    [-] HTTP Endpoint /status      : FAIL")
             print(f"    [+] POST /query SQL Dispatch   : PASS" if server_res["endpoint_query"] else "    [-] POST /query SQL Dispatch   : FAIL")
 
-        if verbose:
-            print("[*] Profiling device hardware and benchmarking throughput...")
-        hw_res = _profile_hardware(temp_dir)
+        hw_res = _profile_hardware(temp_dir, verbose=verbose)
 
         total_elapsed = time.perf_counter() - t_start
 
@@ -287,12 +374,14 @@ def run_diagnostics(verbose: bool = True) -> Dict[str, Any]:
             print("  [DEVICE HARDWARE SPECIFICATIONS & DETECTED ENVIRONMENT]")
             print("-" * 74)
             print(f"  * Operating System   : {hw_res['platform']}")
-            print(f"  * CPU Architecture   : {hw_res['architecture']} ({hw_res['cpu_cores']} logical threads)")
+            print(f"  * Processor Model    : {hw_res['cpu_model']} ({hw_res['cpu_cores']} logical threads)")
+            print(f"  * System Memory      : {hw_res['ram_gb']}")
+            print(f"  * CPU Architecture   : {hw_res['architecture']}")
             print(f"  * Python Runtime     : {hw_res['python_runtime']}")
             print(f"  * Engine Version     : v{mergendb.__version__} (Pure Python / Zero-Dependency)")
 
             print("\n" + "-" * 74)
-            print("  [ESTIMATED PROCESSING SPEEDS FOR THIS HARDWARE]")
+            print("  [MEASURED BENCHMARK RESULTS ON THIS DEVICE]")
             print("-" * 74)
             print(f"  * Ingestion / Append : ~{hw_res['ingest_rate']:,} rows/sec")
             print(f"  * CSV / SQL Import   : ~{hw_res['import_rate']:,} rows/sec")
