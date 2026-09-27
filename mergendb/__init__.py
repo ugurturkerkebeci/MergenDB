@@ -15,7 +15,7 @@ from mergendb.core.types import DataType
 from mergendb.query.engine import QueryResult
 from mergendb.server.server import start_server
 
-__version__ = "0.4.9"
+__version__ = "0.5.0"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     # Primary intuitive developer API
