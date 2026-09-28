@@ -4,10 +4,10 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.10-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.7.0-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
-[![Node.js Tests](https://img.shields.io/badge/tests-218%2F218%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Node.js Tests](https://img.shields.io/badge/tests-318%2F318%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
 The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytical SQL, and memory-constrained workloads.
 

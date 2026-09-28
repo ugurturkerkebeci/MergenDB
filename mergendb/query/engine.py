@@ -223,31 +223,93 @@ class ExpressionEvaluator:
             res = []
             if op == "+":
                 for l, r in zip(left_vals, right_vals):
-                    res.append(None if l is None or r is None else l + r)
+                    if l is None or r is None:
+                        res.append(None)
+                    else:
+                        try:
+                            res.append(l + r)
+                        except TypeError:
+                            res.append(str(l) + str(r))
             elif op == "-":
                 for l, r in zip(left_vals, right_vals):
-                    res.append(None if l is None or r is None else l - r)
+                    if l is None or r is None:
+                        res.append(None)
+                    else:
+                        try:
+                            res.append(l - r)
+                        except (TypeError, ValueError):
+                            res.append(None)
             elif op == "*":
                 for l, r in zip(left_vals, right_vals):
-                    res.append(None if l is None or r is None else l * r)
+                    if l is None or r is None:
+                        res.append(None)
+                    else:
+                        try:
+                            res.append(l * r)
+                        except (TypeError, ValueError):
+                            res.append(None)
             elif op == "/":
                 for l, r in zip(left_vals, right_vals):
-                    res.append(None if l is None or r is None or r == 0 else l / r)
+                    if l is None or r is None or r == 0:
+                        res.append(None)
+                    else:
+                        try:
+                            res.append(l / r)
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            res.append(None)
             elif op == "%":
                 for l, r in zip(left_vals, right_vals):
-                    res.append(None if l is None or r is None or r == 0 else l % r)
+                    if l is None or r is None or r == 0:
+                        res.append(None)
+                    else:
+                        try:
+                            res.append(l % r)
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            res.append(None)
             elif op in ("==", "="):
                 return [l == r for l, r in zip(left_vals, right_vals)]
             elif op in ("!=", "<>"):
                 return [l != r for l, r in zip(left_vals, right_vals)]
             elif op == "<":
-                return [False if l is None or r is None else l < r for l, r in zip(left_vals, right_vals)]
+                for l, r in zip(left_vals, right_vals):
+                    if l is None or r is None:
+                        res.append(False)
+                    else:
+                        try:
+                            res.append(l < r)
+                        except TypeError:
+                            res.append(str(l) < str(r))
+                return res
             elif op == "<=":
-                return [False if l is None or r is None else l <= r for l, r in zip(left_vals, right_vals)]
+                for l, r in zip(left_vals, right_vals):
+                    if l is None or r is None:
+                        res.append(False)
+                    else:
+                        try:
+                            res.append(l <= r)
+                        except TypeError:
+                            res.append(str(l) <= str(r))
+                return res
             elif op == ">":
-                return [False if l is None or r is None else l > r for l, r in zip(left_vals, right_vals)]
+                for l, r in zip(left_vals, right_vals):
+                    if l is None or r is None:
+                        res.append(False)
+                    else:
+                        try:
+                            res.append(l > r)
+                        except TypeError:
+                            res.append(str(l) > str(r))
+                return res
             elif op == ">=":
-                return [False if l is None or r is None else l >= r for l, r in zip(left_vals, right_vals)]
+                for l, r in zip(left_vals, right_vals):
+                    if l is None or r is None:
+                        res.append(False)
+                    else:
+                        try:
+                            res.append(l >= r)
+                        except TypeError:
+                            res.append(str(l) >= str(r))
+                return res
             elif op == "LIKE":
                 import re
                 for l, r in zip(left_vals, right_vals):

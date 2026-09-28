@@ -4,16 +4,32 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.10-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.10-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.0-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.7.0-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-95%20Python%20%7C%20218%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-195%20Python%20%7C%20318%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
 
 Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
+
+---
+
+## What Is New in v0.7.0
+
+1. **New Visual Identity & Radiant Amber-Orange Aesthetic:**
+   - Brand new futuristic cinematic banner and iconic geometric falcon emblem logo in glowing obsidian, fiery orange, and warm amber tones.
+   - Designed to serve as the signature visual design across all repositories and platforms through the v0.7.x lifecycle.
+
+2. **+100 Extreme Resilience & Fault Tolerance Tests (Python & Node.js):**
+   - Added 100 comprehensive edge-case test scenarios per platform testing corrupt headers, truncated blocks, mixed numeric/string comparisons, zero division prevention, irregular line breaks, extreme Unicode charsets, and full mutation-query-export roundtrips.
+   - Total automated test suite now exceeds 510 tests (195 Python + 318 Node.js) with 100% pass rate.
+
+3. **Harden Query Engine & Cross-Platform Path Normalization:**
+   - Safe type coercion in `ExpressionEvaluator` arithmetic and comparison operators, preventing unexpected `TypeError` or zero division exceptions on dirty data.
+   - Fully normalized Windows path escaping in `Table.query` and SQL converter pipelines, eliminating backslash escape collisions.
 
 ---
 

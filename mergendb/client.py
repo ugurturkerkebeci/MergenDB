@@ -800,7 +800,8 @@ class Table:
     def query(self, pipeline: str, show_progress: bool = False) -> QueryResult:
         """Runs a MergenQL pipeline query against this table with non-blocking read lock."""
         with TableLockManager.get_lock(self.filepath).read():
-            full_query = f'FROM "{self.filepath}"\n' + pipeline.strip()
+            clean_fp = self.filepath.replace("\\", "/")
+            full_query = f'FROM "{clean_fp}"\n' + pipeline.strip()
             tokens = Lexer(full_query).tokenize()
             plan = Parser(tokens).parse()
             if not isinstance(plan, QueryPlan):
@@ -1175,13 +1176,15 @@ class MergenDB:
         d = m.groupdict()
         tbl = d["from"].strip().strip("'\"`")
         resolved_tbl = resolve_table_path(tbl, active_db=active_db or getattr(MergenDB, "active_database", "default"))
-        pipe = [f'FROM "{resolved_tbl}"']
+        clean_resolved = resolved_tbl.replace("\\", "/")
+        pipe = [f'FROM "{clean_resolved}"']
 
         if d.get("join_tbl") and d.get("join_on"):
             j_tbl = d["join_tbl"].strip().strip("'\"`")
             resolved_j = resolve_table_path(j_tbl, active_db=active_db or getattr(MergenDB, "active_database", "default"))
+            clean_j = resolved_j.replace("\\", "/")
             j_type = "LEFT" if (d.get("join_type") and "LEFT" in d["join_type"].upper()) else "INNER"
-            pipe.append(f'| {j_type} JOIN "{resolved_j}" ON {d["join_on"].strip()}')
+            pipe.append(f'| {j_type} JOIN "{clean_j}" ON {d["join_on"].strip()}')
 
         if d.get("where"):
             pipe.append(f'| WHERE {d["where"].strip()}')
