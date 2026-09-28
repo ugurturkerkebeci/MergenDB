@@ -43,5 +43,6 @@ ENV/
 *.mgdb.tmp
 *.jsonl
 *.csv
+mergen_auth.json
 scratch/
 .npmrc

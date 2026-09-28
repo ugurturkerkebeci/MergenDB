@@ -62,6 +62,7 @@ class TokenType(Enum):
 KEYWORDS = {
     "from": TokenType.FROM,
     "where": TokenType.WHERE,
+    "filter": TokenType.WHERE,
     "select": TokenType.SELECT,
     "compute": TokenType.COMPUTE,
     "aggregate": TokenType.AGGREGATE,

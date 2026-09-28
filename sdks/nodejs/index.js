@@ -40,7 +40,26 @@ class MergenDB {
     this.activeTable = options.activeTable || null;
     this.timeout = options.timeout || 30000;
     this.autoStart = Boolean(options.autoStart);
+    this.username = options.username !== undefined ? options.username : (parsed.username ? decodeURIComponent(parsed.username) : 'root');
+    this.password = options.password !== undefined ? options.password : (parsed.password ? decodeURIComponent(parsed.password) : '');
+    this.token = options.token || null;
     this._serverProcess = null;
+  }
+
+  /**
+  /**
+   * Returns authentication headers (Bearer token or Basic Auth)
+   * @returns {Object}
+   */
+  _getAuthHeaders() {
+    const headers = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    } else if (this.username !== undefined) {
+      const creds = Buffer.from(`${this.username}:${this.password || ''}`).toString('base64');
+      headers['Authorization'] = `Basic ${creds}`;
+    }
+    return headers;
   }
 
   /**
@@ -53,6 +72,7 @@ class MergenDB {
 
       const reqHeaders = {
         'Accept': 'application/json',
+        ...this._getAuthHeaders(),
         ...headers
       };
 
@@ -219,6 +239,40 @@ class MergenDB {
   }
 
   /**
+   * Authenticate with MergenDB server using credentials
+   * @param {string} username Username (default: 'root')
+   * @param {string} password Password (default: '')
+   */
+  async login(username = 'root', password = '') {
+    const res = await this._request('POST', '/auth/login', { username, password });
+    if (res && res.token) {
+      this.token = res.token;
+      this.username = username;
+      this.password = password;
+    }
+    return res;
+  }
+
+  /**
+   * Change password for the current or specified user
+   * @param {string} newPassword New password string
+   * @param {string} [username] Target username (defaults to current user)
+   */
+  async changePassword(newPassword, username = null) {
+    return await this._request('POST', '/auth/change_password', {
+      username: username || this.username,
+      new_password: newPassword
+    });
+  }
+
+  /**
+   * Verify current authentication status
+   */
+  async verifyAuth() {
+    return await this._request('GET', '/auth/verify');
+  }
+
+  /**
    * Get a high-level table handle
    * @param {string} tableName Name of the .mgdb table
    * @returns {TableHandle}
@@ -306,7 +360,7 @@ class MergenDB {
 }
 
 /**
- * Handle for a logical database container (phpMyAdmin style)
+ * Handle for a logical database container
  */
 class DatabaseHandle {
   constructor(client, name = 'default') {
@@ -502,6 +556,9 @@ class TableHandle {
         port: this.client.port,
         method: 'GET',
         path: `/export?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&format=${encodeURIComponent(format)}`,
+        headers: {
+          ...this.client._getAuthHeaders()
+        },
         timeout: this.client.timeout
       }, (res) => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -555,7 +612,8 @@ class TableHandle {
         path: `/import_stream?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&format=${encodeURIComponent(format)}`,
         headers: {
           'Content-Type': 'application/octet-stream',
-          'Content-Length': stat.size
+          'Content-Length': stat.size,
+          ...this.client._getAuthHeaders()
         },
         timeout: this.client.timeout
       }, (res) => {

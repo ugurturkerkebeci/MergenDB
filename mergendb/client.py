@@ -3,8 +3,12 @@ import re
 import csv
 import json
 import time
+import base64
 import builtins
 import threading
+import urllib.request
+import urllib.error
+import urllib.parse
 from typing import List, Dict, Any, Union, Optional
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType, cast_value
@@ -799,9 +803,20 @@ class Table:
 
     def query(self, pipeline: str, show_progress: bool = False) -> QueryResult:
         """Runs a MergenQL pipeline query against this table with non-blocking read lock."""
+        p_strip = pipeline.strip()
+        p_upper = p_strip.upper()
+        if any(p_upper.startswith(kw) for kw in ("SELECT ", "UPDATE ", "DELETE ", "ALTER ", "DROP ", "TRUNCATE ", "RENAME ")):
+            return self.sql(pipeline, show_progress=show_progress)
+
         with TableLockManager.get_lock(self.filepath).read():
             clean_fp = self.filepath.replace("\\", "/")
-            full_query = f'FROM "{clean_fp}"\n' + pipeline.strip()
+            pipe_str = p_strip
+            if pipe_str:
+                if not pipe_str.startswith("|"):
+                    pipe_str = "| " + pipe_str
+                full_query = f'FROM "{clean_fp}" {pipe_str}'
+            else:
+                full_query = f'FROM "{clean_fp}"'
             tokens = Lexer(full_query).tokenize()
             plan = Parser(tokens).parse()
             if not isinstance(plan, QueryPlan):
@@ -1473,8 +1488,206 @@ class MergenDB:
 
 
 
+class RemoteTable:
+    def __init__(self, client: "RemoteClient", name: str, database: Optional[str] = None):
+        self.client = client
+        self.name = name
+        self.database = database
+
+    def query(self, pipeline: str) -> QueryResult:
+        full_query = f"{self.name} | {pipeline}"
+        return self.client.query(full_query, database=self.database)
+
+    def insert(self, data: Union[Dict[str, Any], List[Dict[str, Any]], List[List[Any]]]):
+        if isinstance(data, dict):
+            rows = [data]
+        elif isinstance(data, list):
+            rows = data
+        else:
+            rows = [data]
+        payload = {
+            "action": "insert",
+            "table": self.name,
+            "database": self.database,
+            "data": rows
+        }
+        return self.client._request("POST", "/operation", payload)
+
+    def schema(self) -> Dict[str, Any]:
+        params = {"table": self.name}
+        if self.database:
+            params["database"] = self.database
+        return self.client._request("GET", f"/table_schema?{urllib.parse.urlencode(params)}")
+
+    def truncate(self) -> QueryResult:
+        return self.client.query(f"TRUNCATE TABLE {self.name}", database=self.database)
+
+    def drop(self) -> QueryResult:
+        return self.client.query(f"DROP TABLE {self.name}", database=self.database)
+
+    def export(self, format: str = "json") -> str:
+        params = {"table": self.name, "format": format}
+        if self.database:
+            params["database"] = self.database
+        return self.client._request("GET", f"/export?{urllib.parse.urlencode(params)}", return_raw=True)
+
+
+class RemoteClient:
+    """
+    HTTP client for remote MergenDB instances.
+    Supports user authentication (default 'root' with empty password, or custom password/token).
+    """
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8529,
+        url: Optional[str] = None,
+        username: str = "root",
+        password: str = "",
+        token: Optional[str] = None,
+        timeout: float = 30.0
+    ):
+        if url:
+            parsed = urllib.parse.urlparse(url)
+            self.host = parsed.hostname or host
+            self.port = parsed.port or port
+            self.protocol = parsed.scheme or "http"
+            if parsed.username:
+                username = parsed.username
+            if parsed.password:
+                password = parsed.password
+        else:
+            self.host = host
+            self.port = port
+            self.protocol = "http"
+
+        self.base_url = f"{self.protocol}://{self.host}:{self.port}"
+        self.username = username
+        self.password = password
+        self.token = token
+        self.timeout = timeout
+        self.active_database = "default"
+
+    def _get_auth_header(self) -> Dict[str, str]:
+        if self.token:
+            return {"Authorization": f"Bearer {self.token}"}
+        user_pass = f"{self.username}:{self.password}"
+        encoded = base64.b64encode(user_pass.encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {encoded}"}
+
+    def _request(self, method: str, path: str, data: Optional[Any] = None, return_raw: bool = False) -> Any:
+        url = f"{self.base_url}{path}"
+        headers = self._get_auth_header()
+        headers["User-Agent"] = "MergenDB-Python/0.7.3"
+
+        encoded_data = None
+        if data is not None:
+            if isinstance(data, (dict, list)):
+                encoded_data = json.dumps(data).encode("utf-8")
+                headers["Content-Type"] = "application/json"
+            elif isinstance(data, str):
+                encoded_data = data.encode("utf-8")
+                headers["Content-Type"] = "text/plain"
+            elif isinstance(data, bytes):
+                encoded_data = data
+
+        req = urllib.request.Request(url, data=encoded_data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                resp_bytes = resp.read()
+                if return_raw:
+                    return resp_bytes.decode("utf-8", errors="replace")
+                content_type = resp.headers.get("Content-Type", "")
+                if "application/json" in content_type:
+                    return json.loads(resp_bytes.decode("utf-8"))
+                return resp_bytes.decode("utf-8")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error") or err_json.get("message") or err_body
+            except Exception:
+                msg = err_body
+            if e.code == 401:
+                raise PermissionError(f"MergenDB Authentication Failed (HTTP 401): {msg}")
+            raise RuntimeError(f"MergenDB Server Error (HTTP {e.code}): {msg}")
+        except urllib.error.URLError as e:
+            raise ConnectionError(f"Failed to connect to MergenDB at {self.base_url}: {e.reason}")
+
+    def ping(self) -> bool:
+        try:
+            res = self._request("GET", "/status")
+            return res.get("status") == "ok"
+        except Exception:
+            return False
+
+    def status(self) -> Dict[str, Any]:
+        return self._request("GET", "/status")
+
+    def login(self, username: Optional[str] = None, password: Optional[str] = None) -> Dict[str, Any]:
+        u = username if username is not None else self.username
+        p = password if password is not None else self.password
+        payload = {"username": u, "password": p}
+        res = self._request("POST", "/auth/login", payload)
+        if res.get("success") and res.get("token"):
+            self.token = res["token"]
+            self.username = u
+            self.password = p
+        return res
+
+    def change_password(self, new_password: str, username: Optional[str] = None) -> Dict[str, Any]:
+        payload = {"username": username or self.username, "new_password": new_password}
+        res = self._request("POST", "/auth/change_password", payload)
+        if username is None or username == self.username:
+            self.password = new_password
+        return res
+
+    def list_databases(self) -> List[Dict[str, Any]]:
+        res = self._request("GET", "/databases")
+        return res.get("databases", [])
+
+    def create_database(self, name: str) -> Dict[str, Any]:
+        return self._request("POST", "/database", {"action": "create", "name": name})
+
+    def drop_database(self, name: str) -> Dict[str, Any]:
+        return self._request("POST", "/database", {"action": "drop", "name": name})
+
+    def list_tables(self, database: Optional[str] = None) -> List[Dict[str, Any]]:
+        db = database or self.active_database
+        query_params = f"?database={urllib.parse.quote(db)}" if db else ""
+        res = self._request("GET", f"/tables{query_params}")
+        return res.get("tables", [])
+
+    def table(self, name: str, database: Optional[str] = None) -> RemoteTable:
+        return RemoteTable(self, name, database or self.active_database)
+
+    def query(self, sql_query: str, database: Optional[str] = None) -> QueryResult:
+        payload = {
+            "query": sql_query,
+            "database": database or self.active_database
+        }
+        res = self._request("POST", "/query", payload)
+        cols = res.get("columns", [])
+        rows = res.get("rows", [])
+        raw_stats = res.get("stats", {})
+        stats = ExecutionStats(
+            blocks_scanned=raw_stats.get("blocks_scanned", 0),
+            blocks_pruned=raw_stats.get("blocks_pruned", 0),
+            rows_scanned=raw_stats.get("rows_scanned", 0),
+            rows_filtered=raw_stats.get("rows_filtered", 0),
+            bytes_read=raw_stats.get("bytes_read", 0),
+            result_rows=len(rows),
+            execution_time_ms=raw_stats.get("execution_time_ms", 0.0)
+        )
+        return QueryResult(cols, rows, stats)
+
+    def execute(self, sql_query: str, database: Optional[str] = None) -> QueryResult:
+        return self.query(sql_query, database=database)
+
+
 # High-Level Intuitive Aliases & Shortcuts
 Connection = Database
+Client = RemoteClient
 
 def database(name: str = "default", base_dir: Optional[str] = None) -> Database:
     """Gets or creates a Database container."""
@@ -1488,13 +1701,28 @@ def drop_database(name: str, base_dir: Optional[str] = None):
     """Deletes a database directory and all contained tables."""
     Database(name, base_dir=base_dir).drop()
 
-def connect(target: str = "default", base_dir: Optional[str] = None) -> Union[Database, Table]:
+def connect(
+    target: str = "default",
+    base_dir: Optional[str] = None,
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    username: str = "root",
+    password: str = "",
+    token: Optional[str] = None
+) -> Union[Database, Table, RemoteClient]:
     """
-    Connects to a database or opens a table file.
-    If target ends with .mgdb or is an existing table file, returns Table.
-    Otherwise, returns Database instance.
+    Connects to a database, opens a table file, or connects to a remote MergenDB server.
+    - If host or port is provided, or target starts with http:// or https://, returns RemoteClient.
+    - If target ends with .mgdb or is an existing table file, returns Table.
+    - Otherwise, returns Database instance.
     """
     target_str = str(target).strip()
+    if host is not None or port is not None or target_str.startswith("http://") or target_str.startswith("https://"):
+        h = host or ("127.0.0.1" if not target_str.startswith("http") else None)
+        p = port or 8529
+        u = target_str if target_str.startswith("http") else None
+        return RemoteClient(host=h or "127.0.0.1", port=p, url=u, username=username, password=password, token=token)
+
     if target_str.endswith(".mgdb") or (os.path.isfile(target_str) and not os.path.isdir(target_str)):
         return Table(target_str)
     return Database(target_str, base_dir=base_dir)

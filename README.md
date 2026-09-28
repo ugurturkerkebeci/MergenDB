@@ -4,11 +4,11 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.2-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.7.2-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.7.3-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-1000%2B%20Python%20%7C%201000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-2000%2B%20Python%20%7C%202000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
@@ -17,7 +17,29 @@ Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemet
 
 ---
 
-## What Is New in v0.7.2
+## What Is New in v0.7.3
+
+1. **Authentication & User Management Subsystem (Root / User Authorization):**
+   - **Default Credentials:** Default user is `root` with default empty password `""`.
+   - **Mandatory Authorization:** All remote server database queries and endpoints require authentication via HTTP Basic Auth or session Bearer tokens.
+   - **Python & Node.js Client Integration:** Connect in code specifying `username`, `password`, `port`:
+     - Python: `client = mergendb.connect(host="127.0.0.1", port=8529, username="root", password="")`
+     - Node.js: `const db = mergendb.connect({ host: '127.0.0.1', port: 8529, username: 'root', password: '' })`
+   - **CLI User Management:** Passwords can be changed or managed via CLI (`mergen auth set-password root <new_password>`, `mergen auth list-users`, `mergen auth add-user <user> [pass]`).
+
+2. **Decoupled Architecture & CLI Studio Extensibility:**
+   - MergenDB core package is completely headless (< 150 KB wheel).
+   - Mergen Studio UI is decoupled into optional package `mergendb-studio`.
+   - Installable on-demand directly via CLI (`mergen studio install`) or pip (`pip install mergendb-studio`).
+
+3. **Top 100 Database Engine Errors Test Suite (1,000 Tests Python + 1,000 Tests Node.js = 2,000 Tests):**
+   - Researched top 100 database errors across relational/embedded database systems.
+   - Categorized into 10 domains with 100 tests each: Syntax & Lexical, Schema & Resolution, Data Type & Coercion, Constraints & Data Integrity, Query Planning & Aggregation, Concurrency & RWLock, Authentication & Permissions, Connection & Protocol, Storage & Corrupt Data, and Import/Export Format Transformations.
+   - 100% pass rate across all 2,000 unit tests.
+
+4. **Critical SQL Export / Import Resilience Fix:**
+   - Resolved CLI SQL export indentation issue where tuples were generated multiple times per row.
+   - Implemented column count validation in `from_sql_dump` to automatically filter partial sub-tuples and pad variable-length rows, completely preventing dropped columns or all-NULL states on interrupted exports.
 
 1. **1000 Heavy Resilience & Fault Tolerance Tests (Python & Node.js):**
    - Scaled both Python and Node.js test suites to **1000 individual test scenarios each** (2,000+ total scenarios).
@@ -130,7 +152,7 @@ Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemet
    - Live **0% to 100% upload progress telemetry** with transferred byte counters in Mergen Studio.
 
 3. **Mergen Studio Web Dashboard Enhancements:**
-   - Complete phpMyAdmin-style tree hierarchy sidebar with collapsible database, table, and sub-table nodes.
+   - Complete tree hierarchy sidebar with collapsible database, table, and sub-table nodes.
    - Visual creation modals: **+ DB**, **+ Table**, and **+ Sub**.
    - Streamlined DOM rendering without dataset string serialization, protecting browser memory.
    - Comprehensive internationalization: **English (Default)**, **German (Deutsch)**, and **Turkish (Turkce)**.
@@ -201,7 +223,7 @@ Even though you only care about `name` and `balance`, row stores must read **eve
 +---------------------------------------------------------------------------------+
 |                                 CLIENT LAYER                                    |
 |   Python Library (mergendb)   |   Node.js / TS SDK   |   Mergen Studio (Web)    |
-|   db.find() / db.sql()        |   db.sql`...`        |   phpMyAdmin UI Tree     |
+|   db.find() / db.sql()        |   db.sql`...`        |   Mergen Studio UI Tree  |
 +---------------------------------------+-----------------------------------------+
                                         | HTTP / REST (Zero-Dependency)
 +---------------------------------------v-----------------------------------------+
@@ -446,7 +468,7 @@ Tested on an Intel Core i5 / i7 with 100,000 mixed telemetry records (12 columns
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | Released |
 | **v0.5.9** | Embedded Web UI | Initial **Mergen Studio** web interface | Released |
 | **v0.6.0** | Universal Node.js SDK | Zero-dependency Node.js/TypeScript SDK + CLI runner | Released |
-| **v0.6.1** | phpMyAdmin Overhaul | 100% CLI feature parity in browser and Node.js SDK, 106 tests | Released |
+| **v0.6.1** | Mergen Studio Overhaul | 100% CLI feature parity in browser and Node.js SDK, 106 tests | Released |
 | **v0.6.2** | Multi-Runtime & Zero-Dependency | `python -m mergendb` & `npx mergendb` runners, `autoStart: true`, `GET /query` | Released |
 | **v0.6.3** | Official Identity & i18n | Official Logo, strict zero-emoji policy, English/German/Turkish localization | Released |
 | **v0.6.4** | Hierarchical Architecture | Database containers, nested sub-tables, and streaming export/import | Released |

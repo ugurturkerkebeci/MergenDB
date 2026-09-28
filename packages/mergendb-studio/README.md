@@ -1,6 +1,6 @@
 # Mergen Studio
 
-Official phpMyAdmin-style Web Management Dashboard extension for **MergenDB**.
+Official Web Management Dashboard extension for **MergenDB**.
 
 ## Installation
 

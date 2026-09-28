@@ -94,7 +94,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Mergen-User, X-Mergen-Password, X-Mergen-Token")
         self.end_headers()
         self.wfile.write(body)
 
@@ -139,14 +139,43 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Mergen-User, X-Mergen-Password, X-Mergen-Token")
         self.end_headers()
+
+    def _check_auth(self, query_params=None, body_dict=None):
+        from mergendb.server.auth import get_auth_manager
+        auth_mgr = get_auth_manager()
+        return auth_mgr.verify_request_auth(dict(self.headers), query_params, body_dict)
+
+    def _send_auth_required(self):
+        self._send_response_json(401, {
+            "success": False,
+            "error": "Authentication required. Access denied. Please provide valid credentials (default user: 'root', default password: '')",
+            "code": "AUTH_REQUIRED"
+        })
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
         params = urllib.parse.parse_qs(parsed.query)
         accept = self.headers.get("Accept", "")
+
+        if path in ("/auth/verify", "/api/auth/verify"):
+            is_auth, user = self._check_auth(params)
+            if is_auth:
+                self._send_response_json(200, {"authenticated": True, "username": user, "user": user})
+            else:
+                self._send_auth_required()
+            return
+
+        elif path in ("/auth/users", "/api/auth/users"):
+            is_auth, user = self._check_auth(params)
+            if not is_auth:
+                self._send_auth_required()
+                return
+            from mergendb.server.auth import get_auth_manager
+            self._send_response_json(200, {"users": get_auth_manager().list_users(), "current_user": user})
+            return
 
         if path in ("", "/"):
             if "text/html" in accept:
@@ -215,7 +244,14 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json(200, res_obj)
             return
 
-        elif path == "/databases":
+        # Protected database and query GET endpoints
+        if path in ("/databases", "/query", "/tables", "/table_schema", "/table_data", "/export"):
+            is_auth, user = self._check_auth(params)
+            if not is_auth:
+                self._send_auth_required()
+                return
+
+        if path == "/databases":
             dbs = list_databases()
             self._send_response_json(200, {
                 "databases": dbs,
@@ -392,7 +428,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json(200, {
                 "endpoints": {
                     "GET /": "Server status or Mergen Studio Web UI (in browser)",
-                    "GET /studio": "Mergen Studio Interactive Web Dashboard (phpMyAdmin style)",
+                    "GET /studio": "Mergen Studio Interactive Web Management Dashboard",
                     "POST /query": "Execute MergenQL or SQL query. Body: {'query': '...', 'active_table': '...'}",
                     "GET /tables": "List all tables with schema and size",
                     "GET /table_schema": "Detailed schema, columns, block details. Query: ?table=...",
@@ -451,7 +487,59 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(parsed_url.query)
         content_length = int(self.headers.get("Content-Length", 0))
 
+        if path in ("/auth/login", "/api/auth/login"):
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                payload = json.loads(post_data) if post_data else {}
+            except Exception:
+                payload = {}
+            from mergendb.server.auth import get_auth_manager
+            auth_mgr = get_auth_manager()
+            user = str(payload.get("username", payload.get("user", "root"))).strip()
+            pwd = str(payload.get("password", ""))
+            if auth_mgr.authenticate(user, pwd):
+                token = auth_mgr.create_token(user)
+                self._send_response_json(200, {
+                    "success": True,
+                    "token": token,
+                    "username": user,
+                    "message": "Login successful"
+                })
+            else:
+                self._send_response_json(401, {
+                    "success": False,
+                    "error": "Invalid username or password. Default user is 'root' with empty password.",
+                    "code": "INVALID_CREDENTIALS"
+                })
+            return
+
+        if path in ("/auth/change_password", "/api/auth/change_password"):
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                payload = json.loads(post_data) if post_data else {}
+            except Exception:
+                payload = {}
+            is_auth, user = self._check_auth(params, body_dict=payload)
+            if not is_auth:
+                self._send_auth_required()
+                return
+            from mergendb.server.auth import get_auth_manager
+            auth_mgr = get_auth_manager()
+            target_user = str(payload.get("username") or user).strip()
+            new_pwd = str(payload.get("new_password", ""))
+            auth_mgr.set_password(target_user, new_pwd)
+            self._send_response_json(200, {
+                "success": True,
+                "message": f"Password for user '{target_user}' updated successfully."
+            })
+            return
+
         if path in ("/import_stream", "/import_file"):
+            is_auth, user = self._check_auth(params)
+            if not is_auth:
+                self._send_auth_required()
+                return
+
             raw_tbl = params.get("table", [""])[0]
             explicit_path = params.get("path", [""])[0]
             fmt = params.get("format", ["csv"])[0].lower()
@@ -513,10 +601,19 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         post_data = self.rfile.read(content_length).decode("utf-8")
+        try:
+            body_json = json.loads(post_data) if post_data else {}
+        except Exception:
+            body_json = {}
+
+        is_auth, user = self._check_auth(params, body_dict=body_json)
+        if not is_auth:
+            self._send_auth_required()
+            return
 
         if path == "/database":
             try:
-                payload = json.loads(post_data) if post_data else {}
+                payload = body_json
                 action = payload.get("action", "create").lower()
                 name = payload.get("name", "").strip()
                 if not name:
@@ -786,8 +883,10 @@ def start_server(host: str = "0.0.0.0", port: int = 8765, data_dir: Optional[str
     print("=" * 70)
     print(f"  * Status        : RUNNING")
     print(f"  * Listening on  : http://{host}:{port}")
-    print(f"  * Mergen Studio : http://localhost:{port}/studio (Interactive Web UI)")
+    print(f"  * Mergen Studio : http://localhost:{port}/studio")
     print(f"  * REST Query API: POST http://localhost:{port}/query")
+    print(f"  * Default User  : root (localhost)")
+    print(f"  * Auth Required : Yes (Basic Auth / Bearer token)")
     print(f"  * Working Dir   : {os.getcwd()}")
     print("=" * 70)
     print(" Press Ctrl+C to stop the server.\n")

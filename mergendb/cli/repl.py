@@ -28,7 +28,7 @@ BANNER = r"""
          / /  /   \  \ \              | |  | |  __/ | | (_| |  __/ | | |   | |__| | |_) |
         / /  / /|\ \  \ \             |_|  |_|\___|_|  \__, |\___|_| |_|   |_____/|____/ 
        / /  / / | \ \  \ \                              __/ |                            
-      / /__/_/  |  \_\__\ \                            |___/  v__VERSION__ (phpMyAdmin Studio & Columnar Engine)
+      / /__/_/  |  \_\__\ \                            |___/  v__VERSION__ (Mergen Studio & Columnar Engine)
      /     \    |    /     \
     /_______\   |   /_______\         =[ MergenDB - Lightning Columnar Database      ]
              \  |  /           + -- --=[ 16 Adaptive Hardware Encodings (Up to 16x)  ]
@@ -79,7 +79,7 @@ Network & Server:
 
 Data Ingestion & Export:
   IMPORT SQLITE <source.db> [tbl] <out.mgdb>;      - Ingest SQLite table
-  IMPORT SQL <dump.sql> <out.mgdb>;                - Ingest MySQL / phpMyAdmin SQL dump
+  IMPORT SQL <dump.sql> <out.mgdb>;                - Ingest SQL dump (standard SQL / MySQL)
   IMPORT CSV <file.csv> <out.mgdb>;                - Ingest CSV file with auto-detect
   EXPORT <table.mgdb> TO CSV [output.csv];         - Export table to CSV
   EXPORT <table.mgdb> TO JSON [output.json];       - Export table to JSON array
@@ -317,7 +317,7 @@ class MergenCLI:
                                     else:
                                         esc = str(val).replace("\\", "\\\\").replace("'", "''")
                                         formatted.append(f"'{esc}'")
-                                    chunk.append("(" + ", ".join(formatted) + ")")
+                                chunk.append("(" + ", ".join(formatted) + ")")
                                 if len(chunk) >= chunk_size:
                                     f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
                                     chunk = []
@@ -852,6 +852,35 @@ def main():
             from mergendb.cli.studio_manager import handle_studio_cli
             handle_studio_cli(sub)
             sys.exit(0)
+        elif arg1 == "auth":
+            from mergendb.server.auth import get_auth_manager
+            auth_mgr = get_auth_manager()
+            sub = sys.argv[2].lower() if len(sys.argv) > 2 else "help"
+            if sub in ("set-password", "passwd", "password"):
+                user = sys.argv[3] if len(sys.argv) > 3 else "root"
+                pwd = sys.argv[4] if len(sys.argv) > 4 else ""
+                auth_mgr.set_password(user, pwd)
+                masked = "'' (empty)" if not pwd else "'********'"
+                print(f"[+] Password for user '{user}' has been updated to {masked}.")
+                sys.exit(0)
+            elif sub in ("list", "users", "list-users"):
+                users = auth_mgr.list_users()
+                print("MergenDB Authorized Users:")
+                for u in users:
+                    print(f"  * {u}")
+                sys.exit(0)
+            elif sub in ("add-user", "create-user"):
+                if len(sys.argv) < 4:
+                    print("Usage: mergen auth add-user <username> [password]")
+                    sys.exit(1)
+                user = sys.argv[3]
+                pwd = sys.argv[4] if len(sys.argv) > 4 else ""
+                auth_mgr.set_password(user, pwd)
+                print(f"[+] User '{user}' created successfully.")
+                sys.exit(0)
+            else:
+                print("Usage: mergen auth [set-password <user> <pwd> | list-users | add-user <user> [pwd]]")
+                sys.exit(0)
         elif arg1 in ("test", "benchmark", "diagnose", "check"):
             from mergendb.testing.suite import run_diagnostics
             res = run_diagnostics()

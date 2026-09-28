@@ -206,7 +206,7 @@ class DataImporter:
         """
         Pure streaming importer for SQL dumps of any size (1 GB, 50 GB, 500 GB).
         Streams line-by-line with constant O(1) memory (~15 MB RAM) to completely prevent OOM.
-        Handles phpMyAdmin dumps, MySQL DDL, partial dumps, and raw tuple fragments.
+        Handles standard SQL dumps, MySQL DDL, partial dumps, and raw tuple fragments.
         Uses high-speed columnar conversion and displays a live real-time progress bar.
         """
         # Resolve path
@@ -331,7 +331,9 @@ class DataImporter:
             return convs
 
         def _write_columnar_batch(wr, sch, convs, b):
-            cols_transposed = list(zip(*b))
+            expected_cols = len(sch.columns)
+            padded_b = [r + [None] * (expected_cols - len(r)) if len(r) < expected_cols else r[:expected_cols] for r in b]
+            cols_transposed = list(zip(*padded_b))
             col_map = {}
             for idx, col in enumerate(sch.columns):
                 if idx < len(cols_transposed):
@@ -421,11 +423,19 @@ class DataImporter:
                         if not raw_row:
                             continue
 
+                        # When table schema is known, skip incomplete/partial sub-tuples
+                        # (such as from interrupted exports where (col1), (col1, col2) were generated before the complete tuple)
+                        if schema is not None and len(raw_row) < len(schema.columns):
+                            continue
+
                         # If no CREATE TABLE was found, infer schema from first batch
                         if schema is None:
                             batch.append(raw_row)
                             if len(batch) >= 10:
-                                col_count = len(batch[0])
+                                col_count = max(len(r) for r in batch)
+                                batch = [r for r in batch if len(r) == col_count]
+                                if not batch:
+                                    continue
                                 if col_count == 18:
                                     cnames = MERNIS_COLS
                                 else:

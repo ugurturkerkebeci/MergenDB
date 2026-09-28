@@ -4,6 +4,7 @@ import http.client
 import json
 import time
 import os
+import base64
 import shutil
 import tempfile
 from mergendb.client import MergenDB, Table
@@ -12,6 +13,12 @@ from mergendb.core.types import DataType
 from mergendb.server.server import ThreadingMergenServer, MergenRequestHandler
 
 class TestServerStudio(unittest.TestCase):
+    def _get_headers(self, extra=None):
+        h = {"Authorization": "Basic " + base64.b64encode(b"root:").decode("ascii")}
+        if extra:
+            h.update(extra)
+        return h
+
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.mkdtemp()
@@ -83,7 +90,7 @@ class TestServerStudio(unittest.TestCase):
 
     def test_tables_listing(self):
         conn = http.client.HTTPConnection(self.host, self.port)
-        conn.request("GET", "/tables")
+        conn.request("GET", "/tables", headers=self._get_headers())
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
@@ -94,7 +101,7 @@ class TestServerStudio(unittest.TestCase):
 
     def test_table_schema_endpoint(self):
         conn = http.client.HTTPConnection(self.host, self.port)
-        conn.request("GET", "/table_schema?table=studio_test.mgdb")
+        conn.request("GET", "/table_schema?table=studio_test.mgdb", headers=self._get_headers())
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
@@ -105,7 +112,7 @@ class TestServerStudio(unittest.TestCase):
 
     def test_table_data_paginated_endpoint(self):
         conn = http.client.HTTPConnection(self.host, self.port)
-        conn.request("GET", "/table_data?table=studio_test.mgdb&page=1&limit=2")
+        conn.request("GET", "/table_data?table=studio_test.mgdb&page=1&limit=2", headers=self._get_headers())
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
@@ -117,7 +124,7 @@ class TestServerStudio(unittest.TestCase):
 
     def test_export_endpoint(self):
         conn = http.client.HTTPConnection(self.host, self.port)
-        conn.request("GET", "/export?table=studio_test.mgdb&format=csv")
+        conn.request("GET", "/export?table=studio_test.mgdb&format=csv", headers=self._get_headers())
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         self.assertIn("text/csv", resp.getheader("Content-Type"))
@@ -129,7 +136,7 @@ class TestServerStudio(unittest.TestCase):
     def test_query_post_endpoint(self):
         conn = http.client.HTTPConnection(self.host, self.port)
         body = json.dumps({"query": "SELECT name, score FROM 'studio_test.mgdb' WHERE score >= 96;"})
-        conn.request("POST", "/query", body=body, headers={"Content-Type": "application/json"})
+        conn.request("POST", "/query", body=body, headers=self._get_headers({"Content-Type": "application/json"}))
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
@@ -143,7 +150,7 @@ class TestServerStudio(unittest.TestCase):
     def test_query_post_error_handling(self):
         conn = http.client.HTTPConnection(self.host, self.port)
         body = json.dumps({"query": "SELECT nonexistent FROM 'invalid_table.mgdb';"})
-        conn.request("POST", "/query", body=body, headers={"Content-Type": "application/json"})
+        conn.request("POST", "/query", body=body, headers=self._get_headers({"Content-Type": "application/json"}))
         resp = conn.getresponse()
         self.assertEqual(resp.status, 400)
         data = json.loads(resp.read().decode("utf-8"))
@@ -159,7 +166,7 @@ class TestServerStudio(unittest.TestCase):
             "format": "csv",
             "content": csv_data
         })
-        conn.request("POST", "/import", body=import_body, headers={"Content-Type": "application/json"})
+        conn.request("POST", "/import", body=import_body, headers=self._get_headers({"Content-Type": "application/json"}))
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))
@@ -176,7 +183,7 @@ class TestServerStudio(unittest.TestCase):
             "type": "BOOL",
             "default": True
         })
-        conn.request("POST", "/operation", body=op_body, headers={"Content-Type": "application/json"})
+        conn.request("POST", "/operation", body=op_body, headers=self._get_headers({"Content-Type": "application/json"}))
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         data = json.loads(resp.read().decode("utf-8"))

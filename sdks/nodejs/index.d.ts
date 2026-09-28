@@ -7,6 +7,9 @@ export interface MergenOptions {
   url?: string;
   host?: string;
   port?: number;
+  username?: string;
+  password?: string;
+  token?: string;
   activeTable?: string;
   timeout?: number;
   autoStart?: boolean;
@@ -127,11 +130,17 @@ export class MergenDB {
   protocol: string;
   host: string;
   port: number;
+  username: string;
+  password: string;
+  token?: string;
   activeTable?: string;
   timeout: number;
   autoStart: boolean;
 
   constructor(options?: MergenOptions | string);
+  login(username?: string, password?: string): Promise<{ success: boolean; token: string; user: string }>;
+  changePassword(newPassword: string, username?: string): Promise<{ success: boolean; message: string }>;
+  verifyAuth(): Promise<{ authenticated: boolean; user: string }>;
   ping(): Promise<boolean>;
   status(): Promise<ServerStatus>;
   benchmark(): Promise<any>;

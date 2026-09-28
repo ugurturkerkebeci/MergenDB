@@ -4,10 +4,10 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.7.2-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.7.3-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
-[![Node.js Tests](https://img.shields.io/badge/tests-1000%2B%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
 The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytical SQL, and memory-constrained workloads.
 
@@ -43,7 +43,13 @@ const { connect } = require('mergendb');
 
 async function main() {
   // Spawns and connects to the background MergenDB engine automatically
-  const db = connect({ autoStart: true, port: 8765 });
+  // Default authentication: user 'root' with empty password
+  const db = connect({ 
+    autoStart: true, 
+    port: 8765,
+    user: 'root',
+    password: ''
+  });
 
   // Verify server health and hardware specifications
   const status = await db.status();
@@ -260,14 +266,14 @@ console.log(result.stats.bytes_read);        // Total raw bytes scanned
 ---
 
 ## Web Studio & CLI Runner
-
-MergenDB includes an integrated, zero-dependency web interface modeled after phpMyAdmin:
+ 
+MergenDB core is headless and lightweight. MergenDB Studio is available as an optional extension package:
 
 ```bash
-# Launch server
+# Launch headless server
 npx mergendb serve 8765
 
-# Open MergenDB Studio in your default browser
+# Launch Web Studio (auto-installs mergendb-studio if not present)
 npx mergendb studio 8765
 ```
 

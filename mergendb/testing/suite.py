@@ -8,6 +8,7 @@ import tempfile
 import threading
 import platform
 import socket
+import base64
 from typing import Dict, Any, Optional
 
 import mergendb
@@ -99,10 +100,11 @@ def _verify_server(temp_dir: str) -> Dict[str, Any]:
         # 2. Test POST /query with transient table
         test_mgdb = os.path.join(temp_dir, "diag_srv.mgdb").replace("\\", "/")
         init_q = f"CREATE TABLE \"{test_mgdb}\" (id INT32, val STRING);"
+        auth_hdr = base64.b64encode(b"root:").decode("ascii")
         init_req = urllib.request.Request(
             f"http://127.0.0.1:{port}/query",
             data=json.dumps({"query": init_q}).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json", "Authorization": f"Basic {auth_hdr}"}
         )
         with urllib.request.urlopen(init_req, timeout=3.0) as resp:
             init_ok = (resp.status == 200)

@@ -1,8 +1,8 @@
 """
-Mergen Studio: Interactive phpMyAdmin-style Web Management Dashboard extension for MergenDB.
+Mergen Studio: Interactive Web Management Dashboard extension for MergenDB.
 """
 
-__version__ = "0.7.2"
+__version__ = "0.7.3"
 
 def get_studio_html() -> str:
     try:

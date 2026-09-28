@@ -3,7 +3,7 @@ MergenDB: Ultra-compact, columnar embedded database engine for edge and resource
 """
 
 from mergendb.client import (
-    MergenDB, Table, Database, Connection,
+    MergenDB, Table, Database, Connection, RemoteClient, Client,
     database, create_database, drop_database, list_databases,
     connect, open, query, sql, find, search,
     update, delete, rename_column, drop_column, add_column,
@@ -33,9 +33,10 @@ def diagnose(verbose: bool = True):
     from mergendb.testing.suite import run_diagnostics
     return run_diagnostics(verbose=verbose)
 
-__version__ = "0.7.2"
+__version__ = "0.7.3"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
+    "__version__",
     # Primary intuitive developer API
     "connect",
     "open",
@@ -43,6 +44,8 @@ __all__ = [
     "search",
     "sql",
     "query",
+    "Client",
+    "RemoteClient",
     "update",
     "delete",
     "rename_column",
