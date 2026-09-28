@@ -96,6 +96,7 @@ export class TableHandle {
   readonly client: MergenDB;
   readonly name: string;
   readonly pureName: string;
+  readonly database: string;
 
   schema(): Promise<SchemaInfo>;
   data(page?: number, limit?: number): Promise<PageResult>;

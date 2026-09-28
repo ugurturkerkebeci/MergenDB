@@ -261,10 +261,11 @@ class MergenCLI:
             elif ext.lower() != expected_ext and ext.lower() in (".csv", ".json", ".jsonl", ".sql"):
                 out_file = f"{base}{expected_ext}"
 
+        abs_out_file = os.path.abspath(out_file)
         print(f"[*] Target format : {fmt}")
-        print(f"[*] Output file   : {out_file}")
+        print(f"[*] Output file   : {abs_out_file}")
 
-        out_dir = os.path.dirname(out_file)
+        out_dir = os.path.dirname(abs_out_file)
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
 
@@ -276,7 +277,7 @@ class MergenCLI:
                 exported = 0
 
                 if fmt == "CSV":
-                    with open(out_file, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
+                    with open(abs_out_file, "w", newline="", encoding="utf-8", buffering=256*1024) as f:
                         writer = csv.writer(f)
                         writer.writerow(col_names)
                         for batch, _ in reader.scan():
@@ -286,7 +287,7 @@ class MergenCLI:
                             pbar.update(exported)
 
                 elif fmt == "SQL":
-                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                    with open(abs_out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                         clean_tbl = os.path.splitext(os.path.basename(filepath))[0]
                         col_defs = []
                         for c in reader.schema.columns:
@@ -316,7 +317,7 @@ class MergenCLI:
                                     else:
                                         esc = str(val).replace("\\", "\\\\").replace("'", "''")
                                         formatted.append(f"'{esc}'")
-                                chunk.append("(" + ", ".join(formatted) + ")")
+                                    chunk.append("(" + ", ".join(formatted) + ")")
                                 if len(chunk) >= chunk_size:
                                     f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
                                     chunk = []
@@ -326,7 +327,7 @@ class MergenCLI:
                             f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
 
                 elif fmt == "JSON":
-                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                    with open(abs_out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                         f.write("[\n")
                         first = True
                         for batch, _ in reader.scan():
@@ -343,7 +344,7 @@ class MergenCLI:
                         f.write("\n]\n")
 
                 else:  # JSONL
-                    with open(out_file, "w", encoding="utf-8", buffering=256*1024) as f:
+                    with open(abs_out_file, "w", encoding="utf-8", buffering=256*1024) as f:
                         for batch, _ in reader.scan():
                             cols = batch.columns
                             lines = [json.dumps(dict(zip(col_names, row))) + "\n" for row in zip(*(cols[c] for c in col_names))]
@@ -351,9 +352,9 @@ class MergenCLI:
                             exported += batch.row_count
                             pbar.update(exported)
 
-                pbar.finish(f"[+] Successfully exported {exported:,} rows to '{out_file}'!")
+                pbar.finish(f"[+] Successfully exported {exported:,} rows to '{abs_out_file}'!\n")
         except KeyboardInterrupt:
-            print(f"\n[!] Export cancelled by user. Partial file saved to '{out_file}'.\n")
+            print(f"\n[!] Export cancelled by user. Partial file saved to '{abs_out_file}'.\n")
 
     def benchmark_table(self, table_name: str):
         filepath = self._resolve_table_path(table_name)

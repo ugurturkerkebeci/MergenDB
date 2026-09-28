@@ -1310,6 +1310,360 @@ curl -X POST http://localhost:8765/import \
     let tablesCache = [];
     let expandedTables = new Set();
 
+    // Internationalization (i18n) Dictionary
+    const I18N = {
+      en: {
+        active_table_label: "Active Table:",
+        select_table_option: "(Select Table)",
+        nav_server: "Server",
+        nav_docs: "Docs",
+        new_db_btn: "+ DB",
+        new_table_btn: "+ Table",
+        new_subtable_btn: "+ Sub",
+        refresh_btn: "R",
+        filter_tables_ph: "Filter tables...",
+        tab_browse: "Browse",
+        tab_structure: "Structure",
+        tab_sql: "SQL",
+        tab_search: "Search",
+        tab_insert: "Insert",
+        tab_export: "Export",
+        tab_import: "Import",
+        tab_operations: "Operations",
+        tab_status: "Server & Benchmark",
+        tab_docs: "Docs & Ecosystem",
+        page_first: "« First",
+        page_prev: "‹ Prev",
+        page_next: "Next ›",
+        page_last: "Last »",
+        page_label: "Page:",
+        rows_label: "Rows:",
+        loading_table: "Loading table...",
+        table_columns_title: "Table Schema & Columns",
+        col_name: "Column Name",
+        col_type: "Data Type",
+        col_nullable: "Nullable",
+        col_actions: "Actions",
+        add_column_title: "Add Column",
+        new_col_name: "Column Name",
+        new_col_type: "Data Type",
+        new_col_default: "Default Value (Optional)",
+        btn_add_column: "Add Column",
+        sql_editor_title: "SQL & MergenQL Query Console",
+        btn_format: "Format",
+        btn_clear: "Clear",
+        templates_label: "Templates:",
+        ctrl_enter_hint: "Press Ctrl+Enter to execute query",
+        btn_run_query: "Run Query (Ctrl+Enter)",
+        search_fulltext_title: "Full-Text Substring Search",
+        search_fulltext_desc: "Performs rapid case-insensitive substring search across all string/text columns in the table.",
+        search_term_ph: "Search term...",
+        btn_search: "Search",
+        btn_reset: "Reset",
+        search_field_title: "Filter by Exact Column Values",
+        btn_filter: "Apply Filters",
+        insert_title: "Insert New Record",
+        insert_desc: "Fill in the field values according to table schema to append a new row into the active .mgdb table.",
+        btn_save_record: "Save Record",
+        export_title: "Export Table Data",
+        export_desc: "Stream and export columnar table data into standard portable file formats.",
+        btn_download_csv: "Download CSV",
+        btn_download_json: "Download JSON",
+        btn_download_jsonl: "Download JSONL",
+        btn_download_sql: "Download SQL",
+        import_title: "Import Data into MergenDB",
+        import_desc: "Ingest multi-megabyte CSV datasets or SQL dumps directly into compressed columnar storage with low memory overhead.",
+        import_format_label: "Source Format",
+        import_file_label: "Upload File",
+        import_paste_label: "Or Paste Content Directly",
+        btn_start_import: "Start Ingestion",
+        ops_rename_title: "Rename Table",
+        btn_rename: "Rename",
+        ops_truncate_title: "Truncate Table",
+        ops_truncate_desc: "Clears all rows from the table while preserving schema and column definitions.",
+        btn_truncate: "Truncate Table",
+        ops_drop_title: "Drop Table Permanently",
+        ops_drop_desc: "Permanently deletes the table and deletes the .mgdb file from disk. This action cannot be undone.",
+        btn_drop: "Drop Table",
+        server_diag_title: "System Diagnostics & Hardware Specifications",
+        btn_run_bench: "Run Live Speed Benchmark",
+        stat_cpu: "Processor (CPU)",
+        stat_ram: "System RAM",
+        stat_os: "Operating System",
+        stat_engine_ver: "Engine Version",
+        bench_measured_title: "Measured Throughput on this Hardware:",
+        bench_ingest: "Sequential Ingestion (Append)",
+        bench_import: "CSV / SQL Streaming Import",
+        bench_export: "Table Export",
+        bench_scan: "Analytical Column Scan",
+        bench_tier_label: "Performance Tier:",
+        bench_block_label: "Recommended Block Size:",
+        docs_title: "Supported Languages & Ecosystem Guides",
+        docs_desc: "MergenDB provides 100% feature support across Python, Node.js / TypeScript, Shell CLI, and REST API with zero external runtime dependencies.",
+        btn_copy: "Copy",
+        modal_new_table_title: "Create New Table",
+        modal_table_name: "Table Name",
+        modal_columns_label: "Columns & Types",
+        btn_add_field: "+ Add Column",
+        btn_cancel: "Cancel",
+        btn_create_table: "Create Table",
+        delete_btn: "Delete",
+        copy_json_btn: "Copy JSON",
+        rename_btn: "Rename",
+        confirm_delete_row: "Are you sure you want to delete this row?",
+        confirm_drop_col: "Are you sure you want to delete column",
+        confirm_truncate: "Are you sure you want to delete all rows from table",
+        confirm_drop_table: "Are you sure you want to permanently DELETE table",
+        copied_toast: "Copied to clipboard",
+        online_text: "Online"
+      },
+      de: {
+        active_table_label: "Aktive Tabelle:",
+        select_table_option: "(Tabelle auswählen)",
+        nav_server: "Server",
+        nav_docs: "Doku",
+        new_db_btn: "+ DB",
+        new_table_btn: "+ Tabelle",
+        new_subtable_btn: "+ Untertabelle",
+        refresh_btn: "R",
+        filter_tables_ph: "Tabellen filtern...",
+        tab_browse: "Durchsuchen",
+        tab_structure: "Struktur",
+        tab_sql: "SQL",
+        tab_search: "Suchen",
+        tab_insert: "Einfügen",
+        tab_export: "Exportieren",
+        tab_import: "Importieren",
+        tab_operations: "Operationen",
+        tab_status: "Server & Benchmark",
+        tab_docs: "Doku & Ökosystem",
+        page_first: "« Erste",
+        page_prev: "‹ Zurück",
+        page_next: "Weiter ›",
+        page_last: "Letzte »",
+        page_label: "Seite:",
+        rows_label: "Zeilen:",
+        loading_table: "Tabelle wird geladen...",
+        table_columns_title: "Tabellenschema & Spalten",
+        col_name: "Spaltenname",
+        col_type: "Datentyp",
+        col_nullable: "Nullwert",
+        col_actions: "Aktionen",
+        add_column_title: "Spalte hinzufügen",
+        new_col_name: "Spaltenname",
+        new_col_type: "Datentyp",
+        new_col_default: "Standardwert (Optional)",
+        btn_add_column: "Spalte hinzufügen",
+        sql_editor_title: "SQL & MergenQL Abfrage-Konsole",
+        btn_format: "Formatieren",
+        btn_clear: "Löschen",
+        templates_label: "Vorlagen:",
+        ctrl_enter_hint: "Drücken Sie Strg+Enter zum Ausführen",
+        btn_run_query: "Abfrage ausführen (Strg+Enter)",
+        search_fulltext_title: "Volltext-Teilstringsuche",
+        search_fulltext_desc: "Führt eine schnelle Suche ohne Berücksichtigung der Groß-/Kleinschreibung über alle Textspalten durch.",
+        search_term_ph: "Suchbegriff...",
+        btn_search: "Suchen",
+        btn_reset: "Zurücksetzen",
+        search_field_title: "Nach exakten Spaltenwerten filtern",
+        btn_filter: "Filter anwenden",
+        insert_title: "Neuen Datensatz einfügen",
+        insert_desc: "Füllen Sie die Feldwerte gemäß dem Schema aus, um eine Zeile anzuhängen.",
+        btn_save_record: "Datensatz speichern",
+        export_title: "Tabellendaten exportieren",
+        export_desc: "Spaltenbasierte Tabellendaten in Standardformate exportieren.",
+        btn_download_csv: "CSV herunterladen",
+        btn_download_json: "JSON herunterladen",
+        btn_download_jsonl: "JSONL herunterladen",
+        btn_download_sql: "SQL herunterladen",
+        import_title: "Daten in MergenDB importieren",
+        import_desc: "Große CSV-Dateien oder SQL-Dumps direkt in spaltenbasierten Speicher laden.",
+        import_format_label: "Quellformat",
+        import_file_label: "Datei hochladen",
+        import_paste_label: "Oder Inhalt direkt einfügen",
+        btn_start_import: "Import starten",
+        ops_rename_title: "Tabelle umbenennen",
+        btn_rename: "Umbenennen",
+        ops_truncate_title: "Tabelle leeren (Truncate)",
+        ops_truncate_desc: "Löscht alle Zeilen, behält das Schema bei.",
+        btn_truncate: "Tabelle leeren",
+        ops_drop_title: "Tabelle dauerhaft löschen",
+        ops_drop_desc: "Löscht die Tabelle und die .mgdb-Datei unwiderruflich.",
+        btn_drop: "Tabelle löschen",
+        server_diag_title: "Systemdiagnose & Hardwarespezifikationen",
+        btn_run_bench: "Live-Benchmark starten",
+        stat_cpu: "Prozessor (CPU)",
+        stat_ram: "Arbeitsspeicher (RAM)",
+        stat_os: "Betriebssystem",
+        stat_engine_ver: "Engine-Version",
+        bench_measured_title: "Gemessener Durchsatz auf dieser Hardware:",
+        bench_ingest: "Sequentielles Schreiben (Append)",
+        bench_import: "CSV / SQL Streaming Import",
+        bench_export: "Tabellenexport",
+        bench_scan: "Analytischer Scan",
+        bench_tier_label: "Leistungsstufe:",
+        bench_block_label: "Empfohlene Blockgröße:",
+        docs_title: "Unterstützte Sprachen & Anleitungen",
+        docs_desc: "MergenDB bietet 100% Feature-Unterstützung für Python, Node.js / TypeScript, CLI und REST.",
+        btn_copy: "Kopieren",
+        modal_new_table_title: "Neue Tabelle erstellen",
+        modal_table_name: "Tabellenname",
+        modal_columns_label: "Spalten & Typen",
+        btn_add_field: "+ Spalte hinzufügen",
+        btn_cancel: "Abbrechen",
+        btn_create_table: "Tabelle erstellen",
+        delete_btn: "Löschen",
+        copy_json_btn: "JSON kopieren",
+        rename_btn: "Umbenennen",
+        confirm_delete_row: "Möchten Sie diese Zeile wirklich löschen?",
+        confirm_drop_col: "Möchten Sie die Spalte wirklich löschen",
+        confirm_truncate: "Möchten Sie wirklich alle Zeilen löschen aus Tabelle",
+        confirm_drop_table: "Möchten Sie die Tabelle wirklich dauerhaft LÖSCHEN",
+        copied_toast: "In die Zwischenablage kopiert",
+        online_text: "Online"
+      },
+      tr: {
+        active_table_label: "Aktif Tablo:",
+        select_table_option: "(Tablo Seçin)",
+        nav_server: "Sunucu",
+        nav_docs: "Kılavuz",
+        new_db_btn: "+ DB",
+        new_table_btn: "+ Tablo",
+        new_subtable_btn: "+ Alt Tablo",
+        refresh_btn: "R",
+        filter_tables_ph: "Tabloları filtrele...",
+        tab_browse: "Gözat",
+        tab_structure: "Yapı",
+        tab_sql: "SQL",
+        tab_search: "Ara",
+        tab_insert: "Ekle",
+        tab_export: "Dışa Aktar",
+        tab_import: "İçe Aktar",
+        tab_operations: "İşlemler",
+        tab_status: "Sunucu & Test",
+        tab_docs: "Kılavuz & Ekosistem",
+        page_first: "« İlk",
+        page_prev: "‹ Önceki",
+        page_next: "Sonraki ›",
+        page_last: "Son »",
+        page_label: "Sayfa:",
+        rows_label: "Satır:",
+        loading_table: "Tablo yükleniyor...",
+        table_columns_title: "Tablo Şeması & Sütunlar",
+        col_name: "Sütun Adı",
+        col_type: "Veri Tipi",
+        col_nullable: "Null Durumu",
+        col_actions: "İşlemler",
+        add_column_title: "Sütun Ekle",
+        new_col_name: "Sütun Adı",
+        new_col_type: "Veri Tipi",
+        new_col_default: "Varsayılan Değer (İsteğe Bağlı)",
+        btn_add_column: "Sütun Ekle",
+        sql_editor_title: "SQL & MergenQL Sorgu Konsolu",
+        btn_format: "Biçimlendir",
+        btn_clear: "Temizle",
+        templates_label: "Şablonlar:",
+        ctrl_enter_hint: "Çalıştırmak için Ctrl+Enter'a basın",
+        btn_run_query: "Sorguyu Çalıştır (Ctrl+Enter)",
+        search_fulltext_title: "Metin İçi Genel Arama",
+        search_fulltext_desc: "Tablodaki tüm metin sütunlarında büyük/küçük harf duyarsız hızlı arama yapar.",
+        search_term_ph: "Aranacak kelime...",
+        btn_search: "Ara",
+        btn_reset: "Sıfırla",
+        search_field_title: "Sütun Bazlı Filtreleme",
+        btn_filter: "Filtreleri Uygula",
+        insert_title: "Yeni Satır Ekle",
+        insert_desc: "Aktif .mgdb tablosuna satır eklemek için alanları doldurun.",
+        btn_save_record: "Kaydet",
+        export_title: "Tablo Verisini Dışa Aktar",
+        export_desc: "Sütun verisini standart taşınabilir dosya formatlarına aktarın.",
+        btn_download_csv: "CSV İndir",
+        btn_download_json: "JSON İndir",
+        btn_download_jsonl: "JSONL İndir",
+        btn_download_sql: "SQL İndir",
+        import_title: "Veri İçe Aktar",
+        import_desc: "CSV veya SQL dosyalarını sıkıştırılmış sütun formatına aktarın.",
+        import_format_label: "Kaynak Formatı",
+        import_file_label: "Dosya Yükle",
+        import_paste_label: "Veya Metni Doğrudan Yapıştırın",
+        btn_start_import: "İçe Aktarmayı Başlat",
+        ops_rename_title: "Tablo Adı Değiştir",
+        btn_rename: "Yeniden Adlandır",
+        ops_truncate_title: "Tabloyu Temizle (Truncate)",
+        ops_truncate_desc: "Şemayı koruyarak tablodaki tüm satırları siler.",
+        btn_truncate: "Tabloyu Temizle",
+        ops_drop_title: "Tabloyu Tamamen Sil (Drop)",
+        ops_drop_desc: "Tabloyu ve .mgdb dosyasını diskten kalıcı olarak siler.",
+        btn_drop: "Tabloyu Sil",
+        server_diag_title: "Sistem Tanılama & Donanım Özellikleri",
+        btn_run_bench: "Canlı Hız Testi Başlat",
+        stat_cpu: "İşlemci (CPU)",
+        stat_ram: "Sistem Belleği (RAM)",
+        stat_os: "İşletim Sistemi",
+        stat_engine_ver: "Motor Sürümü",
+        bench_measured_title: "Bu Cihaz Üzerinde Ölçülen Hızlar:",
+        bench_ingest: "Sıralı Veri Yazma (Append)",
+        bench_import: "CSV / SQL Akış İçe Aktarma",
+        bench_export: "Dışa Aktarma (Export)",
+        bench_scan: "Analitik Sütun Taraması",
+        bench_tier_label: "Performans Katmanı:",
+        bench_block_label: "Önerilen Blok Boyutu:",
+        docs_title: "Desteklenen Diller & Kılavuz",
+        docs_desc: "MergenDB, sıfır dış bağımlılıkla Python, Node.js / TypeScript, CLI ve REST üzerinde çalışır.",
+        btn_copy: "Kopyala",
+        modal_new_table_title: "Yeni Tablo Oluştur",
+        modal_table_name: "Tablo Adı",
+        modal_columns_label: "Sütunlar & Tipler",
+        btn_add_field: "+ Sütun Ekle",
+        btn_cancel: "İptal",
+        btn_create_table: "Tablo Oluştur",
+        delete_btn: "Sil",
+        copy_json_btn: "JSON Kopyala",
+        rename_btn: "Adlandır",
+        confirm_delete_row: "Bu satırı silmek istediğinize emin misiniz?",
+        confirm_drop_col: "Sütunu silmek istediğinize emin misiniz",
+        confirm_truncate: "Tablodaki tüm verileri silmek istediğinize emin misiniz",
+        confirm_drop_table: "Tabloyu kalıcı olarak SİLMEK istediğinize emin misiniz",
+        copied_toast: "Panoya kopyalandı",
+        online_text: "Çevrimiçi"
+      }
+    };
+
+    function t(key) {
+      const dict = I18N[currentLang] || I18N['en'];
+      return dict[key] || I18N['en'][key] || key;
+    }
+
+    function setLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem('mergendb_lang', lang);
+      const langEl = document.getElementById('langSelect');
+      if (langEl) langEl.value = lang;
+
+      // Translate all data-i18n attributes
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const k = el.getAttribute('data-i18n');
+        el.textContent = t(k);
+      });
+
+      // Translate placeholders
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const k = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = t(k);
+      });
+
+      // Update header status text
+      const stVer = document.getElementById('statVer') ? document.getElementById('statVer').textContent : 'v__MERGEN_VERSION__';
+      const hdrStatus = document.getElementById('headerStatusText');
+      if (hdrStatus) hdrStatus.textContent = `${stVer} ${t('online_text')}`;
+
+      // Reload view if active table
+      if (activeTable) {
+        const activeTab = document.querySelector('.pma-tab.active');
+        if (activeTab && activeTab.dataset.tab === 'browse') loadBrowseData();
+      }
+    }
+
     // Progress Bar Indicator
     function startProgress() {
       const bar = document.getElementById('topProgressBar');
@@ -1491,11 +1845,13 @@ curl -X POST http://localhost:8765/import \
           const hasChildren = childSubs.length > 0;
           const isExpanded = expandedTables.has(fullPath) || hasChildren;
 
-          const safePath = (t.path || '').replace(/\\/g, '/');
+          const safePath = (t.path || '').replace(/\\/g, '/').replace(/'/g, "\\'");
+          const safeFullPath = fullPath.replace(/'/g, "\\'");
+          const safeDbName = dbName.replace(/'/g, "\\'");
           html += `
-            <div class="table-item ${isActive ? 'active' : ''}" style="padding-left: 12px; display: flex; justify-content: space-between; align-items: center;" onclick="selectActiveTable('${fullPath}', '${dbName}', '${safePath}')">
+            <div class="table-item ${isActive ? 'active' : ''}" style="padding-left: 12px; display: flex; justify-content: space-between; align-items: center;" onclick="selectActiveTable('${safeFullPath}', '${safeDbName}', '${safePath}')">
               <span style="display: flex; align-items: center; gap: 4px;">
-                ${hasChildren ? `<span onclick="event.stopPropagation(); toggleSubtableExpand('${fullPath}')" style="cursor: pointer; font-weight: bold; font-size: 10px; width: 12px;">${isExpanded ? '▼' : '►'}</span>` : '<span style="width: 12px;"></span>'}
+                ${hasChildren ? `<span onclick="event.stopPropagation(); toggleSubtableExpand('${safeFullPath}')" style="cursor: pointer; font-weight: bold; font-size: 10px; width: 12px;">${isExpanded ? '▼' : '►'}</span>` : '<span style="width: 12px;"></span>'}
                 <span style="font-size: 11px; font-weight: 600;">[TBL] ${escapeHtml(tName)}</span>
               </span>
               <span class="table-row-count">${(t.rows || 0).toLocaleString()}</span>
@@ -1508,10 +1864,11 @@ curl -X POST http://localhost:8765/import \
               const sName = s.name || s.full_name.split('.').pop();
               const sFullPath = s.full_name || s.table;
               const isSubActive = (activeTable === sFullPath);
-              const safeSubPath = (s.path || '').replace(/\\/g, '/');
+              const safeSubPath = (s.path || '').replace(/\\/g, '/').replace(/'/g, "\\'");
+              const safeSubFullPath = sFullPath.replace(/'/g, "\\'");
 
               html += `
-                <div class="table-item ${isSubActive ? 'active' : ''}" style="padding-left: 28px; background: #f8fafc; border-left: 2px solid var(--pma-blue);" onclick="selectActiveTable('${sFullPath}', '${dbName}', '${safeSubPath}')">
+                <div class="table-item ${isSubActive ? 'active' : ''}" style="padding-left: 28px; background: #f8fafc; border-left: 2px solid var(--pma-blue);" onclick="selectActiveTable('${safeSubFullPath}', '${safeDbName}', '${safeSubPath}')">
                   <span style="font-size: 11px; color: #475569;">↳ [SUB] <b>${escapeHtml(sName)}</b></span>
                   <span class="table-row-count" style="background: #e0f2fe; color: #0284c7;">${(s.rows || 0).toLocaleString()}</span>
                 </div>
@@ -1536,13 +1893,21 @@ curl -X POST http://localhost:8765/import \
     function populateHeaderTableSelect() {
       const selectEl = document.getElementById('activeTableSelect');
       if (!selectEl) return;
+      const filtered = tablesCache.filter(t => !activeDatabase || (t.database || 'default') === activeDatabase);
+      const tablesToRender = (filtered.length > 0) ? filtered : tablesCache;
+      
       const prevVal = activeTable || selectEl.value;
       selectEl.innerHTML = `<option value="">${t('select_table_option')}</option>` +
-        tablesCache.map(tbl => {
+        tablesToRender.map(tbl => {
           const val = tbl.full_name || tbl.table;
           const label = tbl.type === 'subtable' ? `  ↳ ${tbl.full_name}` : tbl.full_name || tbl.table;
-          return `<option value="${val}" ${val === prevVal ? 'selected' : ''}>${label}</option>`;
+          const isSel = (val === prevVal || tbl.table === prevVal);
+          return `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
         }).join('');
+
+      if (activeTable) {
+        selectEl.value = activeTable;
+      }
     }
 
     function populateSubtableParentSelect() {
@@ -1574,7 +1939,7 @@ curl -X POST http://localhost:8765/import \
 
     function selectActiveTable(fullTableName, dbName, tablePath) {
       activeTable = fullTableName;
-      const found = tablesCache.find(t => (t.full_name === fullTableName || t.table === fullTableName) && (!dbName || t.database === dbName));
+      const found = tablesCache.find(t => (t.full_name === fullTableName || t.table === fullTableName) && (!dbName || (t.database || 'default') === dbName)) || tablesCache.find(t => t.full_name === fullTableName || t.table === fullTableName);
       if (dbName) {
         activeDatabase = dbName;
       } else if (found && found.database) {
@@ -1582,6 +1947,7 @@ curl -X POST http://localhost:8765/import \
       }
       activeTablePath = tablePath || (found && found.path ? found.path : '');
 
+      populateHeaderTableSelect();
       const selTable = document.getElementById('activeTableSelect');
       if (selTable) selTable.value = fullTableName;
       const selDb = document.getElementById('activeDbSelect');
@@ -1592,13 +1958,25 @@ curl -X POST http://localhost:8765/import \
       currentPage = 1;
       const activeTab = document.querySelector('.pma-tab.active');
       const tabName = activeTab ? activeTab.dataset.tab : 'browse';
+
+      const sqlEl = document.getElementById('sqlQueryText');
+      if (sqlEl && (!sqlEl.value || sqlEl.value.includes('SELECT * FROM'))) {
+        const cleanTable = activeTable.replace(/\.mgdb$/, '');
+        sqlEl.value = `SELECT * FROM "${cleanTable}" LIMIT 20;`;
+      }
+
       switchTab(tabName);
     }
 
     function changeActiveTable(val) {
       if (val) {
-        const tbl = tablesCache.find(t => (t.full_name === val || t.table === val));
-        selectActiveTable(val, tbl ? tbl.database : activeDatabase);
+        const tbl = tablesCache.find(t => (t.full_name === val || t.table === val) && (!activeDatabase || (t.database || 'default') === activeDatabase)) || tablesCache.find(t => t.full_name === val || t.table === val);
+        selectActiveTable(val, tbl ? (tbl.database || 'default') : activeDatabase);
+      } else {
+        activeTable = '';
+        renderSidebarTree();
+        populateHeaderTableSelect();
+        switchTab('browse');
       }
     }
 

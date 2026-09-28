@@ -69,8 +69,9 @@ class ProgressBar:
         self.update(self.current_rows, self.total_bytes, force=True)
         elapsed = max(time.time() - self.start_time, 0.001)
         speed = self.current_rows / elapsed
+        sys.stdout.write("\r" + " " * 120 + "\r")
         if final_msg:
-            sys.stdout.write(f"\r{final_msg.ljust(90)}\n")
+            sys.stdout.write(f"{final_msg}\n")
         else:
-            sys.stdout.write(f"\r[+] {self.action} complete: {self.current_rows:,} rows in {elapsed:.2f}s ({speed:,.0f} rows/s)           \n")
+            sys.stdout.write(f"[+] {self.action} complete: {self.current_rows:,} rows in {elapsed:.2f}s ({speed:,.0f} rows/s)\n")
         sys.stdout.flush()

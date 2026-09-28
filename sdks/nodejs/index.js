@@ -320,7 +320,7 @@ class DatabaseHandle {
   table(tableName) {
     const clean = tableName.replace(/\.mgdb$/, '');
     const scoped = (this.name === 'default') ? clean : `${this.name}.${clean}`;
-    return new TableHandle(this.client, scoped);
+    return new TableHandle(this.client, scoped, this.name);
   }
 
   /**
@@ -377,24 +377,31 @@ class DatabaseHandle {
  * Fluent table handle for document-like querying & schema manipulation
  */
 class TableHandle {
-  constructor(client, name) {
+  constructor(client, name, database = null) {
     this.client = client;
     this.name = name.endsWith('.mgdb') ? name : `${name}.mgdb`;
     this.pureName = this.name.replace(/\.mgdb$/, '');
+    if (database) {
+      this.database = database;
+    } else if (this.pureName.includes('.')) {
+      this.database = this.pureName.split('.')[0];
+    } else {
+      this.database = 'default';
+    }
   }
 
   /**
    * Fetch table schema definition and column metadata
    */
   async schema() {
-    return await this.client._request('GET', `/table_schema?table=${encodeURIComponent(this.name)}`);
+    return await this.client._request('GET', `/table_schema?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}`);
   }
 
   /**
    * Fetch paginated rows from table
    */
   async data(page = 1, limit = 50) {
-    return await this.client._request('GET', `/table_data?table=${encodeURIComponent(this.name)}&page=${page}&limit=${limit}`);
+    return await this.client._request('GET', `/table_data?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&page=${page}&limit=${limit}`);
   }
 
   /**
@@ -426,7 +433,7 @@ class TableHandle {
       query += ` LIMIT ${options.limit}`;
     }
 
-    const res = await this.client.query(query, { activeTable: this.name });
+    const res = await this.client.query(query, { activeTable: this.name, database: this.database });
     if (!res || !res.columns || !res.rows) return [];
 
     // Map rows to objects
@@ -467,7 +474,7 @@ class TableHandle {
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
-    const res = await this.client.query(query, { activeTable: this.name });
+    const res = await this.client.query(query, { activeTable: this.name, database: this.database });
     if (res && res.rows && res.rows.length > 0) {
       return res.rows[0][0];
     }
@@ -478,7 +485,7 @@ class TableHandle {
    * Export table in given format ('csv', 'json', 'jsonl', 'sql')
    */
   async export(format = 'json') {
-    return await this.client._request('GET', `/export?table=${encodeURIComponent(this.name)}&format=${format}`);
+    return await this.client._request('GET', `/export?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&format=${format}`);
   }
 
   /**
@@ -494,7 +501,7 @@ class TableHandle {
         hostname: this.client.host,
         port: this.client.port,
         method: 'GET',
-        path: `/export?table=${encodeURIComponent(this.name)}&format=${encodeURIComponent(format)}`,
+        path: `/export?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&format=${encodeURIComponent(format)}`,
         timeout: this.client.timeout
       }, (res) => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -522,6 +529,7 @@ class TableHandle {
   async import(content, format = 'csv') {
     return await this.client._request('POST', '/import', {
       table: this.pureName,
+      database: this.database,
       format: format,
       content: content
     });
@@ -544,7 +552,7 @@ class TableHandle {
         hostname: this.client.host,
         port: this.client.port,
         method: 'POST',
-        path: `/import_stream?table=${encodeURIComponent(this.name)}&format=${encodeURIComponent(format)}`,
+        path: `/import_stream?table=${encodeURIComponent(this.name)}&database=${encodeURIComponent(this.database)}&format=${encodeURIComponent(format)}`,
         headers: {
           'Content-Type': 'application/octet-stream',
           'Content-Length': stat.size
@@ -587,6 +595,7 @@ class TableHandle {
     return await this.client.operation('create_subtable', {
       table: fullSub,
       parent_table: this.pureName,
+      database: this.database,
       columns: columns,
       block_size: blockSize
     });
@@ -598,7 +607,7 @@ class TableHandle {
   subtable(subtableName) {
     const cleanSub = subtableName.replace(/\.mgdb$/, '');
     const fullSub = `${this.pureName}.${cleanSub}`;
-    return new TableHandle(this.client, fullSub);
+    return new TableHandle(this.client, fullSub, this.database);
   }
 
   /**
@@ -616,6 +625,7 @@ class TableHandle {
   async insert(records) {
     return await this.client.operation('insert', {
       table: this.name,
+      database: this.database,
       row: records
     });
   }
@@ -631,7 +641,7 @@ class TableHandle {
     
     const conditions = strCols.map(c => `${c} LIKE '%${String(term).replace(/'/g, "''")}%'`);
     const sql = `SELECT * FROM ${this.pureName} WHERE ${conditions.join(' OR ')}`;
-    const res = await this.client.query(sql, { activeTable: this.name });
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
     if (!res || !res.columns || !res.rows) return [];
     const colNames = res.columns;
     return res.rows.map(row => {
@@ -659,7 +669,7 @@ class TableHandle {
       }
     }
     const sql = `UPDATE ${this.pureName} SET ${setClauses.join(', ')} WHERE ${where}`;
-    return await this.client.query(sql, { activeTable: this.name });
+    return await this.client.query(sql, { activeTable: this.name, database: this.database });
   }
 
   /**
@@ -670,6 +680,7 @@ class TableHandle {
     if (!where) throw new MergenError("A WHERE clause is required for delete()");
     return await this.client.operation('delete', {
       table: this.name,
+      database: this.database,
       where: where
     });
   }
@@ -680,6 +691,7 @@ class TableHandle {
   async addColumn(name, type = 'STRING', defaultVal = null) {
     return await this.client.operation('add_column', {
       table: this.name,
+      database: this.database,
       name: name,
       type: type,
       default: defaultVal
@@ -692,6 +704,7 @@ class TableHandle {
   async dropColumn(name) {
     return await this.client.operation('drop_column', {
       table: this.name,
+      database: this.database,
       name: name
     });
   }
@@ -702,6 +715,7 @@ class TableHandle {
   async renameColumn(oldName, newName) {
     return await this.client.operation('rename_column', {
       table: this.name,
+      database: this.database,
       old_name: oldName,
       new_name: newName
     });
@@ -711,14 +725,14 @@ class TableHandle {
    * Clear all records from this table while preserving schema
    */
   async truncate() {
-    return await this.client.truncateTable(this.name);
+    return await this.client.operation('truncate', { table: this.name, database: this.database });
   }
 
   /**
    * Permanently delete this table file
    */
   async drop() {
-    return await this.client.dropTable(this.name);
+    return await this.client.operation('drop', { table: this.name, database: this.database });
   }
 }
 
