@@ -60,17 +60,26 @@ def _parse_set_clause(clause: str) -> Dict[str, Any]:
     return result
 
 
+SYSTEM_IGNORED_DIRS = {
+    'node_modules', '__pycache__', 'dist', 'build', '.git', '.gemini',
+    'mergendb.egg-info', 'venv', '.venv', 'env', 'docs', 'sdks', 'mergendb',
+    'tests', 'scratch', '.idea', '.vscode'
+}
+
+
 def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_create: bool = False, base_dir: str = ".") -> str:
     """
     Resolves a logical table or sub-table identifier to its concrete on-disk .mgdb file path.
     Supports:
-    - Direct paths: "sensors.mgdb", "okul/ogretmenler.mgdb"
-    - Dot notation: "okul.ogretmenler", "okul.ogrenciler.a_sinifi"
-    - Database-scoped names: "ogretmenler", "ogrenciler.a_sinifi" (when active_db="okul")
+    - Direct paths: "sensors.mgdb", "school/students.mgdb", absolute paths
+    - Dot notation: "school.students", "school.students.class_a"
+    - Database-scoped names: "students", "students.class_a" (when active_db="school")
     """
     raw = str(table_name).strip().strip("'\"`")
     if not raw:
         return raw
+
+    raw = raw.replace("\\", "/")
 
     # 1. Exact existing file match
     if os.path.isfile(raw):
@@ -78,39 +87,103 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
     if os.path.isfile(raw + ".mgdb"):
         return os.path.normpath(raw + ".mgdb")
 
-    # 2. Dot notation: e.g. "okul.ogretmenler" or "okul.ogrenciler.a_sinifi"
-    if "." in raw and not raw.endswith(".mgdb"):
-        parts = raw.split(".")
-        # Possibility A: Root relative dot notation
-        candidate_root = os.path.join(base_dir, *parts) + ".mgdb"
-        if os.path.exists(candidate_root) or os.path.isdir(os.path.join(base_dir, parts[0])):
-            return os.path.normpath(candidate_root)
+    cand_base = os.path.join(base_dir, raw)
+    if os.path.isfile(cand_base):
+        return os.path.normpath(cand_base)
+    if os.path.isfile(cand_base + ".mgdb"):
+        return os.path.normpath(cand_base + ".mgdb")
 
-        # Possibility B: Inside active_db
+    clean_raw = raw[:-5] if raw.endswith(".mgdb") else raw
+
+    # 2. Check inside active_db if specified
+    if active_db and active_db != "default":
+        db_folder = os.path.join(base_dir, active_db)
+
+        cand_in_db = os.path.join(db_folder, raw)
+        if os.path.isfile(cand_in_db):
+            return os.path.normpath(cand_in_db)
+        if os.path.isfile(cand_in_db + ".mgdb"):
+            return os.path.normpath(cand_in_db + ".mgdb")
+
+        cand_clean_in_db = os.path.join(db_folder, clean_raw)
+        if os.path.isfile(cand_clean_in_db + ".mgdb"):
+            return os.path.normpath(cand_clean_in_db + ".mgdb")
+
+        # Strip active_db prefix if table_name started with active_db
+        clean_tbl = clean_raw
+        if clean_tbl.startswith(active_db + "."):
+            clean_tbl = clean_tbl[len(active_db) + 1:]
+        elif clean_tbl.startswith(active_db + "/"):
+            clean_tbl = clean_tbl[len(active_db) + 1:]
+
+        if "." in clean_tbl:
+            parts = clean_tbl.split(".")
+            # Nested: school/students/class_a.mgdb
+            cand_nested = os.path.join(db_folder, *parts) + ".mgdb"
+            if os.path.isfile(cand_nested):
+                return os.path.normpath(cand_nested)
+            # Flat: school/students.class_a.mgdb
+            cand_flat = os.path.join(db_folder, ".".join(parts)) + ".mgdb"
+            if os.path.isfile(cand_flat):
+                return os.path.normpath(cand_flat)
+        else:
+            cand_file = os.path.join(db_folder, f"{clean_tbl}.mgdb")
+            if os.path.isfile(cand_file):
+                return os.path.normpath(cand_file)
+
+    # 3. Dot-notation resolution across all databases (e.g. "school.students" or "school.students.class_a")
+    if "." in clean_raw:
+        parts = clean_raw.split(".")
+        first_db = parts[0]
+        rest = parts[1:]
+        cand_db = os.path.join(base_dir, first_db)
+        if os.path.isdir(cand_db):
+            if len(rest) == 1:
+                cand = os.path.join(cand_db, f"{rest[0]}.mgdb")
+                if os.path.isfile(cand):
+                    return os.path.normpath(cand)
+            cand_nested = os.path.join(cand_db, *rest) + ".mgdb"
+            if os.path.isfile(cand_nested):
+                return os.path.normpath(cand_nested)
+            cand_flat = os.path.join(cand_db, ".".join(rest)) + ".mgdb"
+            if os.path.isfile(cand_flat):
+                return os.path.normpath(cand_flat)
+
+        cand_root_nested = os.path.join(base_dir, *parts) + ".mgdb"
+        if os.path.isfile(cand_root_nested):
+            return os.path.normpath(cand_root_nested)
+        cand_root_flat = os.path.join(base_dir, ".".join(parts)) + ".mgdb"
+        if os.path.isfile(cand_root_flat):
+            return os.path.normpath(cand_root_flat)
+
+    # 4. Handle creation path
+    if for_create:
+        clean = clean_raw
         if active_db and active_db != "default":
-            p_parts = parts[1:] if parts[0] == active_db else parts
-            candidate_active = os.path.join(base_dir, active_db, *p_parts) + ".mgdb"
-            if os.path.exists(candidate_active) or for_create:
-                return os.path.normpath(candidate_active)
+            db_dir = os.path.join(base_dir, active_db)
+            os.makedirs(db_dir, exist_ok=True)
+            if clean.startswith(active_db + "."):
+                clean = clean[len(active_db) + 1:]
+            if "." in clean:
+                parts = clean.split(".")
+                sub_dir = os.path.join(db_dir, *parts[:-1])
+                os.makedirs(sub_dir, exist_ok=True)
+                return os.path.normpath(os.path.join(sub_dir, f"{parts[-1]}.mgdb"))
+            return os.path.normpath(os.path.join(db_dir, f"{clean}.mgdb"))
+        else:
+            if "." in clean:
+                parts = clean.split(".")
+                if os.path.isdir(os.path.join(base_dir, parts[0])) or os.path.isfile(os.path.join(base_dir, f"{parts[0]}.mgdb")):
+                    sub_dir = os.path.join(base_dir, *parts[:-1])
+                    os.makedirs(sub_dir, exist_ok=True)
+                    return os.path.normpath(os.path.join(sub_dir, f"{parts[-1]}.mgdb"))
+            return os.path.normpath(os.path.join(base_dir, f"{clean}.mgdb"))
 
-        return os.path.normpath(candidate_root)
-
-    # 3. Simple name without dots, e.g. "ogretmenler"
+    # 5. Default fallback
     clean_name = raw[:-5] if raw.endswith(".mgdb") else raw
     if active_db and active_db != "default":
-        active_path = os.path.join(base_dir, active_db, f"{clean_name}.mgdb")
-        if os.path.exists(active_path) or for_create:
-            return os.path.normpath(active_path)
-
-    # 4. Fallback in root/default
-    root_path = os.path.join(base_dir, f"{clean_name}.mgdb")
-    if os.path.exists(root_path):
-        return os.path.normpath(root_path)
-
-    if active_db and active_db != "default":
         return os.path.normpath(os.path.join(base_dir, active_db, f"{clean_name}.mgdb"))
-
-    return os.path.normpath(root_path)
+    return os.path.normpath(os.path.join(base_dir, f"{clean_name}.mgdb"))
 
 
 def scan_tables_in_dir(dir_path: str, db_name: str = "default") -> List[Dict[str, Any]]:
@@ -121,8 +194,21 @@ def scan_tables_in_dir(dir_path: str, db_name: str = "default") -> List[Dict[str
     tables_map: Dict[str, Dict[str, Any]] = {}
     dir_path = os.path.abspath(dir_path)
 
+    # For default database, only descend into subdirectories that correspond to an existing root table
+    allowed_root_subdirs = set()
+    if db_name == "default":
+        for item in os.listdir(dir_path):
+            if item.endswith(".mgdb") and os.path.isfile(os.path.join(dir_path, item)):
+                tbl_stem = item[:-5]
+                if os.path.isdir(os.path.join(dir_path, tbl_stem)):
+                    allowed_root_subdirs.add(tbl_stem)
+
     for root, dirs, files in os.walk(dir_path):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ('node_modules', '__pycache__', 'dist', 'build', '.git', '.gemini', 'venv')]
+        if db_name == "default" and root == dir_path:
+            dirs[:] = [d for d in dirs if d in allowed_root_subdirs]
+        else:
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in SYSTEM_IGNORED_DIRS]
+
         rel_root = os.path.relpath(root, dir_path)
         if rel_root == ".":
             parent_parts = []
@@ -137,6 +223,12 @@ def scan_tables_in_dir(dir_path: str, db_name: str = "default") -> List[Dict[str
             if parent_parts:
                 full_name = ".".join(parent_parts + [t_name])
                 parent_table = ".".join(parent_parts)
+                table_type = "subtable"
+            elif "." in t_name:
+                parts = t_name.split(".")
+                full_name = t_name
+                parent_table = ".".join(parts[:-1])
+                t_name = parts[-1]
                 table_type = "subtable"
             else:
                 full_name = t_name
@@ -208,10 +300,6 @@ def list_databases(base_dir: str = ".") -> List[Dict[str, Any]]:
     """Discovers all databases (subdirectories and root default) in the workspace."""
     base_dir = os.path.abspath(base_dir)
     databases = []
-    ignored = {
-        'node_modules', '__pycache__', 'dist', 'build', '.git', '.gemini',
-        'mergendb.egg-info', 'venv', 'docs', 'sdks', 'mergendb', 'tests', 'scratch'
-    }
 
     # 1. Default database (root *.mgdb files)
     try:
@@ -236,7 +324,7 @@ def list_databases(base_dir: str = ".") -> List[Dict[str, Any]]:
 
     for entry in entries:
         full_entry = os.path.join(base_dir, entry)
-        if not os.path.isdir(full_entry) or entry.startswith(".") or entry in ignored:
+        if not os.path.isdir(full_entry) or entry.startswith(".") or entry in SYSTEM_IGNORED_DIRS:
             continue
 
         db_tables = scan_tables_in_dir(full_entry, db_name=entry)
@@ -307,8 +395,8 @@ class Table:
         """
         Creates a nested sub-table under this table.
         Example:
-            students = db.table("ogrenciler")
-            class_a = students.create_subtable("a_sinifi", schema)
+            employees = db.table("employees")
+            engineering = employees.create_subtable("engineering", schema)
         """
         if isinstance(schema, list):
             schema = Schema(schema)

@@ -495,6 +495,9 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       justify-content: center;
       z-index: 9990;
     }
+    .modal-overlay.active {
+      display: flex !important;
+    }
     .modal-card {
       background: #ffffff;
       border-radius: 5px;
@@ -1179,7 +1182,7 @@ curl -X POST http://localhost:8765/import \
       <div class="modal-body">
         <div class="form-group">
           <label data-i18n="modal_db_name">Database Name</label>
-          <input type="text" id="modalDbNameInput" class="form-control" placeholder="e.g. okul or analytics">
+          <input type="text" id="modalDbNameInput" class="form-control" placeholder="e.g. enterprise or analytics">
         </div>
       </div>
       <div class="modal-footer">
@@ -1205,7 +1208,7 @@ curl -X POST http://localhost:8765/import \
         </div>
         <div class="form-group">
           <label data-i18n="modal_table_name">Table Name</label>
-          <input type="text" id="modalTableNameInput" class="form-control" placeholder="e.g. ogretmenler or ogrenciler">
+          <input type="text" id="modalTableNameInput" class="form-control" placeholder="e.g. employees or metrics">
         </div>
         <div class="form-group">
           <label data-i18n="modal_columns_label">Columns & Types</label>
@@ -1258,7 +1261,7 @@ curl -X POST http://localhost:8765/import \
         </div>
         <div class="form-group">
           <label data-i18n="modal_subtable_name">Sub-table Name</label>
-          <input type="text" id="modalSubtableNameInput" class="form-control" placeholder="e.g. a_sinifi or 2026_q1">
+          <input type="text" id="modalSubtableNameInput" class="form-control" placeholder="e.g. engineering or 2026_q1">
         </div>
         <div class="form-group">
           <label data-i18n="modal_columns_label">Columns & Types</label>
@@ -1292,6 +1295,7 @@ curl -X POST http://localhost:8765/import \
     // State
     let activeDatabase = 'default';
     let activeTable = '';
+    let activeTablePath = '';
     let currentSchema = [];
     let currentPage = 1;
     let pageLimit = 50;
@@ -1359,6 +1363,18 @@ curl -X POST http://localhost:8765/import \
           }
         });
       }
+
+      // Close modals on overlay backdrop click or Escape key
+      document.querySelectorAll('.modal-overlay').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.classList.remove('active');
+        });
+      });
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+        }
+      });
     });
 
     // Tab Switching
@@ -1475,8 +1491,9 @@ curl -X POST http://localhost:8765/import \
           const hasChildren = childSubs.length > 0;
           const isExpanded = expandedTables.has(fullPath) || hasChildren;
 
+          const safePath = (t.path || '').replace(/\\/g, '/');
           html += `
-            <div class="table-item ${isActive ? 'active' : ''}" style="padding-left: 12px; display: flex; justify-content: space-between; align-items: center;" onclick="selectActiveTable('${fullPath}', '${dbName}')">
+            <div class="table-item ${isActive ? 'active' : ''}" style="padding-left: 12px; display: flex; justify-content: space-between; align-items: center;" onclick="selectActiveTable('${fullPath}', '${dbName}', '${safePath}')">
               <span style="display: flex; align-items: center; gap: 4px;">
                 ${hasChildren ? `<span onclick="event.stopPropagation(); toggleSubtableExpand('${fullPath}')" style="cursor: pointer; font-weight: bold; font-size: 10px; width: 12px;">${isExpanded ? '▼' : '►'}</span>` : '<span style="width: 12px;"></span>'}
                 <span style="font-size: 11px; font-weight: 600;">[TBL] ${escapeHtml(tName)}</span>
@@ -1491,9 +1508,10 @@ curl -X POST http://localhost:8765/import \
               const sName = s.name || s.full_name.split('.').pop();
               const sFullPath = s.full_name || s.table;
               const isSubActive = (activeTable === sFullPath);
+              const safeSubPath = (s.path || '').replace(/\\/g, '/');
 
               html += `
-                <div class="table-item ${isSubActive ? 'active' : ''}" style="padding-left: 28px; background: #f8fafc; border-left: 2px solid var(--pma-blue);" onclick="selectActiveTable('${sFullPath}', '${dbName}')">
+                <div class="table-item ${isSubActive ? 'active' : ''}" style="padding-left: 28px; background: #f8fafc; border-left: 2px solid var(--pma-blue);" onclick="selectActiveTable('${sFullPath}', '${dbName}', '${safeSubPath}')">
                   <span style="font-size: 11px; color: #475569;">↳ [SUB] <b>${escapeHtml(sName)}</b></span>
                   <span class="table-row-count" style="background: #e0f2fe; color: #0284c7;">${(s.rows || 0).toLocaleString()}</span>
                 </div>
@@ -1554,14 +1572,20 @@ curl -X POST http://localhost:8765/import \
       }
     }
 
-    function selectActiveTable(fullTableName, dbName) {
+    function selectActiveTable(fullTableName, dbName, tablePath) {
       activeTable = fullTableName;
-      if (dbName) activeDatabase = dbName;
+      const found = tablesCache.find(t => (t.full_name === fullTableName || t.table === fullTableName) && (!dbName || t.database === dbName));
+      if (dbName) {
+        activeDatabase = dbName;
+      } else if (found && found.database) {
+        activeDatabase = found.database;
+      }
+      activeTablePath = tablePath || (found && found.path ? found.path : '');
 
       const selTable = document.getElementById('activeTableSelect');
       if (selTable) selTable.value = fullTableName;
       const selDb = document.getElementById('activeDbSelect');
-      if (selDb && dbName) selDb.value = dbName;
+      if (selDb && activeDatabase) selDb.value = activeDatabase;
 
       renderSidebarTree();
 
@@ -1585,7 +1609,10 @@ curl -X POST http://localhost:8765/import \
     // Modal Control: New Database
     function openNewDbModal() {
       const el = document.getElementById('modalNewDb');
-      if (el) el.classList.add('active');
+      if (el) {
+        el.classList.add('active');
+        setTimeout(() => { const inp = document.getElementById('modalDbNameInput'); if (inp) inp.focus(); }, 60);
+      }
     }
     function closeNewDbModal() {
       const el = document.getElementById('modalNewDb');
@@ -1622,7 +1649,10 @@ curl -X POST http://localhost:8765/import \
     function openNewSubtableModal() {
       populateSubtableParentSelect();
       const el = document.getElementById('modalNewSubtable');
-      if (el) el.classList.add('active');
+      if (el) {
+        el.classList.add('active');
+        setTimeout(() => { const inp = document.getElementById('modalSubtableNameInput'); if (inp) inp.focus(); }, 60);
+      }
     }
     function closeNewSubtableModal() {
       const el = document.getElementById('modalNewSubtable');
@@ -1677,7 +1707,10 @@ curl -X POST http://localhost:8765/import \
     // Modal Control: New Table
     function openNewTableModal() {
       const el = document.getElementById('modalNewTable');
-      if (el) el.classList.add('active');
+      if (el) {
+        el.classList.add('active');
+        setTimeout(() => { const inp = document.getElementById('modalTableNameInput'); if (inp) inp.focus(); }, 60);
+      }
     }
     function closeNewTableModal() {
       const el = document.getElementById('modalNewTable');
@@ -1760,6 +1793,9 @@ curl -X POST http://localhost:8765/import \
       startProgress();
       try {
         let url = `/table_data?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}&page=${currentPage}&limit=${pageLimit}`;
+        if (activeTablePath) {
+          url += `&path=${encodeURIComponent(activeTablePath)}`;
+        }
         if (sortColumn) {
           url += `&sort_col=${encodeURIComponent(sortColumn)}&sort_dir=${sortDirection}`;
         }
@@ -1879,7 +1915,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'delete', table: activeTable, database: activeDatabase, where: whereClause })
+          body: JSON.stringify({ op: 'delete', table: activeTable, path: activeTablePath, database: activeDatabase, where: whereClause })
         });
         const data = await res.json();
         if (data.success) {
@@ -1901,7 +1937,9 @@ curl -X POST http://localhost:8765/import \
       if (!activeTable) return;
       startProgress();
       try {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
+        let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
+        if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
+        const res = await fetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
 
@@ -1946,6 +1984,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'add_column',
             table: activeTable,
+            path: activeTablePath,
             database: activeDatabase,
             name: name,
             type: type,
@@ -1981,6 +2020,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'rename_column',
             table: activeTable,
+            path: activeTablePath,
             database: activeDatabase,
             old_name: oldName,
             new_name: newName
@@ -2012,6 +2052,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'drop_column',
             table: activeTable,
+            path: activeTablePath,
             database: activeDatabase,
             name: colName
           })
@@ -2125,7 +2166,9 @@ curl -X POST http://localhost:8765/import \
     async function setupSearchTab() {
       if (!activeTable) return;
       if (currentSchema.length === 0) {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
+        let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
+        if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
+        const res = await fetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
@@ -2200,7 +2243,9 @@ curl -X POST http://localhost:8765/import \
     async function setupInsertForm() {
       if (!activeTable) return;
       if (currentSchema.length === 0) {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
+        let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
+        if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
+        const res = await fetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
@@ -2241,6 +2286,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'insert',
             table: activeTable,
+            path: activeTablePath,
             database: activeDatabase,
             records: [record]
           })
@@ -2263,7 +2309,9 @@ curl -X POST http://localhost:8765/import \
     // 6. Direct Chunked Streaming Downloads (Zero RAM / Zero GPU memory)
     function triggerDirectDownload(format) {
       if (!activeTable) return alert(t('select_table_option'));
-      window.location.href = `/export?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}&format=${format}`;
+      let url = `/export?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}&format=${format}`;
+      if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
+      window.location.href = url;
     }
 
     // 7. Streaming Import Handling (Zero V8 Memory Buffering, Real 0-100% Progress Bar)
@@ -2293,7 +2341,8 @@ curl -X POST http://localhost:8765/import \
         startProgress();
 
         const xhr = new XMLHttpRequest();
-        const uploadUrl = `/import_stream?table=${encodeURIComponent(activeTable)}&format=${encodeURIComponent(format)}&database=${encodeURIComponent(activeDatabase)}`;
+        let uploadUrl = `/import_stream?table=${encodeURIComponent(activeTable)}&format=${encodeURIComponent(format)}&database=${encodeURIComponent(activeDatabase)}`;
+        if (activeTablePath) uploadUrl += `&path=${encodeURIComponent(activeTablePath)}`;
         xhr.open('POST', uploadUrl);
 
         xhr.upload.onprogress = (e) => {
@@ -2354,6 +2403,7 @@ curl -X POST http://localhost:8765/import \
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               table: activeTable,
+              path: activeTablePath,
               database: activeDatabase,
               format: format,
               content: pasteContent
@@ -2390,7 +2440,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'rename', old_name: activeTable, new_name: newName })
+          body: JSON.stringify({ op: 'rename', old_name: activeTable, table: activeTable, path: activeTablePath, new_name: newName, database: activeDatabase })
         });
         const data = await res.json();
         if (data.success) {
@@ -2416,7 +2466,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'truncate', table: activeTable })
+          body: JSON.stringify({ op: 'truncate', table: activeTable, path: activeTablePath, database: activeDatabase })
         });
         const data = await res.json();
         if (data.success) {
@@ -2441,7 +2491,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'drop', table: activeTable })
+          body: JSON.stringify({ op: 'drop', table: activeTable, path: activeTablePath, database: activeDatabase })
         });
         const data = await res.json();
         if (data.success) {
@@ -2507,80 +2557,6 @@ curl -X POST http://localhost:8765/import \
 
       document.querySelector(`.doc-lang-tab[data-lang="${lang}"]`).classList.add('active');
       document.getElementById(`doc-pane-${lang}`).style.display = 'block';
-    }
-
-    // Create New Table Modal
-    function openNewTableModal() {
-      document.getElementById('modalNewTable').style.display = 'flex';
-      document.getElementById('modalTableNameInput').focus();
-    }
-    function closeNewTableModal() {
-      document.getElementById('modalNewTable').style.display = 'none';
-    }
-
-    function addModalColumnRow() {
-      const container = document.getElementById('modalColumnsContainer');
-      const div = document.createElement('div');
-      div.style.cssText = 'display: flex; gap: 8px; margin-bottom: 6px;';
-      div.innerHTML = `
-        <input type="text" class="form-control col-name-input" placeholder="col_name">
-        <select class="form-control col-type-input" style="width: 130px;">
-          <option value="INT">INT</option>
-          <option value="BIGINT">BIGINT</option>
-          <option value="TEXT" selected>TEXT</option>
-          <option value="FLOAT">FLOAT</option>
-          <option value="DOUBLE">DOUBLE</option>
-          <option value="BOOLEAN">BOOLEAN</option>
-          <option value="TIMESTAMP">TIMESTAMP</option>
-        </select>
-        <button type="button" class="btn-action" style="padding: 2px 6px; color: var(--pma-danger);" onclick="this.parentElement.remove()">X</button>
-      `;
-      container.appendChild(div);
-    }
-
-    async function submitCreateNewTable() {
-      const name = document.getElementById('modalTableNameInput').value.trim();
-      if (!name) return alert('Please enter table name');
-
-      const colNames = document.querySelectorAll('.col-name-input');
-      const colTypes = document.querySelectorAll('.col-type-input');
-      const columns = [];
-
-      for (let i = 0; i < colNames.length; i++) {
-        const cName = colNames[i].value.trim();
-        const cType = colTypes[i].value;
-        if (cName) {
-          columns.push({ name: cName, type: cType });
-        }
-      }
-
-      if (columns.length === 0) return alert('Please define at least one column');
-
-      startProgress();
-      try {
-        const res = await fetch('/operation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            op: 'create_table',
-            table: name,
-            columns: columns
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(data.message || 'Table created');
-          closeNewTableModal();
-          activeTable = name.endsWith('.mgdb') ? name : name + '.mgdb';
-          await loadTables();
-        } else {
-          alert('Error: ' + data.error);
-        }
-      } catch (err) {
-        alert('Table creation failed: ' + err.message);
-      } finally {
-        endProgress();
-      }
     }
 
     // Utility Helpers

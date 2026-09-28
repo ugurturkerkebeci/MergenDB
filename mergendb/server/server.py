@@ -193,8 +193,12 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         elif path == "/table_schema":
             raw_tbl = params.get("table", [""])[0]
+            explicit_path = params.get("path", [""])[0]
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if explicit_path and os.path.isfile(explicit_path):
+                table_name = explicit_path
+            else:
+                table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
@@ -231,8 +235,12 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         elif path == "/table_data":
             raw_tbl = params.get("table", [""])[0]
+            explicit_path = params.get("path", [""])[0]
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if explicit_path and os.path.isfile(explicit_path):
+                table_name = explicit_path
+            else:
+                table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
@@ -293,9 +301,13 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         elif path == "/export":
             raw_tbl = params.get("table", [""])[0]
+            explicit_path = params.get("path", [""])[0]
             fmt = params.get("format", ["csv"])[0].lower()
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if explicit_path and os.path.isfile(explicit_path):
+                table_name = explicit_path
+            else:
+                table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
@@ -386,14 +398,18 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path in ("/import_stream", "/import_file"):
             raw_tbl = params.get("table", [""])[0]
+            explicit_path = params.get("path", [""])[0]
             fmt = params.get("format", ["csv"])[0].lower()
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
 
-            if not raw_tbl:
+            if not raw_tbl and not explicit_path:
                 self._send_response_json(400, {"error": "Missing 'table' parameter"})
                 return
 
-            target_table = resolve_table_path(raw_tbl, active_db=db_name, for_create=True)
+            if explicit_path and os.path.isfile(explicit_path):
+                target_table = explicit_path
+            else:
+                target_table = resolve_table_path(raw_tbl, active_db=db_name, for_create=True)
             t0 = time.perf_counter()
 
             # Stream direct from socket to temp file in 64KB chunks (strictly bounded RAM)
@@ -503,16 +519,20 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             try:
                 payload = json.loads(post_data) if post_data else {}
                 target_table = payload.get("table", "").strip()
+                explicit_path = payload.get("path", "").strip()
                 db_name = payload.get("database", "").strip() or getattr(MergenDB, "active_database", "default")
                 fmt = payload.get("format", "csv").lower()
                 content = payload.get("content", "")
                 filepath = payload.get("filepath", "").strip()
 
-                if not target_table:
+                if not target_table and not explicit_path:
                     self._send_response_json(400, {"error": "Missing 'table' in import request"})
                     return
 
-                target_table = resolve_table_path(target_table, active_db=db_name, for_create=True)
+                if explicit_path and os.path.isfile(explicit_path):
+                    target_table = explicit_path
+                else:
+                    target_table = resolve_table_path(target_table, active_db=db_name, for_create=True)
 
                 t0 = time.perf_counter()
                 total_imported = 0
@@ -627,7 +647,11 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     msg = f"Table '{table_ident}' created successfully."
 
                 else:
-                    resolved_table = resolve_table_path(target_table, active_db=db_name)
+                    explicit_path = (payload.get("path") or "").strip()
+                    if explicit_path and os.path.isfile(explicit_path):
+                        resolved_table = explicit_path
+                    else:
+                        resolved_table = resolve_table_path(target_table, active_db=db_name)
                     if not os.path.exists(resolved_table) and action != "insert":
                         self._send_response_json(404, {"error": f"Table '{target_table}' not found"})
                         return
