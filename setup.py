@@ -12,7 +12,7 @@ def get_version():
             for line in f:
                 if line.startswith("__version__"):
                     return line.split("=")[1].strip().strip('"').strip("'")
-    return "0.7.1"
+    return "0.7.2"
 
 setup(
     name="mergendb",

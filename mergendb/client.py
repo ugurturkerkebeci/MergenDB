@@ -959,6 +959,32 @@ class Table:
         else:
             return self.export_csv(output_path)
 
+    def import_file(self, filepath: str, fmt: Optional[str] = None, target_table: Optional[str] = None) -> int:
+        """
+        Imports data from an external file (.csv, .json, .jsonl, .sql) into this table or target_table.
+        Returns total number of rows imported.
+        """
+        from mergendb.io.importer import DataImporter
+        target = target_table or self.filepath
+        if not fmt:
+            lower = filepath.lower()
+            if lower.endswith(".csv"): fmt = "csv"
+            elif lower.endswith(".jsonl"): fmt = "jsonl"
+            elif lower.endswith(".json"): fmt = "json"
+            elif lower.endswith(".sql"): fmt = "sql"
+            else: fmt = "csv"
+        fmt = fmt.lower()
+        if fmt == "csv":
+            return DataImporter.from_csv(filepath, target)
+        elif fmt == "json":
+            return DataImporter.from_json(filepath, target)
+        elif fmt == "jsonl":
+            return DataImporter.from_jsonl(filepath, target)
+        elif fmt == "sql":
+            return DataImporter.from_sql_dump(filepath, target)
+        else:
+            raise ValueError(f"Unsupported format: {fmt}")
+
     def export_csv(self, output_path: str):
         """Exports all rows to a CSV file."""
         output_path = self._ensure_output_ext(output_path, ".csv")

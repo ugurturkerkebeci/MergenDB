@@ -479,6 +479,10 @@ class DataImporter:
                 if writer:
                     writer.__exit__(None, None, None)
 
+        if not os.path.exists(output_mgdb_path):
+            with FileWriter(output_mgdb_path, schema or Schema([ColumnDef("col_1", DataType.STRING)]), block_size=block_size) as w:
+                pass
+
         return total_imported
 
 
@@ -529,7 +533,10 @@ class DataImporter:
                 first_row = None
 
             if not first_row:
-                raise ValueError("Empty or unreadable CSV file")
+                if not os.path.exists(output_mgdb_path):
+                    with FileWriter(output_mgdb_path, Schema([ColumnDef("col_1", DataType.STRING)]), block_size=block_size) as w:
+                        pass
+                return 0
 
             col_names = [f"col_{i}" for i in range(len(first_row))]
             if has_header:
@@ -657,7 +664,10 @@ class DataImporter:
                     continue
 
         if not first_valid_objects:
-            raise ValueError(f"No valid JSON objects found in {jsonl_path}")
+            if not os.path.exists(output_mgdb_path):
+                with FileWriter(output_mgdb_path, Schema([ColumnDef("col_1", DataType.STRING)]), block_size=block_size) as w:
+                    pass
+            return 0
 
         # Combine all seen keys to form comprehensive schema
         all_keys = []
@@ -770,7 +780,10 @@ class DataImporter:
                 parsed = [parsed]
 
         if not isinstance(parsed, list) or not parsed:
-            raise ValueError(f"No JSON records could be extracted from {json_path}")
+            if not os.path.exists(output_mgdb_path):
+                with FileWriter(output_mgdb_path, Schema([ColumnDef("col_1", DataType.STRING)]), block_size=block_size) as w:
+                    pass
+            return 0
 
         # Extract schema
         all_keys = []

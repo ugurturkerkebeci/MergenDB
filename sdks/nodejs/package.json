@@ -1,6 +1,6 @@
 {
   "name": "mergendb",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Official zero-dependency Node.js and TypeScript client SDK for MergenDB - the ultra-compact, columnar embedded database engine.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "test": "node test.js",
-    "test:resilience": "node test_resilience_500.js"
+    "test:resilience": "node test_resilience_1000.js"
   },
   "keywords": [
     "mergendb",
