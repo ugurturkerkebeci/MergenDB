@@ -77,6 +77,21 @@ export class MergenError extends Error {
   constructor(message: string, status?: number, details?: any);
 }
 
+export class DatabaseHandle {
+  readonly client: MergenDB;
+  readonly name: string;
+
+  table(tableName: string): TableHandle;
+  tables(): Promise<TableInfo[]>;
+  listTables(): Promise<TableInfo[]>;
+  createTable(name: string, columns: ColumnDefinition[], blockSize?: number): Promise<{ status: string; message: string }>;
+  dropTable(name: string): Promise<{ status: string; message: string }>;
+  query<T = any>(sqlQuery: string): Promise<QueryResult<T>>;
+  drop(): Promise<{ success: boolean; message: string }>;
+}
+
+export type Database = DatabaseHandle;
+
 export class TableHandle {
   readonly client: MergenDB;
   readonly name: string;
@@ -95,7 +110,12 @@ export class TableHandle {
   dropColumn(name: string): Promise<{ status: string; message: string }>;
   renameColumn(oldName: string, newName: string): Promise<{ status: string; message: string }>;
   export(format?: 'csv' | 'json' | 'jsonl' | 'sql'): Promise<string>;
+  exportToFile(destPath: string, format?: 'csv' | 'json' | 'jsonl' | 'sql'): Promise<string>;
   import(content: string, format?: 'csv' | 'json' | 'sql'): Promise<{ status: string; rows_imported: number }>;
+  importFile(filePath: string, format?: 'csv' | 'json' | 'sql'): Promise<{ success: boolean; rows_imported: number; execution_time_ms: number }>;
+  createSubtable(name: string, columns: ColumnDefinition[], blockSize?: number): Promise<{ status: string; message: string }>;
+  subtable(name: string): TableHandle;
+  listSubtables(): Promise<TableInfo[]>;
   truncate(): Promise<{ status: string; message: string }>;
   drop(): Promise<{ status: string; message: string }>;
 }
@@ -115,8 +135,12 @@ export class MergenDB {
   status(): Promise<ServerStatus>;
   benchmark(): Promise<any>;
   ensureServer(maxWaitMs?: number): Promise<boolean>;
+  database(name?: string): DatabaseHandle;
+  listDatabases(): Promise<Array<{ name: string; tables_count: number; total_bytes: number }>>;
+  createDatabase(name: string): Promise<{ success: boolean; message: string }>;
+  dropDatabase(name: string): Promise<{ success: boolean; message: string }>;
   listTables(): Promise<TableInfo[]>;
-  query<T = any>(sqlQuery: string, options?: { activeTable?: string }): Promise<QueryResult<T>>;
+  query<T = any>(sqlQuery: string, options?: { activeTable?: string; database?: string }): Promise<QueryResult<T>>;
   sql<T = any>(strings: TemplateStringsArray, ...values: any[]): Promise<QueryResult<T>>;
   table(tableName: string): TableHandle;
   createTable(name: string, columns: ColumnDefinition[], blockSize?: number): Promise<{ status: string; message: string }>;

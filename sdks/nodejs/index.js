@@ -10,6 +10,8 @@
 const http = require('http');
 const https = require('https');
 const url = require('url');
+const fs = require('fs');
+const path = require('path');
 const { spawn, execSync } = require('child_process');
 
 class MergenError extends Error {
@@ -270,6 +272,105 @@ class MergenDB {
   async benchmark() {
     return await this._request('GET', '/status?benchmark=1');
   }
+
+  /**
+   * Access a database container
+   * @param {string} [name='default']
+   * @returns {DatabaseHandle}
+   */
+  database(name = 'default') {
+    return new DatabaseHandle(this, name);
+  }
+
+  /**
+   * List all database containers on server
+   */
+  async listDatabases() {
+    const res = await this._request('GET', '/databases');
+    return res.databases || [];
+  }
+
+  /**
+   * Create a new database container
+   */
+  async createDatabase(name) {
+    return await this._request('POST', '/database', { action: 'create', name: name });
+  }
+
+  /**
+   * Drop a database container and its tables
+   */
+  async dropDatabase(name) {
+    return await this._request('POST', '/database', { action: 'drop', name: name });
+  }
+}
+
+/**
+ * Handle for a logical database container (phpMyAdmin style)
+ */
+class DatabaseHandle {
+  constructor(client, name = 'default') {
+    this.client = client;
+    this.name = name;
+  }
+
+  /**
+   * Get table handle scoped to this database
+   */
+  table(tableName) {
+    const clean = tableName.replace(/\.mgdb$/, '');
+    const scoped = (this.name === 'default') ? clean : `${this.name}.${clean}`;
+    return new TableHandle(this.client, scoped);
+  }
+
+  /**
+   * List all tables and sub-tables within this database
+   */
+  async tables() {
+    const res = await this.client._request('GET', `/tables?database=${encodeURIComponent(this.name)}`);
+    return res.tables || [];
+  }
+
+  async listTables() {
+    return await this.tables();
+  }
+
+  /**
+   * Create a new table inside this database
+   */
+  async createTable(name, columns, blockSize = 1024) {
+    const clean = name.replace(/\.mgdb$/, '');
+    const scoped = (this.name === 'default') ? clean : `${this.name}.${clean}`;
+    return await this.client.operation('create_table', {
+      table: scoped,
+      database: this.name,
+      columns: columns,
+      block_size: blockSize
+    });
+  }
+
+  /**
+   * Drop a table from this database
+   */
+  async dropTable(name) {
+    const clean = name.replace(/\.mgdb$/, '');
+    const scoped = (this.name === 'default') ? clean : `${this.name}.${clean}`;
+    return await this.client.operation('drop', { table: scoped, database: this.name });
+  }
+
+  /**
+   * Execute an analytical SQL query scoped to this database
+   */
+  async query(sql) {
+    return await this.client.query(sql, { database: this.name });
+  }
+
+  /**
+   * Permanently drop this database container
+   */
+  async drop() {
+    return await this.client.dropDatabase(this.name);
+  }
 }
 
 /**
@@ -381,6 +482,41 @@ class TableHandle {
   }
 
   /**
+   * Stream table export directly to a file with zero RAM memory buffering.
+   * @param {string} destPath Local destination file
+   * @param {string} [format='csv'] 'csv', 'json', 'jsonl', 'sql'
+   */
+  async exportToFile(destPath, format = 'csv') {
+    return new Promise((resolve, reject) => {
+      const client = this.client.protocol === 'https:' ? https : http;
+      const req = client.request({
+        protocol: this.client.protocol,
+        hostname: this.client.host,
+        port: this.client.port,
+        method: 'GET',
+        path: `/export?table=${encodeURIComponent(this.name)}&format=${encodeURIComponent(format)}`,
+        timeout: this.client.timeout
+      }, (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new MergenError(`Export failed with HTTP ${res.statusCode}`, res.statusCode));
+        }
+        const fileStream = fs.createWriteStream(destPath);
+        res.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close();
+          resolve(destPath);
+        });
+        fileStream.on('error', (err) => {
+          fs.unlink(destPath, () => {});
+          reject(err);
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  /**
    * Import data string (CSV, SQL, or JSON) into this table
    */
   async import(content, format = 'csv') {
@@ -389,6 +525,88 @@ class TableHandle {
       format: format,
       content: content
     });
+  }
+
+  /**
+   * Stream a local file (CSV, SQL, JSON) directly into table with strictly bounded RAM.
+   * @param {string} filePath Local file path to stream
+   * @param {string} [format='csv'] 'csv', 'sql', 'json', 'jsonl'
+   */
+  async importFile(filePath, format = 'csv') {
+    if (!fs.existsSync(filePath)) {
+      throw new MergenError(`File not found for import: ${filePath}`, 404);
+    }
+    const stat = fs.statSync(filePath);
+    return new Promise((resolve, reject) => {
+      const client = this.client.protocol === 'https:' ? https : http;
+      const req = client.request({
+        protocol: this.client.protocol,
+        hostname: this.client.host,
+        port: this.client.port,
+        method: 'POST',
+        path: `/import_stream?table=${encodeURIComponent(this.name)}&format=${encodeURIComponent(format)}`,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': stat.size
+        },
+        timeout: this.client.timeout
+      }, (res) => {
+        let rawData = '';
+        res.setEncoding('utf8');
+        res.on('data', chunk => { rawData += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(rawData);
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(parsed);
+            } else {
+              reject(new MergenError(parsed.error || `HTTP ${res.statusCode}`, res.statusCode, parsed));
+            }
+          } catch(e) {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve({ success: true, message: rawData });
+            } else {
+              reject(new MergenError(rawData || `HTTP ${res.statusCode}`, res.statusCode));
+            }
+          }
+        });
+      });
+      req.on('error', reject);
+
+      const fileStream = fs.createReadStream(filePath, { highWaterMark: 64 * 1024 });
+      fileStream.pipe(req);
+    });
+  }
+
+  /**
+   * Create a nested sub-table under this table (e.g. table.subtable)
+   */
+  async createSubtable(subtableName, columns, blockSize = 1024) {
+    const cleanSub = subtableName.replace(/\.mgdb$/, '');
+    const fullSub = `${this.pureName}.${cleanSub}`;
+    return await this.client.operation('create_subtable', {
+      table: fullSub,
+      parent_table: this.pureName,
+      columns: columns,
+      block_size: blockSize
+    });
+  }
+
+  /**
+   * Get handle to a nested sub-table
+   */
+  subtable(subtableName) {
+    const cleanSub = subtableName.replace(/\.mgdb$/, '');
+    const fullSub = `${this.pureName}.${cleanSub}`;
+    return new TableHandle(this.client, fullSub);
+  }
+
+  /**
+   * List all nested sub-tables of this table
+   */
+  async listSubtables() {
+    const all = await this.client.tables();
+    return all.filter(t => t.parent === this.pureName || (t.type === 'subtable' && t.full_name && t.full_name.startsWith(this.pureName + '.')));
   }
 
   /**
@@ -544,6 +762,8 @@ function startServer(options = {}) {
 
 module.exports = {
   MergenDB,
+  Database: DatabaseHandle,
+  DatabaseHandle,
   Table: TableHandle,
   TableHandle,
   MergenError,

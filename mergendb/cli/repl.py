@@ -6,7 +6,7 @@ import json
 import csv
 import re
 from typing import Optional, List
-from mergendb.client import MergenDB
+from mergendb.client import MergenDB, Database, resolve_table_path, list_databases, scan_tables_in_dir
 from mergendb.core.types import DataType
 from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
@@ -97,45 +97,42 @@ Diagnostics:
 class MergenCLI:
     def __init__(self):
         self.active_table: Optional[str] = None
+        self.active_database: str = getattr(MergenDB, "active_database", "default")
 
-    def _resolve_table_path(self, name: str) -> str:
-        name = name.strip().strip('"').strip("'")
-        if not name.endswith(".mgdb"):
-            name = name + ".mgdb"
-        return name
+    def _resolve_table_path(self, name: str, for_create: bool = False) -> str:
+        return resolve_table_path(name, active_db=self.active_database, for_create=for_create)
 
     def show_tables(self):
-        files = glob.glob("*.mgdb")
-        if not files:
-            print("\n(No .mgdb tables found in current directory)\n")
+        db_obj = Database(self.active_database)
+        tbl_list = db_obj.list_tables()
+        if not tbl_list:
+            print(f"\n(No tables found in database '{self.active_database}')\n")
             return
 
-        print("\n+--------------------------------+------------+--------------+-----------+")
-        print("| Table Name                     | Rows       | Disk Size    | Blocks    |")
-        print("+--------------------------------+------------+--------------+-----------+")
-        for f in files:
-            try:
-                sz = os.path.getsize(f)
-                with FileReader(f) as reader:
-                    rows = reader.total_rows
-                    blocks = len(reader.blocks)
-                size_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.2f} MB"
-                print(f"| {f.ljust(30)} | {str(f'{rows:,}').rjust(10)} | {size_str.rjust(12)} | {str(blocks).rjust(9)} |")
-            except Exception:
-                print(f"| {f.ljust(30)} | {'CORRUPT'.center(10)} | {'-'.center(12)} | {'-'.center(9)} |")
-        print("+--------------------------------+------------+--------------+-----------+\n")
+        print(f"\n--- Database: {self.active_database} ({len(tbl_list)} tables/sub-tables) ---")
+        print("+--------------------------------+------------+------------+--------------+-----------+")
+        print("| Table Name                     | Type       | Parent     | Rows         | Disk Size |")
+        print("+--------------------------------+------------+------------+--------------+-----------+")
+        for t in tbl_list:
+            sz = t["bytes"]
+            size_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.2f} MB"
+            parent_str = t["parent"] or "-"
+            rows_str = f"{t['rows']:,}"
+            print(f"| {t['full_name'].ljust(30)} | {t['type'].ljust(10)} | {parent_str.ljust(10)} | {rows_str.rjust(12)} | {size_str.rjust(9)} |")
+        print("+--------------------------------+------------+------------+--------------+-----------+\n")
 
     def show_databases(self):
-        cwd = os.getcwd()
-        dirs = [d for d in os.listdir(cwd) if os.path.isdir(d) and not d.startswith(".")]
-        print(f"\nCurrent Directory: {cwd}")
-        print("+--------------------------------+")
-        print("| Database / Directory           |")
-        print("+--------------------------------+")
-        print(f"| {os.path.basename(cwd).ljust(30)} | (Current)")
-        for d in dirs:
-            print(f"| {d.ljust(30)} |")
-        print("+--------------------------------+\n")
+        dbs = list_databases()
+        print("\n+--------------------------------+------------+--------------+")
+        print("| Database Name                  | Tables     | Total Size   |")
+        print("+--------------------------------+------------+--------------+")
+        for d in dbs:
+            cur_marker = " (Active)" if d["name"] == self.active_database else ""
+            name_str = f"{d['name']}{cur_marker}"
+            sz = d["total_bytes"]
+            size_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.2f} MB"
+            print(f"| {name_str.ljust(30)} | {str(d['tables_count']).rjust(10)} | {size_str.rjust(12)} |")
+        print("+--------------------------------+------------+--------------+\n")
 
     def describe_table(self, table_name: str):
         filepath = self._resolve_table_path(table_name)
@@ -443,14 +440,27 @@ class MergenCLI:
             else:
                 print("Error: Specify a table name or use 'USE <table_name>;'.\n")
 
+        elif keyword == "CREATE" and len(parts) >= 2 and parts[1].upper() == "DATABASE":
+            db_name = parts[2].strip().strip("'\"`;")
+            Database.create(db_name)
+            print(f"Database '{db_name}' created successfully.\n")
+
         elif keyword == "DROP":
+            if len(parts) >= 3 and parts[1].upper() == "DATABASE":
+                db_name = parts[2].strip().strip("'\"`;")
+                Database(db_name).drop()
+                if self.active_database == db_name:
+                    self.active_database = "default"
+                print(f"Database '{db_name}' dropped successfully.\n")
+                return
+
             if len(parts) == 1 and self.active_table:
                 tbl = self.active_table
                 if os.path.exists(tbl):
                     os.remove(tbl)
                 self.active_table = None
                 print(f"Table '{tbl}' dropped successfully.\n")
-            elif len(parts) == 2 and parts[1].upper() != "TABLE":
+            elif len(parts) == 2 and parts[1].upper() not in ("TABLE", "DATABASE"):
                 tbl = self._resolve_table_path(parts[1])
                 if os.path.exists(tbl):
                     os.remove(tbl)
@@ -470,6 +480,26 @@ class MergenCLI:
                     print(f"Table '{tbl}' not found.\n")
             else:
                 print("Error: Specify a table name or use 'USE <table_name>;'.\n")
+
+        elif keyword == "USE" and len(parts) > 1:
+            target = parts[1].strip().strip("'\"`;")
+            if target.endswith(".mgdb") or os.path.isfile(target):
+                self.active_table = target
+                print(f"Database/Table context set to: {target}\n")
+            elif os.path.isdir(target) or any(d["name"] == target for d in list_databases()):
+                self.active_database = target
+                self.active_table = None
+                print(f"Database changed to '{target}'.\n")
+            else:
+                tbl = self._resolve_table_path(target)
+                if os.path.exists(tbl):
+                    self.active_table = tbl
+                    print(f"Database/Table context set to: {tbl}\n")
+                else:
+                    self.active_database = target
+                    self.active_table = None
+                    Database.create(target)
+                    print(f"Database changed to '{target}'.\n")
 
         elif keyword == "UPDATE":
             query_str = cmd

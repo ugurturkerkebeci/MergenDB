@@ -599,14 +599,17 @@ STUDIO_HTML = r"""<!DOCTYPE html>
       <span class="brand-title">MergenDB</span>
     </div>
 
-    <!-- Active Table Selector & Breadcrumbs -->
+    <!-- Active Database & Table Breadcrumbs -->
     <div class="header-center">
       <span>Host: <b>127.0.0.1</b></span>
       <span>/</span>
-      <span>mergendb</span>
+      <span data-i18n="db_label">DB:</span>
+      <select id="activeDbSelect" onchange="changeActiveDatabase(this.value)" style="padding: 2px 6px; font-size: 11px; font-weight: 600; border: 1px solid #ccc; border-radius: 3px;">
+        <option value="default">default</option>
+      </select>
       <span>/</span>
-      <span data-i18n="active_table_label">Active Table:</span>
-      <select id="activeTableSelect" onchange="changeActiveTable(this.value)">
+      <span data-i18n="active_table_label">Table:</span>
+      <select id="activeTableSelect" onchange="changeActiveTable(this.value)" style="padding: 2px 6px; font-size: 11px; font-weight: 600; border: 1px solid #ccc; border-radius: 3px;">
         <option value="" data-i18n="select_table_option">(Select Table)</option>
       </select>
     </div>
@@ -629,17 +632,19 @@ STUDIO_HTML = r"""<!DOCTYPE html>
   <!-- Main Application Wrapper -->
   <div class="main-wrapper">
 
-    <!-- Sidebar: Local .mgdb Table Tree -->
+    <!-- Sidebar: Hierarchical Databases, Tables & Sub-tables Tree -->
     <aside>
-      <div class="sidebar-header">
-        <button class="btn-icon" onclick="openNewTableModal()" data-i18n="new_table_btn">New Table</button>
-        <button class="btn-icon" onclick="loadTables()" data-i18n="refresh_btn" title="Refresh">Refresh</button>
+      <div class="sidebar-header" style="display: flex; gap: 4px; flex-wrap: wrap;">
+        <button class="btn-icon" onclick="openNewDbModal()" data-i18n="new_db_btn" style="flex: 1; padding: 4px 6px; font-size: 11px; text-align: center;">+ DB</button>
+        <button class="btn-icon" onclick="openNewTableModal()" data-i18n="new_table_btn" style="flex: 1; padding: 4px 6px; font-size: 11px; text-align: center;">+ Table</button>
+        <button class="btn-icon" onclick="openNewSubtableModal()" data-i18n="new_subtable_btn" style="flex: 1; padding: 4px 6px; font-size: 11px; text-align: center;">+ Sub</button>
+        <button class="btn-icon" onclick="loadTables()" data-i18n="refresh_btn" title="Refresh" style="padding: 4px 8px; font-size: 11px;">R</button>
       </div>
       <div class="sidebar-filter">
         <input type="text" id="sidebarFilter" placeholder="Filter tables..." data-i18n-placeholder="filter_tables_ph" oninput="filterTables()">
       </div>
       <div class="table-list" id="sidebarTableList">
-        <!-- Loaded via JavaScript -->
+        <!-- Rendered via JavaScript: Hierarchical Tree -->
       </div>
     </aside>
 
@@ -903,7 +908,17 @@ STUDIO_HTML = r"""<!DOCTYPE html>
               <textarea id="importPasteContent" class="form-control" style="height: 120px;" placeholder="Paste CSV lines or SQL INSERT statements here..."></textarea>
             </div>
 
-            <button class="btn-primary" onclick="handleImportSubmit()" data-i18n="btn_start_import">Start Ingestion</button>
+            <div id="importProgressContainer" style="display: none; margin-bottom: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 10px 12px;">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-bottom: 6px;">
+                <span id="importStatusText" style="color: #334155;">Streaming file to server...</span>
+                <span id="importPercentText" style="color: var(--pma-blue);">0%</span>
+              </div>
+              <div style="background: #e2e8f0; border-radius: 3px; height: 10px; overflow: hidden;">
+                <div id="importProgressBarFill" style="background: var(--pma-blue); width: 0%; height: 100%; transition: width 0.1s ease;"></div>
+              </div>
+            </div>
+
+            <button class="btn-primary" id="btnStartImport" onclick="handleImportSubmit()" data-i18n="btn_start_import">Start Ingestion</button>
           </div>
         </div>
 
@@ -1154,6 +1169,26 @@ curl -X POST http://localhost:8765/import \
     </main>
   </div>
 
+  <!-- Modal: Create New Database -->
+  <div class="modal-overlay" id="modalNewDb">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span data-i18n="modal_new_db_title">Create New Database</span>
+        <button class="modal-close" onclick="closeNewDbModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label data-i18n="modal_db_name">Database Name</label>
+          <input type="text" id="modalDbNameInput" class="form-control" placeholder="e.g. okul or analytics">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action" onclick="closeNewDbModal()" data-i18n="btn_cancel">Cancel</button>
+        <button class="btn-primary" onclick="submitCreateNewDb()" data-i18n="btn_create_db">Create Database</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Create New Table -->
   <div class="modal-overlay" id="modalNewTable">
     <div class="modal-card">
@@ -1163,8 +1198,14 @@ curl -X POST http://localhost:8765/import \
       </div>
       <div class="modal-body">
         <div class="form-group">
+          <label data-i18n="modal_target_db">Target Database</label>
+          <select id="modalTableDbSelect" class="form-control">
+            <option value="default">default</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label data-i18n="modal_table_name">Table Name</label>
-          <input type="text" id="modalTableNameInput" class="form-control" placeholder="e.g. customers (or customers.mgdb)">
+          <input type="text" id="modalTableNameInput" class="form-control" placeholder="e.g. ogretmenler or ogrenciler">
         </div>
         <div class="form-group">
           <label data-i18n="modal_columns_label">Columns & Types</label>
@@ -1191,7 +1232,7 @@ curl -X POST http://localhost:8765/import \
               </select>
             </div>
           </div>
-          <button type="button" class="btn-action" style="margin-top: 4px;" onclick="addModalColumnRow()" data-i18n="btn_add_field">+ Add Column</button>
+          <button type="button" class="btn-action" style="margin-top: 4px;" onclick="addModalColumnRow('modalColumnsContainer')" data-i18n="btn_add_field">+ Add Column</button>
         </div>
       </div>
       <div class="modal-footer">
@@ -1201,11 +1242,55 @@ curl -X POST http://localhost:8765/import \
     </div>
   </div>
 
+  <!-- Modal: Create New Subtable -->
+  <div class="modal-overlay" id="modalNewSubtable">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span data-i18n="modal_new_subtable_title">Create Nested Sub-table</span>
+        <button class="modal-close" onclick="closeNewSubtableModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label data-i18n="modal_parent_table">Parent Table</label>
+          <select id="modalSubtableParentSelect" class="form-control">
+            <!-- Populated via JS -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label data-i18n="modal_subtable_name">Sub-table Name</label>
+          <input type="text" id="modalSubtableNameInput" class="form-control" placeholder="e.g. a_sinifi or 2026_q1">
+        </div>
+        <div class="form-group">
+          <label data-i18n="modal_columns_label">Columns & Types</label>
+          <div id="modalSubtableColumnsContainer">
+            <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+              <input type="text" class="form-control col-name-input" placeholder="id" value="id">
+              <select class="form-control col-type-input" style="width: 130px;">
+                <option value="INT" selected>INT</option>
+                <option value="BIGINT">BIGINT</option>
+                <option value="TEXT">TEXT</option>
+                <option value="FLOAT">FLOAT</option>
+                <option value="DOUBLE">DOUBLE</option>
+                <option value="BOOLEAN">BOOLEAN</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" class="btn-action" style="margin-top: 4px;" onclick="addModalColumnRow('modalSubtableColumnsContainer')" data-i18n="btn_add_field">+ Add Column</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action" onclick="closeNewSubtableModal()" data-i18n="btn_cancel">Cancel</button>
+        <button class="btn-primary" onclick="submitCreateNewSubtable()" data-i18n="btn_create_subtable">Create Sub-table</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Element -->
   <div id="toastNotification">Action completed</div>
 
   <script>
     // State
+    let activeDatabase = 'default';
     let activeTable = '';
     let currentSchema = [];
     let currentPage = 1;
@@ -1215,375 +1300,47 @@ curl -X POST http://localhost:8765/import \
     let sortColumn = '';
     let sortDirection = 'asc';
     let currentLang = localStorage.getItem('mergendb_lang') || 'en';
-
-    // Internationalization (i18n) Dictionary
-    const I18N = {
-      en: {
-        active_table_label: "Active Table:",
-        select_table_option: "(Select Table)",
-        nav_server: "Server",
-        nav_docs: "Docs",
-        new_table_btn: "New Table",
-        refresh_btn: "Refresh",
-        filter_tables_ph: "Filter tables...",
-        tab_browse: "Browse",
-        tab_structure: "Structure",
-        tab_sql: "SQL",
-        tab_search: "Search",
-        tab_insert: "Insert",
-        tab_export: "Export",
-        tab_import: "Import",
-        tab_operations: "Operations",
-        tab_status: "Server & Benchmark",
-        tab_docs: "Docs & Ecosystem",
-        page_first: "« First",
-        page_prev: "‹ Prev",
-        page_next: "Next ›",
-        page_last: "Last »",
-        page_label: "Page:",
-        rows_label: "Rows:",
-        loading_table: "Loading table...",
-        table_columns_title: "Table Schema & Columns",
-        col_name: "Column Name",
-        col_type: "Data Type",
-        col_nullable: "Nullable",
-        col_actions: "Actions",
-        add_column_title: "Add Column",
-        new_col_name: "Column Name",
-        new_col_type: "Data Type",
-        new_col_default: "Default Value (Optional)",
-        btn_add_column: "Add Column",
-        sql_editor_title: "SQL & MergenQL Query Console",
-        btn_format: "Format",
-        btn_clear: "Clear",
-        templates_label: "Templates:",
-        ctrl_enter_hint: "Press Ctrl+Enter to execute query",
-        btn_run_query: "Run Query (Ctrl+Enter)",
-        search_fulltext_title: "Full-Text Substring Search",
-        search_fulltext_desc: "Performs rapid case-insensitive substring search across all string/text columns in the table.",
-        search_term_ph: "Search term...",
-        btn_search: "Search",
-        btn_reset: "Reset",
-        search_field_title: "Filter by Exact Column Values",
-        btn_filter: "Apply Filters",
-        insert_title: "Insert New Record",
-        insert_desc: "Fill in the field values according to table schema to append a new row into the active .mgdb table.",
-        btn_save_record: "Save Record",
-        export_title: "Export Table Data",
-        export_desc: "Stream and export columnar table data into standard portable file formats.",
-        btn_download_csv: "Download CSV",
-        btn_download_json: "Download JSON",
-        btn_download_jsonl: "Download JSONL",
-        btn_download_sql: "Download SQL",
-        import_title: "Import Data into MergenDB",
-        import_desc: "Ingest multi-megabyte CSV datasets or SQL dumps directly into compressed columnar storage with low memory overhead.",
-        import_format_label: "Source Format",
-        import_file_label: "Upload File",
-        import_paste_label: "Or Paste Content Directly",
-        btn_start_import: "Start Ingestion",
-        ops_rename_title: "Rename Table",
-        btn_rename: "Rename",
-        ops_truncate_title: "Truncate Table",
-        ops_truncate_desc: "Clears all rows from the table while preserving schema and column definitions.",
-        btn_truncate: "Truncate Table",
-        ops_drop_title: "Drop Table Permanently",
-        ops_drop_desc: "Permanently deletes the table and deletes the .mgdb file from disk. This action cannot be undone.",
-        btn_drop: "Drop Table",
-        server_diag_title: "System Diagnostics & Hardware Specifications",
-        btn_run_bench: "Run Live Speed Benchmark",
-        stat_cpu: "Processor (CPU)",
-        stat_ram: "System RAM",
-        stat_os: "Operating System",
-        stat_engine_ver: "Engine Version",
-        bench_measured_title: "Measured Throughput on this Hardware:",
-        bench_ingest: "Sequential Ingestion (Append)",
-        bench_import: "CSV / SQL Streaming Import",
-        bench_export: "Table Export",
-        bench_scan: "Analytical Column Scan",
-        bench_tier_label: "Performance Tier:",
-        bench_block_label: "Recommended Block Size:",
-        docs_title: "Supported Languages & Ecosystem Guides",
-        docs_desc: "MergenDB provides 100% feature support across Python, Node.js / TypeScript, Shell CLI, and REST API with zero external runtime dependencies.",
-        btn_copy: "Copy",
-        modal_new_table_title: "Create New Table",
-        modal_table_name: "Table Name",
-        modal_columns_label: "Columns & Types",
-        btn_add_field: "+ Add Column",
-        btn_cancel: "Cancel",
-        btn_create_table: "Create Table",
-        delete_btn: "Delete",
-        copy_json_btn: "Copy JSON",
-        rename_btn: "Rename",
-        confirm_delete_row: "Are you sure you want to delete this row?",
-        confirm_drop_col: "Are you sure you want to delete column",
-        confirm_truncate: "Are you sure you want to delete all rows from table",
-        confirm_drop_table: "Are you sure you want to permanently DELETE table",
-        copied_toast: "Copied to clipboard",
-        online_text: "Online"
-      },
-      de: {
-        active_table_label: "Aktive Tabelle:",
-        select_table_option: "(Tabelle auswählen)",
-        nav_server: "Server",
-        nav_docs: "Doku",
-        new_table_btn: "Neue Tabelle",
-        refresh_btn: "Aktualisieren",
-        filter_tables_ph: "Tabellen filtern...",
-        tab_browse: "Durchsuchen",
-        tab_structure: "Struktur",
-        tab_sql: "SQL",
-        tab_search: "Suchen",
-        tab_insert: "Einfügen",
-        tab_export: "Exportieren",
-        tab_import: "Importieren",
-        tab_operations: "Operationen",
-        tab_status: "Server & Benchmark",
-        tab_docs: "Doku & Ökosystem",
-        page_first: "« Erste",
-        page_prev: "‹ Zurück",
-        page_next: "Weiter ›",
-        page_last: "Letzte »",
-        page_label: "Seite:",
-        rows_label: "Zeilen:",
-        loading_table: "Tabelle wird geladen...",
-        table_columns_title: "Tabellenschema & Spalten",
-        col_name: "Spaltenname",
-        col_type: "Datentyp",
-        col_nullable: "Nullwert",
-        col_actions: "Aktionen",
-        add_column_title: "Spalte hinzufügen",
-        new_col_name: "Spaltenname",
-        new_col_type: "Datentyp",
-        new_col_default: "Standardwert (Optional)",
-        btn_add_column: "Spalte hinzufügen",
-        sql_editor_title: "SQL & MergenQL Abfrage-Konsole",
-        btn_format: "Formatieren",
-        btn_clear: "Löschen",
-        templates_label: "Vorlagen:",
-        ctrl_enter_hint: "Drücken Sie Strg+Enter zum Ausführen",
-        btn_run_query: "Abfrage ausführen (Strg+Enter)",
-        search_fulltext_title: "Volltext-Teilstringsuche",
-        search_fulltext_desc: "Führt eine schnelle Suche ohne Berücksichtigung der Groß-/Kleinschreibung über alle Textspalten durch.",
-        search_term_ph: "Suchbegriff...",
-        btn_search: "Suchen",
-        btn_reset: "Zurücksetzen",
-        search_field_title: "Nach exakten Spaltenwerten filtern",
-        btn_filter: "Filter anwenden",
-        insert_title: "Neuen Datensatz einfügen",
-        insert_desc: "Füllen Sie die Feldwerte gemäß dem Schema aus, um eine Zeile anzuhängen.",
-        btn_save_record: "Datensatz speichern",
-        export_title: "Tabellendaten exportieren",
-        export_desc: "Spaltenbasierte Tabellendaten in Standardformate exportieren.",
-        btn_download_csv: "CSV herunterladen",
-        btn_download_json: "JSON herunterladen",
-        btn_download_jsonl: "JSONL herunterladen",
-        btn_download_sql: "SQL herunterladen",
-        import_title: "Daten in MergenDB importieren",
-        import_desc: "Große CSV-Dateien oder SQL-Dumps direkt in spaltenbasierten Speicher laden.",
-        import_format_label: "Quellformat",
-        import_file_label: "Datei hochladen",
-        import_paste_label: "Oder Inhalt direkt einfügen",
-        btn_start_import: "Import starten",
-        ops_rename_title: "Tabelle umbenennen",
-        btn_rename: "Umbenennen",
-        ops_truncate_title: "Tabelle leeren (Truncate)",
-        ops_truncate_desc: "Löscht alle Zeilen, behält das Schema bei.",
-        btn_truncate: "Tabelle leeren",
-        ops_drop_title: "Tabelle dauerhaft löschen",
-        ops_drop_desc: "Löscht die Tabelle und die .mgdb-Datei unwiderruflich.",
-        btn_drop: "Tabelle löschen",
-        server_diag_title: "Systemdiagnose & Hardwarespezifikationen",
-        btn_run_bench: "Live-Benchmark starten",
-        stat_cpu: "Prozessor (CPU)",
-        stat_ram: "Arbeitsspeicher (RAM)",
-        stat_os: "Betriebssystem",
-        stat_engine_ver: "Engine-Version",
-        bench_measured_title: "Gemessener Durchsatz auf dieser Hardware:",
-        bench_ingest: "Sequentielles Schreiben (Append)",
-        bench_import: "CSV / SQL Streaming Import",
-        bench_export: "Tabellenexport",
-        bench_scan: "Analytischer Scan",
-        bench_tier_label: "Leistungsstufe:",
-        bench_block_label: "Empfohlene Blockgröße:",
-        docs_title: "Unterstützte Sprachen & Anleitungen",
-        docs_desc: "MergenDB bietet 100% Feature-Unterstützung für Python, Node.js / TypeScript, CLI und REST.",
-        btn_copy: "Kopieren",
-        modal_new_table_title: "Neue Tabelle erstellen",
-        modal_table_name: "Tabellenname",
-        modal_columns_label: "Spalten & Typen",
-        btn_add_field: "+ Spalte hinzufügen",
-        btn_cancel: "Abbrechen",
-        btn_create_table: "Tabelle erstellen",
-        delete_btn: "Löschen",
-        copy_json_btn: "JSON kopieren",
-        rename_btn: "Umbenennen",
-        confirm_delete_row: "Möchten Sie diese Zeile wirklich löschen?",
-        confirm_drop_col: "Möchten Sie die Spalte wirklich löschen",
-        confirm_truncate: "Möchten Sie wirklich alle Zeilen löschen aus Tabelle",
-        confirm_drop_table: "Möchten Sie die Tabelle wirklich dauerhaft LÖSCHEN",
-        copied_toast: "In die Zwischenablage kopiert",
-        online_text: "Online"
-      },
-      tr: {
-        active_table_label: "Aktif Tablo:",
-        select_table_option: "(Tablo Seçin)",
-        nav_server: "Sunucu",
-        nav_docs: "Kılavuz",
-        new_table_btn: "Yeni Tablo",
-        refresh_btn: "Yenile",
-        filter_tables_ph: "Tabloları filtrele...",
-        tab_browse: "Gözat",
-        tab_structure: "Yapı",
-        tab_sql: "SQL",
-        tab_search: "Ara",
-        tab_insert: "Ekle",
-        tab_export: "Dışa Aktar",
-        tab_import: "İçe Aktar",
-        tab_operations: "İşlemler",
-        tab_status: "Sunucu & Test",
-        tab_docs: "Kılavuz & Ekosistem",
-        page_first: "« İlk",
-        page_prev: "‹ Önceki",
-        page_next: "Sonraki ›",
-        page_last: "Son »",
-        page_label: "Sayfa:",
-        rows_label: "Satır:",
-        loading_table: "Tablo yükleniyor...",
-        table_columns_title: "Tablo Şeması & Sütunlar",
-        col_name: "Sütun Adı",
-        col_type: "Veri Tipi",
-        col_nullable: "Null Durumu",
-        col_actions: "İşlemler",
-        add_column_title: "Sütun Ekle",
-        new_col_name: "Sütun Adı",
-        new_col_type: "Veri Tipi",
-        new_col_default: "Varsayılan Değer (İsteğe Bağlı)",
-        btn_add_column: "Sütun Ekle",
-        sql_editor_title: "SQL & MergenQL Sorgu Konsolu",
-        btn_format: "Biçimlendir",
-        btn_clear: "Temizle",
-        templates_label: "Şablonlar:",
-        ctrl_enter_hint: "Çalıştırmak için Ctrl+Enter'a basın",
-        btn_run_query: "Sorguyu Çalıştır (Ctrl+Enter)",
-        search_fulltext_title: "Metin İçi Genel Arama",
-        search_fulltext_desc: "Tablodaki tüm metin sütunlarında büyük/küçük harf duyarsız hızlı arama yapar.",
-        search_term_ph: "Aranacak kelime...",
-        btn_search: "Ara",
-        btn_reset: "Sıfırla",
-        search_field_title: "Sütun Bazlı Filtreleme",
-        btn_filter: "Filtreleri Uygula",
-        insert_title: "Yeni Satır Ekle",
-        insert_desc: "Aktif .mgdb tablosuna satır eklemek için alanları doldurun.",
-        btn_save_record: "Kaydet",
-        export_title: "Tablo Verisini Dışa Aktar",
-        export_desc: "Sütun verisini standart taşınabilir dosya formatlarına aktarın.",
-        btn_download_csv: "CSV İndir",
-        btn_download_json: "JSON İndir",
-        btn_download_jsonl: "JSONL İndir",
-        btn_download_sql: "SQL İndir",
-        import_title: "Veri İçe Aktar",
-        import_desc: "CSV veya SQL dosyalarını sıkıştırılmış sütun formatına aktarın.",
-        import_format_label: "Kaynak Formatı",
-        import_file_label: "Dosya Yükle",
-        import_paste_label: "Veya Metni Doğrudan Yapıştırın",
-        btn_start_import: "İçe Aktarmayı Başlat",
-        ops_rename_title: "Tablo Adı Değiştir",
-        btn_rename: "Yeniden Adlandır",
-        ops_truncate_title: "Tabloyu Temizle (Truncate)",
-        ops_truncate_desc: "Şemayı koruyarak tablodaki tüm satırları siler.",
-        btn_truncate: "Tabloyu Temizle",
-        ops_drop_title: "Tabloyu Tamamen Sil (Drop)",
-        ops_drop_desc: "Tabloyu ve .mgdb dosyasını diskten kalıcı olarak siler.",
-        btn_drop: "Tabloyu Sil",
-        server_diag_title: "Sistem Tanılama & Donanım Özellikleri",
-        btn_run_bench: "Canlı Hız Testi Başlat",
-        stat_cpu: "İşlemci (CPU)",
-        stat_ram: "Sistem Belleği (RAM)",
-        stat_os: "İşletim Sistemi",
-        stat_engine_ver: "Motor Sürümü",
-        bench_measured_title: "Bu Cihaz Üzerinde Ölçülen Hızlar:",
-        bench_ingest: "Sıralı Veri Yazma (Append)",
-        bench_import: "CSV / SQL Akış İçe Aktarma",
-        bench_export: "Dışa Aktarma (Export)",
-        bench_scan: "Analitik Sütun Taraması",
-        bench_tier_label: "Performans Katmanı:",
-        bench_block_label: "Önerilen Blok Boyutu:",
-        docs_title: "Desteklenen Diller & Kılavuz",
-        docs_desc: "MergenDB, sıfır dış bağımlılıkla Python, Node.js / TypeScript, CLI ve REST üzerinde çalışır.",
-        btn_copy: "Kopyala",
-        modal_new_table_title: "Yeni Tablo Oluştur",
-        modal_table_name: "Tablo Adı",
-        modal_columns_label: "Sütunlar & Tipler",
-        btn_add_field: "+ Sütun Ekle",
-        btn_cancel: "İptal",
-        btn_create_table: "Tablo Oluştur",
-        delete_btn: "Sil",
-        copy_json_btn: "JSON Kopyala",
-        rename_btn: "Adlandır",
-        confirm_delete_row: "Bu satırı silmek istediğinize emin misiniz?",
-        confirm_drop_col: "Sütunu silmek istediğinize emin misiniz",
-        confirm_truncate: "Tablodaki tüm verileri silmek istediğinize emin misiniz",
-        confirm_drop_table: "Tabloyu kalıcı olarak SİLMEK istediğinize emin misiniz",
-        copied_toast: "Panoya kopyalandı",
-        online_text: "Çevrimiçi"
-      }
-    };
-
-    function t(key) {
-      const dict = I18N[currentLang] || I18N['en'];
-      return dict[key] || I18N['en'][key] || key;
-    }
-
-    function setLanguage(lang) {
-      currentLang = lang;
-      localStorage.setItem('mergendb_lang', lang);
-      document.getElementById('langSelect').value = lang;
-
-      // Translate all data-i18n attributes
-      document.querySelectorAll('[data-i18n]').forEach(el => {
-        const k = el.getAttribute('data-i18n');
-        el.textContent = t(k);
-      });
-
-      // Translate placeholders
-      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-        const k = el.getAttribute('data-i18n-placeholder');
-        el.placeholder = t(k);
-      });
-
-      // Update header status text
-      const stVer = document.getElementById('statVer') ? document.getElementById('statVer').textContent : 'v__MERGEN_VERSION__';
-      document.getElementById('headerStatusText').textContent = `${stVer} ${t('online_text')}`;
-
-      // Reload view if active table
-      if (activeTable) {
-        const activeTab = document.querySelector('.pma-tab.active');
-        if (activeTab && activeTab.dataset.tab === 'browse') loadBrowseData();
-      }
-    }
+    let currentGridRows = [];
+    let currentGridCols = [];
+    let databasesCache = [];
+    let tablesCache = [];
+    let expandedTables = new Set();
 
     // Progress Bar Indicator
     function startProgress() {
       const bar = document.getElementById('topProgressBar');
-      bar.style.display = 'block';
-      bar.style.width = '35%';
-      setTimeout(() => { if (bar.style.display === 'block') bar.style.width = '75%'; }, 100);
+      if (bar) {
+        bar.style.display = 'block';
+        bar.style.width = '35%';
+        setTimeout(() => { if (bar.style.display === 'block') bar.style.width = '75%'; }, 100);
+      }
+    }
+    function updateTopProgress(pct) {
+      const bar = document.getElementById('topProgressBar');
+      if (bar) {
+        bar.style.display = 'block';
+        bar.style.width = `${Math.min(100, Math.max(5, pct))}%`;
+      }
     }
     function endProgress() {
       const bar = document.getElementById('topProgressBar');
-      bar.style.width = '100%';
-      setTimeout(() => {
-        bar.style.display = 'none';
-        bar.style.width = '0%';
-      }, 150);
+      if (bar) {
+        bar.style.width = '100%';
+        setTimeout(() => {
+          bar.style.display = 'none';
+          bar.style.width = '0%';
+        }, 150);
+      }
     }
 
     // Toast
     function showToast(msg) {
       const toast = document.getElementById('toastNotification');
-      toast.textContent = msg;
-      toast.style.display = 'block';
-      setTimeout(() => { toast.style.display = 'none'; }, 2400);
+      if (toast) {
+        toast.textContent = msg;
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 2400);
+      }
     }
 
     // App Initialization
@@ -1593,12 +1350,15 @@ curl -X POST http://localhost:8765/import \
       await loadServerStatus();
 
       // Keyboard Shortcut: Ctrl+Enter to run SQL
-      document.getElementById('sqlQueryText').addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-          e.preventDefault();
-          executeSql();
-        }
-      });
+      const sqlEl = document.getElementById('sqlQueryText');
+      if (sqlEl) {
+        sqlEl.addEventListener('keydown', (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            executeSql();
+          }
+        });
+      }
     });
 
     // Tab Switching
@@ -1618,47 +1378,192 @@ curl -X POST http://localhost:8765/import \
       else if (tabId === 'status') loadServerStatus();
     }
 
-    // Load Tables List
+    // Load Databases and Hierarchical Tables Tree
     async function loadTables() {
       startProgress();
       try {
+        // 1. Fetch Databases
+        const dbRes = await fetch('/databases');
+        const dbData = await dbRes.json();
+        databasesCache = dbData.databases || [{ name: 'default', tables_count: 0, total_bytes: 0 }];
+        if (dbData.active_database && !activeDatabase) {
+          activeDatabase = dbData.active_database;
+        }
+
+        // Populate Database selectors
+        const dbSelect = document.getElementById('activeDbSelect');
+        if (dbSelect) {
+          dbSelect.innerHTML = databasesCache.map(d => `<option value="${d.name}" ${d.name === activeDatabase ? 'selected' : ''}>${d.name}</option>`).join('');
+        }
+        const modalDbSel = document.getElementById('modalTableDbSelect');
+        if (modalDbSel) {
+          modalDbSel.innerHTML = databasesCache.map(d => `<option value="${d.name}" ${d.name === activeDatabase ? 'selected' : ''}>${d.name}</option>`).join('');
+        }
+
+        // 2. Fetch Tables
         const res = await fetch('/tables');
         const data = await res.json();
-        const tables = data.tables || [];
+        tablesCache = data.tables || [];
 
-        // Render Sidebar
-        const listEl = document.getElementById('sidebarTableList');
-        listEl.innerHTML = tables.map(tbl => `
-          <div class="table-item ${tbl.table === activeTable ? 'active' : ''}" onclick="selectActiveTable('${tbl.table}')">
-            <span>${tbl.table.replace('.mgdb', '')}</span>
-            <span class="table-row-count">${(tbl.rows || 0).toLocaleString()}</span>
-          </div>
-        `).join('') || `<div style="padding: 12px; color: #888; text-align: center; font-size: 11px;">(No tables found)</div>`;
+        // Build Tree: Group by Database -> Root Tables -> Sub-tables
+        renderSidebarTree();
 
-        // Render Header Dropdown
-        const selectEl = document.getElementById('activeTableSelect');
-        const prevVal = activeTable || selectEl.value;
-        selectEl.innerHTML = `<option value="">${t('select_table_option')}</option>` +
-          tables.map(tbl => `<option value="${tbl.table}" ${tbl.table === prevVal ? 'selected' : ''}>${tbl.table}</option>`).join('');
+        // Populate Table Header Select
+        populateHeaderTableSelect();
+
+        // Populate Subtable Parent Select
+        populateSubtableParentSelect();
 
         // If no active table selected yet, select first available
-        if (!activeTable && tables.length > 0) {
-          selectActiveTable(tables[0].table);
+        if (!activeTable && tablesCache.length > 0) {
+          const firstInDb = tablesCache.find(t => t.database === activeDatabase) || tablesCache[0];
+          selectActiveTable(firstInDb.full_name || firstInDb.table, firstInDb.database);
         }
       } catch (err) {
-        console.error('Failed to load tables:', err);
+        console.error('Failed to load databases and tables:', err);
       } finally {
         endProgress();
       }
     }
 
-    function selectActiveTable(tableName) {
-      activeTable = tableName;
-      document.getElementById('activeTableSelect').value = tableName;
+    function renderSidebarTree() {
+      const listEl = document.getElementById('sidebarTableList');
+      if (!listEl) return;
 
-      document.querySelectorAll('.table-item').forEach(el => {
-        el.classList.toggle('active', el.textContent.includes(tableName.replace('.mgdb', '')));
+      const filterVal = (document.getElementById('sidebarFilter') ? document.getElementById('sidebarFilter').value : '').toLowerCase().trim();
+
+      // Group tables by database
+      const dbMap = {};
+      databasesCache.forEach(d => { dbMap[d.name] = []; });
+      if (!dbMap['default']) dbMap['default'] = [];
+
+      tablesCache.forEach(t => {
+        const db = t.database || 'default';
+        if (!dbMap[db]) dbMap[db] = [];
+        dbMap[db].push(t);
       });
+
+      let html = '';
+      for (const [dbName, tbls] of Object.entries(dbMap)) {
+        // Group tables and their subtables
+        const rootTables = tbls.filter(t => t.type !== 'subtable' && !t.parent);
+        const subTables = tbls.filter(t => t.type === 'subtable' || t.parent);
+
+        const isCurrentDb = (dbName === activeDatabase);
+
+        html += `
+          <div class="db-group-header" style="padding: 6px 8px; background: #e2e8f0; font-weight: 700; font-size: 11px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; cursor: pointer;" onclick="changeActiveDatabase('${dbName}')">
+            <span>[DB] <b>${escapeHtml(dbName)}</b></span>
+            <span style="font-size: 10px; background: #cbd5e1; padding: 1px 5px; border-radius: 3px;">${tbls.length} tbls</span>
+          </div>
+        `;
+
+        if (rootTables.length === 0 && subTables.length === 0) {
+          html += `<div style="padding: 6px 14px; font-size: 11px; color: #94a3b8; font-style: italic;">(No tables in database)</div>`;
+          continue;
+        }
+
+        rootTables.forEach(t => {
+          const tName = t.name || t.full_name || t.table.replace('.mgdb', '');
+          const fullPath = t.full_name || t.table;
+          const childSubs = subTables.filter(s => s.parent === tName || s.full_name.startsWith(tName + '.'));
+
+          const matchesFilter = !filterVal || tName.toLowerCase().includes(filterVal) || childSubs.some(s => s.name.toLowerCase().includes(filterVal));
+          if (!matchesFilter) return;
+
+          const isActive = (activeTable === fullPath || activeTable === t.table);
+          const hasChildren = childSubs.length > 0;
+          const isExpanded = expandedTables.has(fullPath) || hasChildren;
+
+          html += `
+            <div class="table-item ${isActive ? 'active' : ''}" style="padding-left: 12px; display: flex; justify-content: space-between; align-items: center;" onclick="selectActiveTable('${fullPath}', '${dbName}')">
+              <span style="display: flex; align-items: center; gap: 4px;">
+                ${hasChildren ? `<span onclick="event.stopPropagation(); toggleSubtableExpand('${fullPath}')" style="cursor: pointer; font-weight: bold; font-size: 10px; width: 12px;">${isExpanded ? '▼' : '►'}</span>` : '<span style="width: 12px;"></span>'}
+                <span style="font-size: 11px; font-weight: 600;">[TBL] ${escapeHtml(tName)}</span>
+              </span>
+              <span class="table-row-count">${(t.rows || 0).toLocaleString()}</span>
+            </div>
+          `;
+
+          // Render child sub-tables if expanded
+          if (hasChildren && isExpanded) {
+            childSubs.forEach(s => {
+              const sName = s.name || s.full_name.split('.').pop();
+              const sFullPath = s.full_name || s.table;
+              const isSubActive = (activeTable === sFullPath);
+
+              html += `
+                <div class="table-item ${isSubActive ? 'active' : ''}" style="padding-left: 28px; background: #f8fafc; border-left: 2px solid var(--pma-blue);" onclick="selectActiveTable('${sFullPath}', '${dbName}')">
+                  <span style="font-size: 11px; color: #475569;">↳ [SUB] <b>${escapeHtml(sName)}</b></span>
+                  <span class="table-row-count" style="background: #e0f2fe; color: #0284c7;">${(s.rows || 0).toLocaleString()}</span>
+                </div>
+              `;
+            });
+          }
+        });
+      }
+
+      listEl.innerHTML = html || `<div style="padding: 12px; color: #888; text-align: center; font-size: 11px;">(No matching tables)</div>`;
+    }
+
+    function toggleSubtableExpand(tblPath) {
+      if (expandedTables.has(tblPath)) {
+        expandedTables.delete(tblPath);
+      } else {
+        expandedTables.add(tblPath);
+      }
+      renderSidebarTree();
+    }
+
+    function populateHeaderTableSelect() {
+      const selectEl = document.getElementById('activeTableSelect');
+      if (!selectEl) return;
+      const prevVal = activeTable || selectEl.value;
+      selectEl.innerHTML = `<option value="">${t('select_table_option')}</option>` +
+        tablesCache.map(tbl => {
+          const val = tbl.full_name || tbl.table;
+          const label = tbl.type === 'subtable' ? `  ↳ ${tbl.full_name}` : tbl.full_name || tbl.table;
+          return `<option value="${val}" ${val === prevVal ? 'selected' : ''}>${label}</option>`;
+        }).join('');
+    }
+
+    function populateSubtableParentSelect() {
+      const sel = document.getElementById('modalSubtableParentSelect');
+      if (!sel) return;
+      const rootTables = tablesCache.filter(t => t.type !== 'subtable');
+      sel.innerHTML = rootTables.map(t => {
+        const val = t.full_name || t.table.replace('.mgdb', '');
+        return `<option value="${val}">${val} (${t.database || 'default'})</option>`;
+      }).join('');
+    }
+
+    function changeActiveDatabase(dbName) {
+      activeDatabase = dbName;
+      const dbSel = document.getElementById('activeDbSelect');
+      if (dbSel) dbSel.value = dbName;
+
+      // Select first table in this database if current active table is not in it
+      const inThisDb = tablesCache.filter(t => (t.database || 'default') === dbName);
+      if (inThisDb.length > 0) {
+        selectActiveTable(inThisDb[0].full_name || inThisDb[0].table, dbName);
+      } else {
+        activeTable = '';
+        renderSidebarTree();
+        populateHeaderTableSelect();
+        switchTab('browse');
+      }
+    }
+
+    function selectActiveTable(fullTableName, dbName) {
+      activeTable = fullTableName;
+      if (dbName) activeDatabase = dbName;
+
+      const selTable = document.getElementById('activeTableSelect');
+      if (selTable) selTable.value = fullTableName;
+      const selDb = document.getElementById('activeDbSelect');
+      if (selDb && dbName) selDb.value = dbName;
+
+      renderSidebarTree();
 
       currentPage = 1;
       const activeTab = document.querySelector('.pma-tab.active');
@@ -1667,28 +1572,194 @@ curl -X POST http://localhost:8765/import \
     }
 
     function changeActiveTable(val) {
-      if (val) selectActiveTable(val);
+      if (val) {
+        const tbl = tablesCache.find(t => (t.full_name === val || t.table === val));
+        selectActiveTable(val, tbl ? tbl.database : activeDatabase);
+      }
     }
 
     function filterTables() {
-      const q = document.getElementById('sidebarFilter').value.toLowerCase();
-      document.querySelectorAll('.table-item').forEach(el => {
-        const text = el.textContent.toLowerCase();
-        el.style.display = text.includes(q) ? 'flex' : 'none';
-      });
+      renderSidebarTree();
     }
 
-    // 1. Browse (Pagination & Sorting)
+    // Modal Control: New Database
+    function openNewDbModal() {
+      const el = document.getElementById('modalNewDb');
+      if (el) el.classList.add('active');
+    }
+    function closeNewDbModal() {
+      const el = document.getElementById('modalNewDb');
+      if (el) el.classList.remove('active');
+    }
+    async function submitCreateNewDb() {
+      const name = document.getElementById('modalDbNameInput').value.trim();
+      if (!name) return alert('Please enter database name');
+      startProgress();
+      try {
+        const res = await fetch('/database', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create', name: name })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Database '${name}' created`);
+          closeNewDbModal();
+          document.getElementById('modalDbNameInput').value = '';
+          activeDatabase = name;
+          await loadTables();
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (err) {
+        alert('Failed to create database: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // Modal Control: New Sub-table
+    function openNewSubtableModal() {
+      populateSubtableParentSelect();
+      const el = document.getElementById('modalNewSubtable');
+      if (el) el.classList.add('active');
+    }
+    function closeNewSubtableModal() {
+      const el = document.getElementById('modalNewSubtable');
+      if (el) el.classList.remove('active');
+    }
+    async function submitCreateNewSubtable() {
+      const parentTable = document.getElementById('modalSubtableParentSelect').value.trim();
+      const subName = document.getElementById('modalSubtableNameInput').value.trim();
+      if (!subName) return alert('Please enter sub-table name');
+
+      const colRows = document.querySelectorAll('#modalSubtableColumnsContainer > div');
+      const cols = [];
+      colRows.forEach(row => {
+        const name = row.querySelector('.col-name-input').value.trim();
+        const type = row.querySelector('.col-type-input').value;
+        if (name) cols.push({ name: name, type: type, nullable: true });
+      });
+      if (cols.length === 0) return alert('At least one column is required');
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'create_subtable',
+            parent_table: parentTable,
+            table: subName,
+            columns: cols,
+            database: activeDatabase
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message || 'Sub-table created');
+          closeNewSubtableModal();
+          document.getElementById('modalSubtableNameInput').value = '';
+          const fullSubPath = `${parentTable}.${subName}`;
+          expandedTables.add(parentTable);
+          await loadTables();
+          selectActiveTable(fullSubPath, activeDatabase);
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (err) {
+        alert('Failed to create sub-table: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // Modal Control: New Table
+    function openNewTableModal() {
+      const el = document.getElementById('modalNewTable');
+      if (el) el.classList.add('active');
+    }
+    function closeNewTableModal() {
+      const el = document.getElementById('modalNewTable');
+      if (el) el.classList.remove('active');
+    }
+    function addModalColumnRow(containerId = 'modalColumnsContainer') {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const row = document.createElement('div');
+      row.style.cssText = 'display: flex; gap: 8px; margin-bottom: 6px;';
+      row.innerHTML = `
+        <input type="text" class="form-control col-name-input" placeholder="col_name">
+        <select class="form-control col-type-input" style="width: 130px;">
+          <option value="INT">INT</option>
+          <option value="BIGINT">BIGINT</option>
+          <option value="TEXT" selected>TEXT</option>
+          <option value="FLOAT">FLOAT</option>
+          <option value="DOUBLE">DOUBLE</option>
+          <option value="BOOLEAN">BOOLEAN</option>
+          <option value="TIMESTAMP">TIMESTAMP</option>
+        </select>
+        <button type="button" class="btn-action" style="padding: 2px 6px; color: var(--pma-danger);" onclick="this.parentElement.remove()">X</button>
+      `;
+      container.appendChild(row);
+    }
+    async function submitCreateNewTable() {
+      const dbName = document.getElementById('modalTableDbSelect') ? document.getElementById('modalTableDbSelect').value : activeDatabase;
+      const tblName = document.getElementById('modalTableNameInput').value.trim();
+      if (!tblName) return alert('Please enter table name');
+
+      const colRows = document.querySelectorAll('#modalColumnsContainer > div');
+      const cols = [];
+      colRows.forEach(row => {
+        const name = row.querySelector('.col-name-input').value.trim();
+        const type = row.querySelector('.col-type-input').value;
+        if (name) cols.push({ name: name, type: type, nullable: true });
+      });
+      if (cols.length === 0) return alert('At least one column is required');
+
+      startProgress();
+      try {
+        const res = await fetch('/operation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'create_table',
+            table: tblName,
+            database: dbName,
+            columns: cols
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(data.message || 'Table created');
+          closeNewTableModal();
+          document.getElementById('modalTableNameInput').value = '';
+          activeDatabase = dbName;
+          await loadTables();
+          selectActiveTable(tblName, dbName);
+        } else {
+          alert('Error: ' + data.error);
+        }
+      } catch (err) {
+        alert('Failed to create table: ' + err.message);
+      } finally {
+        endProgress();
+      }
+    }
+
+    // 1. Browse (Pagination & Sorting with zero DOM memory leaks)
     async function loadBrowseData() {
+      const container = document.getElementById('browseGridContainer');
       if (!activeTable) {
-        document.getElementById('browseGridContainer').innerHTML = `<div style="padding: 24px; text-align: center; color: #888;">${t('select_table_option')}</div>`;
-        document.getElementById('browseInfoText').textContent = '-';
+        if (container) container.innerHTML = `<div style="padding: 24px; text-align: center; color: #888;">${t('select_table_option')}</div>`;
+        const info = document.getElementById('browseInfoText');
+        if (info) info.textContent = '-';
         return;
       }
 
       startProgress();
       try {
-        let url = `/table_data?table=${encodeURIComponent(activeTable)}&page=${currentPage}&limit=${pageLimit}`;
+        let url = `/table_data?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}&page=${currentPage}&limit=${pageLimit}`;
         if (sortColumn) {
           url += `&sort_col=${encodeURIComponent(sortColumn)}&sort_dir=${sortDirection}`;
         }
@@ -1697,7 +1768,7 @@ curl -X POST http://localhost:8765/import \
         const data = await res.json();
 
         if (data.error) {
-          document.getElementById('browseGridContainer').innerHTML = `<div style="padding: 16px; color: var(--pma-danger);">Error: ${data.error}</div>`;
+          if (container) container.innerHTML = `<div style="padding: 16px; color: var(--pma-danger);">Error: ${escapeHtml(data.error)}</div>`;
           return;
         }
 
@@ -1705,16 +1776,23 @@ curl -X POST http://localhost:8765/import \
         totalPages = Math.max(1, Math.ceil(totalRows / pageLimit));
         currentPage = data.page || 1;
 
-        document.getElementById('pageNumberInput').value = currentPage;
-        document.getElementById('pageTotalText').textContent = `/ ${totalPages.toLocaleString()}`;
-        document.getElementById('browseInfoText').textContent = `${totalRows.toLocaleString()} rows • ${totalPages.toLocaleString()} pages`;
+        const pageInput = document.getElementById('pageNumberInput');
+        if (pageInput) pageInput.value = currentPage;
+        const totalTxt = document.getElementById('pageTotalText');
+        if (totalTxt) totalTxt.textContent = `/ ${totalPages.toLocaleString()}`;
+        const infoTxt = document.getElementById('browseInfoText');
+        if (infoTxt) infoTxt.textContent = `${totalRows.toLocaleString()} rows • ${totalPages.toLocaleString()} pages`;
 
-        document.getElementById('btnFirst').disabled = (currentPage <= 1);
-        document.getElementById('btnPrev').disabled = (currentPage <= 1);
-        document.getElementById('btnNext').disabled = (currentPage >= totalPages);
-        document.getElementById('btnLast').disabled = (currentPage >= totalPages);
+        const bFirst = document.getElementById('btnFirst');
+        const bPrev = document.getElementById('btnPrev');
+        const bNext = document.getElementById('btnNext');
+        const bLast = document.getElementById('btnLast');
+        if (bFirst) bFirst.disabled = (currentPage <= 1);
+        if (bPrev) bPrev.disabled = (currentPage <= 1);
+        if (bNext) bNext.disabled = (currentPage >= totalPages);
+        if (bLast) bLast.disabled = (currentPage >= totalPages);
 
-        renderGrid(document.getElementById('browseGridContainer'), data.columns, data.rows, true);
+        renderGrid(container, data.columns, data.rows, true);
       } catch (err) {
         console.error('Failed to load table data:', err);
       } finally {
@@ -1725,7 +1803,7 @@ curl -X POST http://localhost:8765/import \
     function changePage(p) {
       if (p < 1) p = 1;
       if (p > totalPages) p = totalPages;
-      if (p === currentPage && document.getElementById('pageNumberInput').value == p) return;
+      if (p === currentPage && document.getElementById('pageNumberInput') && document.getElementById('pageNumberInput').value == p) return;
       currentPage = p;
       loadBrowseData();
     }
@@ -1741,11 +1819,18 @@ curl -X POST http://localhost:8765/import \
       loadBrowseData();
     }
 
+    // High performance grid rendering: NEVER stores serialized data in DOM dataset!
     function renderGrid(container, columns, rows, enableRowActions = false) {
+      if (!container) return;
       if (!rows || rows.length === 0) {
         container.innerHTML = `<div style="padding: 24px; text-align: center; color: #888;">(Empty table / Zero rows returned)</div>`;
+        currentGridRows = [];
+        currentGridCols = [];
         return;
       }
+
+      currentGridRows = rows;
+      currentGridCols = columns;
 
       let html = `<table class="pma-grid"><thead><tr>`;
       if (enableRowActions) {
@@ -1774,31 +1859,27 @@ curl -X POST http://localhost:8765/import \
 
       html += `</tbody></table>`;
       container.innerHTML = html;
-      container.dataset.cachedRows = JSON.stringify(rows);
-      container.dataset.cachedCols = JSON.stringify(columns);
     }
 
     function copyRowJson(idx) {
-      const container = document.getElementById('browseGridContainer');
-      const rows = JSON.parse(container.dataset.cachedRows || '[]');
-      const cols = JSON.parse(container.dataset.cachedCols || '[]');
-      if (rows[idx]) {
+      if (currentGridRows[idx]) {
         const obj = {};
-        cols.forEach((c, i) => { obj[c] = rows[idx][i]; });
+        currentGridCols.forEach((c, i) => { obj[c] = currentGridRows[idx][i]; });
         navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
         showToast(t('copied_toast'));
       }
     }
 
     async function deleteRow(colName, colVal) {
-      if (!confirm(`${t('confirm_delete_row')}\n(${colName} = ${colVal})`)) return;
+      if (!confirm(`${t('confirm_delete_row')}
+(${colName} = ${colVal})`)) return;
       startProgress();
       try {
         const whereClause = isNaN(colVal) ? `${colName} = '${colVal}'` : `${colName} = ${colVal}`;
         const res = await fetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ op: 'delete', table: activeTable, where: whereClause })
+          body: JSON.stringify({ op: 'delete', table: activeTable, database: activeDatabase, where: whereClause })
         });
         const data = await res.json();
         if (data.success) {
@@ -1819,29 +1900,33 @@ curl -X POST http://localhost:8765/import \
     async function loadStructureData() {
       if (!activeTable) return;
       startProgress();
-
       try {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}`);
+        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
         const data = await res.json();
         currentSchema = data.columns || [];
 
-        document.getElementById('structTableInfo').textContent = `${data.blocks_count || 0} blocks • ${(data.rows || 0).toLocaleString()} rows • ${formatBytes(data.bytes || 0)}`;
+        const structInfo = document.getElementById('structTableInfo');
+        if (structInfo) {
+          structInfo.textContent = `${data.blocks_count || 0} blocks • ${(data.rows || 0).toLocaleString()} rows • ${formatBytes(data.bytes || 0)}`;
+        }
 
         const tbody = document.getElementById('structureTableBody');
-        tbody.innerHTML = currentSchema.map((col, idx) => `
-          <tr>
-            <td><b>${idx + 1}</b></td>
-            <td><code style="font-weight: 700; color: var(--pma-blue);">${col.name}</code></td>
-            <td><span class="table-row-count" style="background:#e0f2fe; color:#0369a1; font-weight:600;">${col.type}</span></td>
-            <td>${col.nullable ? 'Yes' : 'No'}</td>
-            <td>
-              <button class="btn-action" style="padding: 2px 6px; font-size: 11px;" onclick="promptRenameColumn('${col.name}')">${t('rename_btn')}</button>
-              <button class="btn-action" style="padding: 2px 6px; font-size: 11px; color: var(--pma-danger);" onclick="handleDropColumn('${col.name}')">${t('delete_btn')}</button>
-            </td>
-          </tr>
-        `).join('');
+        if (tbody) {
+          tbody.innerHTML = currentSchema.map((col, idx) => `
+            <tr>
+              <td><b>${idx + 1}</b></td>
+              <td><code style="font-weight: 700; color: var(--pma-blue);">${col.name}</code></td>
+              <td><span class="table-row-count" style="background:#e0f2fe; color:#0369a1; font-weight:600;">${col.type}</span></td>
+              <td>${col.nullable ? 'Yes' : 'No'}</td>
+              <td>
+                <button class="btn-action" style="padding: 2px 6px; font-size: 11px;" onclick="promptRenameColumn('${col.name}')">${t('rename_btn')}</button>
+                <button class="btn-action" style="padding: 2px 6px; font-size: 11px; color: var(--pma-danger);" onclick="handleDropColumn('${col.name}')">${t('delete_btn')}</button>
+              </td>
+            </tr>
+          `).join('');
+        }
       } catch (err) {
-        console.error('Failed to load structure:', err);
+        console.error('Failed to load table schema:', err);
       } finally {
         endProgress();
       }
@@ -1851,10 +1936,9 @@ curl -X POST http://localhost:8765/import \
       const name = document.getElementById('newColName').value.trim();
       const type = document.getElementById('newColType').value;
       const defVal = document.getElementById('newColDefault').value.trim();
-
       if (!name) return alert('Please enter column name');
-      startProgress();
 
+      startProgress();
       try {
         const res = await fetch('/operation', {
           method: 'POST',
@@ -1862,6 +1946,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'add_column',
             table: activeTable,
+            database: activeDatabase,
             name: name,
             type: type,
             default: defVal || null
@@ -1896,6 +1981,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'rename_column',
             table: activeTable,
+            database: activeDatabase,
             old_name: oldName,
             new_name: newName
           })
@@ -1926,6 +2012,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'drop_column',
             table: activeTable,
+            database: activeDatabase,
             name: colName
           })
         });
@@ -1948,6 +2035,7 @@ curl -X POST http://localhost:8765/import \
     function insertSqlTemplate(type) {
       const tbl = activeTable || 'table.mgdb';
       const area = document.getElementById('sqlQueryText');
+      if (!area) return;
       if (type === 'select_all') area.value = `SELECT * FROM "${tbl}" LIMIT 50;`;
       else if (type === 'count') area.value = `SELECT COUNT(*) AS total_rows FROM "${tbl}";`;
       else if (type === 'where') area.value = `SELECT * FROM "${tbl}" WHERE id > 10 ORDER BY id DESC LIMIT 20;`;
@@ -1961,61 +2049,73 @@ curl -X POST http://localhost:8765/import \
 
     function formatSql() {
       const area = document.getElementById('sqlQueryText');
+      if (!area) return;
       let sql = area.value.trim();
       sql = sql.replace(/\s+/g, ' ');
       ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT', 'JOIN', 'INNER JOIN', 'LEFT JOIN', 'SET'].forEach(k => {
-        const re = new RegExp(`\\\\b${k}\\\\b`, 'gi');
-        sql = sql.replace(re, `\\n${k}`);
+        const re = new RegExp(`\\b${k}\\b`, 'gi');
+        sql = sql.replace(re, `\n${k}`);
       });
       area.value = sql.trim();
     }
 
     function clearSql() {
-      document.getElementById('sqlQueryText').value = '';
-      document.getElementById('queryStatsBox').style.display = 'none';
-      document.getElementById('queryGridContainer').innerHTML = '';
+      const area = document.getElementById('sqlQueryText');
+      if (area) area.value = '';
+      const stats = document.getElementById('queryStatsBox');
+      if (stats) stats.style.display = 'none';
+      const grid = document.getElementById('queryGridContainer');
+      if (grid) grid.innerHTML = '';
     }
 
     async function executeSql() {
-      const query = document.getElementById('sqlQueryText').value.trim();
+      const area = document.getElementById('sqlQueryText');
+      const query = area ? area.value.trim() : '';
       if (!query) return;
 
       startProgress();
       const statsBox = document.getElementById('queryStatsBox');
       const gridBox = document.getElementById('queryGridContainer');
-      statsBox.style.display = 'none';
-      gridBox.innerHTML = '';
+      if (statsBox) statsBox.style.display = 'none';
+      if (gridBox) gridBox.innerHTML = '';
 
       try {
         const res = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: query, active_table: activeTable })
+          body: JSON.stringify({ query: query, active_table: activeTable, database: activeDatabase })
         });
         const data = await res.json();
 
         if (data.success) {
           const stats = data.stats || {};
-          statsBox.style.display = 'block';
-          statsBox.innerHTML = `
-            <b>Execution Time:</b> ${stats.execution_time_ms} ms &nbsp;•&nbsp;
-            <b>Returned Rows:</b> ${data.row_count || 0} &nbsp;•&nbsp;
-            <b>Blocks Scanned:</b> ${stats.blocks_scanned || 0} &nbsp;•&nbsp;
-            <b>Blocks Pruned:</b> ${stats.blocks_skipped || 0} &nbsp;•&nbsp;
-            <b>Bytes Read:</b> ${formatBytes(stats.bytes_read || 0)}
-          `;
-
+          if (statsBox) {
+            statsBox.style.display = 'block';
+            statsBox.style.background = '#eef6fc';
+            statsBox.style.borderColor = '#bce0fd';
+            statsBox.innerHTML = `
+              <b>Execution Time:</b> ${stats.execution_time_ms} ms &nbsp;•&nbsp;
+              <b>Returned Rows:</b> ${data.row_count || 0} &nbsp;•&nbsp;
+              <b>Blocks Scanned:</b> ${stats.blocks_scanned || 0} &nbsp;•&nbsp;
+              <b>Blocks Pruned:</b> ${stats.blocks_skipped || 0} &nbsp;•&nbsp;
+              <b>Bytes Read:</b> ${formatBytes(stats.bytes_read || 0)}
+            `;
+          }
           renderGrid(gridBox, data.columns, data.rows, false);
           loadTables();
         } else {
-          statsBox.style.display = 'block';
-          statsBox.style.background = '#fef2f2';
-          statsBox.style.borderColor = '#fca5a5';
-          statsBox.innerHTML = `<span style="color: var(--pma-danger); font-weight:700;">Query Error:</span> ${escapeHtml(data.error || 'Execution failed')}`;
+          if (statsBox) {
+            statsBox.style.display = 'block';
+            statsBox.style.background = '#fef2f2';
+            statsBox.style.borderColor = '#fca5a5';
+            statsBox.innerHTML = `<span style="color: var(--pma-danger); font-weight:700;">Query Error:</span> ${escapeHtml(data.error || 'Execution failed')}`;
+          }
         }
       } catch (err) {
-        statsBox.style.display = 'block';
-        statsBox.innerHTML = `<span style="color: var(--pma-danger);">Execution error: ${err.message}</span>`;
+        if (statsBox) {
+          statsBox.style.display = 'block';
+          statsBox.innerHTML = `<span style="color: var(--pma-danger);">Execution error: ${err.message}</span>`;
+        }
       } finally {
         endProgress();
       }
@@ -2025,18 +2125,20 @@ curl -X POST http://localhost:8765/import \
     async function setupSearchTab() {
       if (!activeTable) return;
       if (currentSchema.length === 0) {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}`);
+        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
 
       const container = document.getElementById('fieldFilterContainer');
-      container.innerHTML = currentSchema.map(col => `
-        <div>
-          <label style="font-size: 11px; font-weight:600; color:#555;">${col.name} (${col.type})</label>
-          <input type="text" class="form-control field-search-input" data-col="${col.name}" placeholder="Value...">
-        </div>
-      `).join('');
+      if (container) {
+        container.innerHTML = currentSchema.map(col => `
+          <div>
+            <label style="font-size: 11px; font-weight:600; color:#555;">${col.name} (${col.type})</label>
+            <input type="text" class="form-control field-search-input" data-col="${col.name}" placeholder="Value...">
+          </div>
+        `).join('');
+      }
     }
 
     async function executeFullTextSearch() {
@@ -2052,7 +2154,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: sql, active_table: activeTable })
+          body: JSON.stringify({ query: sql, active_table: activeTable, database: activeDatabase })
         });
         const data = await res.json();
         renderGrid(document.getElementById('searchGridContainer'), data.columns, data.rows, false);
@@ -2083,7 +2185,7 @@ curl -X POST http://localhost:8765/import \
         const res = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: sql, active_table: activeTable })
+          body: JSON.stringify({ query: sql, active_table: activeTable, database: activeDatabase })
         });
         const data = await res.json();
         renderGrid(document.getElementById('searchGridContainer'), data.columns, data.rows, false);
@@ -2098,21 +2200,23 @@ curl -X POST http://localhost:8765/import \
     async function setupInsertForm() {
       if (!activeTable) return;
       if (currentSchema.length === 0) {
-        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}`);
+        const res = await fetch(`/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
 
       const container = document.getElementById('insertFieldsContainer');
-      container.innerHTML = currentSchema.map(col => `
-        <div class="form-group">
-          <label>${col.name} <span style="font-weight:normal; color:#888;">(${col.type})</span></label>
-          <input type="${col.type === 'INT' || col.type === 'BIGINT' ? 'number' : 'text'}" 
-                 class="form-control insert-field-input" 
-                 data-col="${col.name}" 
-                 placeholder="${col.nullable ? 'NULL' : 'Value required'}">
-        </div>
-      `).join('');
+      if (container) {
+        container.innerHTML = currentSchema.map(col => `
+          <div class="form-group">
+            <label>${col.name} <span style="font-weight:normal; color:#888;">(${col.type})</span></label>
+            <input type="${col.type === 'INT' || col.type === 'BIGINT' ? 'number' : 'text'}" 
+                   class="form-control insert-field-input" 
+                   data-col="${col.name}" 
+                   placeholder="${col.nullable ? 'NULL' : 'Value required'}">
+          </div>
+        `).join('');
+      }
     }
 
     async function handleInsertRecord() {
@@ -2137,6 +2241,7 @@ curl -X POST http://localhost:8765/import \
           body: JSON.stringify({
             op: 'insert',
             table: activeTable,
+            database: activeDatabase,
             records: [record]
           })
         });
@@ -2155,61 +2260,127 @@ curl -X POST http://localhost:8765/import \
       }
     }
 
-    // 6. Direct Downloads
+    // 6. Direct Chunked Streaming Downloads (Zero RAM / Zero GPU memory)
     function triggerDirectDownload(format) {
       if (!activeTable) return alert(t('select_table_option'));
-      window.location.href = `/export?table=${encodeURIComponent(activeTable)}&format=${format}`;
+      window.location.href = `/export?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}&format=${format}`;
     }
 
-    // 7. Import Handling
+    // 7. Streaming Import Handling (Zero V8 Memory Buffering, Real 0-100% Progress Bar)
     async function handleImportSubmit() {
       if (!activeTable) return alert(t('select_table_option'));
       const format = document.getElementById('importFormatSelect').value;
       const fileInput = document.getElementById('importFileInput');
-      const pasteContent = document.getElementById('importPasteContent').value;
+      const pasteContent = document.getElementById('importPasteContent').value.trim();
 
-      let contentToSend = pasteContent;
+      const progContainer = document.getElementById('importProgressContainer');
+      const progText = document.getElementById('importStatusText');
+      const progPct = document.getElementById('importPercentText');
+      const progFill = document.getElementById('importProgressBarFill');
+      const btnImport = document.getElementById('btnStartImport');
 
+      // Case A: File Selected -> Native Streaming via XMLHttpRequest (Zero V8 RAM / GPU impact)
       if (fileInput.files.length > 0) {
-        startProgress();
-        showToast('Reading file...');
         const file = fileInput.files[0];
-        contentToSend = await file.text();
-      }
-
-      if (!contentToSend || !contentToSend.trim()) {
-        return alert('Please select a file or paste content to import.');
-      }
-
-      startProgress();
-      try {
-        const res = await fetch('/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            table: activeTable,
-            format: format,
-            content: contentToSend
-          })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(data.message || 'Import completed');
-          fileInput.value = '';
-          document.getElementById('importPasteContent').value = '';
-          loadBrowseData();
-          loadTables();
-        } else {
-          alert('Import failed: ' + data.error);
+        if (progContainer) {
+          progContainer.style.display = 'block';
+          progFill.style.background = 'var(--pma-blue)';
+          progFill.style.width = '0%';
+          progText.textContent = `Streaming '${file.name}' to server...`;
+          progPct.textContent = '0%';
         }
-      } catch (err) {
-        alert('Import error: ' + err.message);
-      } finally {
-        endProgress();
+        if (btnImport) btnImport.disabled = true;
+        startProgress();
+
+        const xhr = new XMLHttpRequest();
+        const uploadUrl = `/import_stream?table=${encodeURIComponent(activeTable)}&format=${encodeURIComponent(format)}&database=${encodeURIComponent(activeDatabase)}`;
+        xhr.open('POST', uploadUrl);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            if (progPct) progPct.textContent = `${pct}% (${formatBytes(e.loaded)} / ${formatBytes(e.total)})`;
+            if (progFill) progFill.style.width = `${pct}%`;
+            updateTopProgress(pct);
+            if (pct >= 100 && progText) {
+              progText.textContent = 'Processing and indexing columnar blocks...';
+            }
+          }
+        };
+
+        xhr.onload = () => {
+          endProgress();
+          if (btnImport) btnImport.disabled = false;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            let res;
+            try { res = JSON.parse(xhr.responseText); } catch(e) { res = { rows_imported: 0, execution_time_ms: 0 }; }
+            if (progText) progText.textContent = `Completed! ${(res.rows_imported || 0).toLocaleString()} rows imported in ${res.execution_time_ms} ms.`;
+            if (progFill) {
+              progFill.style.width = '100%';
+              progFill.style.background = '#16a34a';
+            }
+            showToast(`Import successful: ${(res.rows_imported || 0).toLocaleString()} rows`);
+            fileInput.value = '';
+            setTimeout(() => { if (progContainer) progContainer.style.display = 'none'; }, 4000);
+            loadTables();
+            loadBrowseData();
+          } else {
+            if (progText) progText.textContent = 'Import failed';
+            if (progFill) progFill.style.background = '#dc2626';
+            alert('Import failed: ' + xhr.responseText);
+          }
+        };
+
+        xhr.onerror = () => {
+          endProgress();
+          if (btnImport) btnImport.disabled = false;
+          if (progText) progText.textContent = 'Network error during upload';
+          if (progFill) progFill.style.background = '#dc2626';
+          alert('Network connection error during streaming upload');
+        };
+
+        // Send raw file stream directly from disk to network: 0 MB memory overhead!
+        xhr.send(file);
+        return;
       }
+
+      // Case B: Pasted Text
+      if (pasteContent) {
+        startProgress();
+        if (btnImport) btnImport.disabled = true;
+        try {
+          const res = await fetch('/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              table: activeTable,
+              database: activeDatabase,
+              format: format,
+              content: pasteContent
+            })
+          });
+          const data = await res.json();
+          if (data.success) {
+            showToast(`Import completed: ${(data.rows_imported || 0).toLocaleString()} rows`);
+            document.getElementById('importPasteContent').value = '';
+            loadBrowseData();
+            loadTables();
+          } else {
+            alert('Import failed: ' + data.error);
+          }
+        } catch (err) {
+          alert('Import error: ' + err.message);
+        } finally {
+          endProgress();
+          if (btnImport) btnImport.disabled = false;
+        }
+        return;
+      }
+
+      alert('Please choose a file or paste content to import.');
     }
 
-    // 8. Operations (Rename, Truncate, Drop)
+        // 8. Operations (Rename, Truncate, Drop)
     async function handleRenameTable() {
       const newName = document.getElementById('renameTableInput').value.trim();
       if (!newName) return alert('Please enter new table name');

@@ -60,6 +60,196 @@ def _parse_set_clause(clause: str) -> Dict[str, Any]:
     return result
 
 
+def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_create: bool = False, base_dir: str = ".") -> str:
+    """
+    Resolves a logical table or sub-table identifier to its concrete on-disk .mgdb file path.
+    Supports:
+    - Direct paths: "sensors.mgdb", "okul/ogretmenler.mgdb"
+    - Dot notation: "okul.ogretmenler", "okul.ogrenciler.a_sinifi"
+    - Database-scoped names: "ogretmenler", "ogrenciler.a_sinifi" (when active_db="okul")
+    """
+    raw = str(table_name).strip().strip("'\"`")
+    if not raw:
+        return raw
+
+    # 1. Exact existing file match
+    if os.path.isfile(raw):
+        return os.path.normpath(raw)
+    if os.path.isfile(raw + ".mgdb"):
+        return os.path.normpath(raw + ".mgdb")
+
+    # 2. Dot notation: e.g. "okul.ogretmenler" or "okul.ogrenciler.a_sinifi"
+    if "." in raw and not raw.endswith(".mgdb"):
+        parts = raw.split(".")
+        # Possibility A: Root relative dot notation
+        candidate_root = os.path.join(base_dir, *parts) + ".mgdb"
+        if os.path.exists(candidate_root) or os.path.isdir(os.path.join(base_dir, parts[0])):
+            return os.path.normpath(candidate_root)
+
+        # Possibility B: Inside active_db
+        if active_db and active_db != "default":
+            p_parts = parts[1:] if parts[0] == active_db else parts
+            candidate_active = os.path.join(base_dir, active_db, *p_parts) + ".mgdb"
+            if os.path.exists(candidate_active) or for_create:
+                return os.path.normpath(candidate_active)
+
+        return os.path.normpath(candidate_root)
+
+    # 3. Simple name without dots, e.g. "ogretmenler"
+    clean_name = raw[:-5] if raw.endswith(".mgdb") else raw
+    if active_db and active_db != "default":
+        active_path = os.path.join(base_dir, active_db, f"{clean_name}.mgdb")
+        if os.path.exists(active_path) or for_create:
+            return os.path.normpath(active_path)
+
+    # 4. Fallback in root/default
+    root_path = os.path.join(base_dir, f"{clean_name}.mgdb")
+    if os.path.exists(root_path):
+        return os.path.normpath(root_path)
+
+    if active_db and active_db != "default":
+        return os.path.normpath(os.path.join(base_dir, active_db, f"{clean_name}.mgdb"))
+
+    return os.path.normpath(root_path)
+
+
+def scan_tables_in_dir(dir_path: str, db_name: str = "default") -> List[Dict[str, Any]]:
+    """Recursively scans a directory for all .mgdb tables and nested sub-tables."""
+    if not os.path.exists(dir_path) or not os.path.isdir(dir_path):
+        return []
+
+    tables_map: Dict[str, Dict[str, Any]] = {}
+    dir_path = os.path.abspath(dir_path)
+
+    for root, dirs, files in os.walk(dir_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ('node_modules', '__pycache__', 'dist', 'build', '.git', '.gemini', 'venv')]
+        rel_root = os.path.relpath(root, dir_path)
+        if rel_root == ".":
+            parent_parts = []
+        else:
+            parent_parts = rel_root.replace("\\", "/").split("/")
+
+        for f in files:
+            if not f.endswith(".mgdb"):
+                continue
+            f_path = os.path.join(root, f)
+            t_name = f[:-5]
+            if parent_parts:
+                full_name = ".".join(parent_parts + [t_name])
+                parent_table = ".".join(parent_parts)
+                table_type = "subtable"
+            else:
+                full_name = t_name
+                parent_table = None
+                table_type = "table"
+
+            rows = 0
+            cols = []
+            blocks_cnt = 0
+            sz = 0
+            try:
+                sz = os.path.getsize(f_path)
+                with FileReader(f_path) as reader:
+                    rows = reader.total_rows
+                    blocks_cnt = len(reader.blocks)
+                    for c in reader.schema.columns:
+                        cols.append({
+                            "name": c.name,
+                            "type": c.data_type.name,
+                            "nullable": getattr(c, "nullable", True)
+                        })
+            except Exception:
+                pass
+
+            tables_map[full_name] = {
+                "name": t_name,
+                "table": f"{t_name}.mgdb" if table_type == "table" else f"{full_name}.mgdb",
+                "full_name": full_name,
+                "database": db_name,
+                "path": os.path.normpath(f_path),
+                "type": table_type,
+                "parent": parent_table,
+                "rows": rows,
+                "bytes": sz,
+                "blocks": blocks_cnt,
+                "columns": [c["name"] for c in cols],
+                "schema": cols,
+                "subtables": []
+            }
+
+    # Link subtables into parent entries
+    for full_name, info in list(tables_map.items()):
+        parent = info.get("parent")
+        if parent:
+            if parent in tables_map:
+                if info["name"] not in tables_map[parent]["subtables"]:
+                    tables_map[parent]["subtables"].append(info["name"])
+            else:
+                parent_path = os.path.join(dir_path, *parent.split("."))
+                tables_map[parent] = {
+                    "name": parent.split(".")[-1],
+                    "full_name": parent,
+                    "database": db_name,
+                    "path": os.path.normpath(parent_path),
+                    "type": "collection",
+                    "parent": ".".join(parent.split(".")[:-1]) if "." in parent else None,
+                    "rows": 0,
+                    "bytes": 0,
+                    "blocks": 0,
+                    "columns": [],
+                    "schema": [],
+                    "subtables": [info["name"]]
+                }
+
+    return sorted(tables_map.values(), key=lambda t: t["full_name"])
+
+
+def list_databases(base_dir: str = ".") -> List[Dict[str, Any]]:
+    """Discovers all databases (subdirectories and root default) in the workspace."""
+    base_dir = os.path.abspath(base_dir)
+    databases = []
+    ignored = {
+        'node_modules', '__pycache__', 'dist', 'build', '.git', '.gemini',
+        'mergendb.egg-info', 'venv', 'docs', 'sdks', 'mergendb', 'tests', 'scratch'
+    }
+
+    # 1. Default database (root *.mgdb files)
+    try:
+        root_mgdbs = [f for f in os.listdir(base_dir) if f.endswith(".mgdb") and os.path.isfile(os.path.join(base_dir, f))]
+        root_total_bytes = sum(os.path.getsize(os.path.join(base_dir, f)) for f in root_mgdbs)
+    except Exception:
+        root_mgdbs = []
+        root_total_bytes = 0
+
+    databases.append({
+        "name": "default",
+        "path": base_dir,
+        "tables_count": len(root_mgdbs),
+        "total_bytes": root_total_bytes
+    })
+
+    # 2. Subdirectory databases
+    try:
+        entries = sorted(os.listdir(base_dir))
+    except Exception:
+        entries = []
+
+    for entry in entries:
+        full_entry = os.path.join(base_dir, entry)
+        if not os.path.isdir(full_entry) or entry.startswith(".") or entry in ignored:
+            continue
+
+        db_tables = scan_tables_in_dir(full_entry, db_name=entry)
+        total_sz = sum(t["bytes"] for t in db_tables)
+        databases.append({
+            "name": entry,
+            "path": full_entry,
+            "tables_count": len([t for t in db_tables if t["type"] != "collection"]),
+            "total_bytes": total_sz
+        })
+
+    return databases
+
 
 class Table:
     """
@@ -106,6 +296,57 @@ class Table:
     def count(self) -> int:
         """Returns total row count."""
         return self.row_count
+
+    @property
+    def subtables_dir(self) -> str:
+        """Directory path where subtables of this table are located."""
+        base_path = self.filepath[:-5] if self.filepath.endswith(".mgdb") else self.filepath
+        return base_path
+
+    def create_subtable(self, name: str, schema: Union[Schema, List[ColumnDef]], block_size: int = 1024) -> 'Table':
+        """
+        Creates a nested sub-table under this table.
+        Example:
+            students = db.table("ogrenciler")
+            class_a = students.create_subtable("a_sinifi", schema)
+        """
+        if isinstance(schema, list):
+            schema = Schema(schema)
+        os.makedirs(self.subtables_dir, exist_ok=True)
+        sub_path = os.path.join(self.subtables_dir, f"{name}.mgdb")
+        return MergenDB.create_table(sub_path, schema, block_size=block_size)
+
+    def subtable(self, name: str) -> 'Table':
+        """Returns an existing nested sub-table."""
+        sub_path = os.path.join(self.subtables_dir, f"{name}.mgdb")
+        if not os.path.exists(sub_path) and os.path.exists(os.path.join(self.subtables_dir, name)):
+            return Table(os.path.join(self.subtables_dir, name))
+        return Table(sub_path)
+
+    def __getitem__(self, name: str) -> 'Table':
+        """Direct indexing for nested sub-tables: table['a_sinifi']."""
+        return self.subtable(name)
+
+    def subtables(self) -> List[str]:
+        """Returns list of sub-table names under this table."""
+        s_dir = self.subtables_dir
+        if not os.path.exists(s_dir) or not os.path.isdir(s_dir):
+            return []
+        res = []
+        for item in sorted(os.listdir(s_dir)):
+            if item.endswith(".mgdb"):
+                res.append(item[:-5])
+            elif os.path.isdir(os.path.join(s_dir, item)):
+                res.append(item)
+        return res
+
+    def list_subtables(self) -> List[Dict[str, Any]]:
+        """Returns rich metadata list for all sub-tables."""
+        s_dir = self.subtables_dir
+        if not os.path.exists(s_dir) or not os.path.isdir(s_dir):
+            return []
+        db_name = os.path.basename(os.path.dirname(os.path.abspath(self.filepath)))
+        return scan_tables_in_dir(s_dir, db_name=db_name)
 
     def insert(self, data: Union[Dict[str, Any], List[Dict[str, Any]], List[List[Any]]], block_size: int = 1024):
         """
@@ -650,30 +891,124 @@ class Table:
                     f.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
 
 
+class Database:
+    """
+    Represents a MergenDB Database container.
+    Stores and manages multiple tables and nested sub-tables within a directory.
+    """
+
+    def __init__(self, name_or_path: str = "default", base_dir: Optional[str] = None):
+        name_str = str(name_or_path).strip().strip("'\"`")
+        if name_str in ("", ".", "default"):
+            self.name = "default"
+            self.path = os.path.abspath(base_dir or ".")
+        else:
+            self.name = os.path.basename(name_str)
+            if base_dir:
+                self.path = os.path.abspath(os.path.join(base_dir, name_str))
+            else:
+                self.path = os.path.abspath(name_str)
+
+        if self.name != "default" and not os.path.exists(self.path):
+            os.makedirs(self.path, exist_ok=True)
+
+    @classmethod
+    def create(cls, name: str, base_dir: Optional[str] = None) -> 'Database':
+        """Creates a new database directory on disk."""
+        db = cls(name, base_dir=base_dir)
+        os.makedirs(db.path, exist_ok=True)
+        return db
+
+    def table_path(self, table_name: str) -> str:
+        """Resolves table or subtable file path inside this database."""
+        return resolve_table_path(table_name, active_db=self.name, base_dir=os.path.dirname(self.path) if self.name != "default" else self.path)
+
+    def create_table(self, name: str, schema: Union[Schema, List[ColumnDef]], block_size: int = 1024) -> Table:
+        """Creates a table or nested sub-table inside this database."""
+        if isinstance(schema, list):
+            schema = Schema(schema)
+        path = resolve_table_path(name, active_db=self.name, for_create=True, base_dir=os.path.dirname(self.path) if self.name != "default" else self.path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return MergenDB.create_table(path, schema, block_size=block_size)
+
+    def table(self, name: str) -> Table:
+        """Opens an existing table or sub-table in this database."""
+        path = resolve_table_path(name, active_db=self.name, base_dir=os.path.dirname(self.path) if self.name != "default" else self.path)
+        return Table(path)
+
+    def __getitem__(self, name: str) -> Table:
+        return self.table(name)
+
+    def list_tables(self) -> List[Dict[str, Any]]:
+        """Lists all tables and nested sub-tables in this database."""
+        return scan_tables_in_dir(self.path, db_name=self.name)
+
+    def tables(self) -> List[str]:
+        """Returns flat list of table and sub-table names in this database."""
+        return [t["full_name"] for t in self.list_tables()]
+
+    def drop_table(self, name: str) -> bool:
+        """Drops a table and any of its nested sub-tables."""
+        path = self.table_path(name)
+        if os.path.exists(path):
+            os.remove(path)
+        sub_dir = path[:-5] if path.endswith(".mgdb") else path
+        if os.path.exists(sub_dir) and os.path.isdir(sub_dir):
+            import shutil
+            shutil.rmtree(sub_dir, ignore_errors=True)
+        return True
+
+    def truncate_table(self, name: str) -> int:
+        return self.table(name).truncate()
+
+    def sql(self, sql_query: str, show_progress: bool = False) -> QueryResult:
+        """Executes SQL in this database context."""
+        return MergenDB.query(sql_query, active_db=self.name, show_progress=show_progress)
+
+    def query(self, sql_or_pipeline: str, show_progress: bool = False) -> QueryResult:
+        return MergenDB.query(sql_or_pipeline, active_db=self.name, show_progress=show_progress)
+
+    def drop(self):
+        """Drops the entire database and all contained tables."""
+        if self.name != "default" and os.path.exists(self.path):
+            import shutil
+            shutil.rmtree(self.path, ignore_errors=True)
+
+    def __repr__(self) -> str:
+        count = len([t for t in self.list_tables() if t["type"] != "collection"])
+        return f"<MergenDB.Database '{self.name}' tables={count}>"
+
+    def __len__(self) -> int:
+        return len([t for t in self.list_tables() if t["type"] != "collection"])
+
+
 class MergenDB:
     """
     High-level entry point for database operations.
     """
+    active_database = "default"
 
     @staticmethod
-    def create_table(filepath: str, schema: Schema, block_size: int = 1024) -> Table:
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        with FileWriter(filepath, schema, block_size=block_size) as writer:
+    def create_table(filepath: str, schema: Schema, block_size: int = 1024, active_db: Optional[str] = None) -> Table:
+        resolved = resolve_table_path(filepath, active_db=active_db or getattr(MergenDB, "active_database", "default"), for_create=True)
+        parent = os.path.dirname(resolved)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        if os.path.exists(resolved):
+            os.remove(resolved)
+        with FileWriter(resolved, schema, block_size=block_size) as writer:
             pass # Creates empty valid .mgdb table with header & footer
-        return Table(filepath)
+        return Table(resolved)
 
     @staticmethod
-    def open_table(filepath: str) -> Table:
-        if not os.path.exists(filepath):
-            if os.path.exists(filepath + ".mgdb"):
-                filepath += ".mgdb"
-            else:
-                raise FileNotFoundError(f"File '{filepath}' not found.")
-        return Table(filepath)
+    def open_table(filepath: str, active_db: Optional[str] = None) -> Table:
+        resolved = resolve_table_path(filepath, active_db=active_db or getattr(MergenDB, "active_database", "default"))
+        if not os.path.exists(resolved):
+            raise FileNotFoundError(f"Table '{filepath}' (resolved to '{resolved}') not found.")
+        return Table(resolved)
 
     @staticmethod
-    def _convert_sql_to_pipeline(sql: str) -> str:
+    def _convert_sql_to_pipeline(sql: str, active_db: Optional[str] = None) -> str:
         sql = sql.strip().rstrip(";")
         pattern = (
             r"^\s*SELECT\s+(?P<select>.+?)\s+"
@@ -691,16 +1026,14 @@ class MergenDB:
 
         d = m.groupdict()
         tbl = d["from"].strip().strip("'\"`")
-        if not tbl.endswith(".mgdb") and not os.path.exists(tbl):
-            tbl += ".mgdb"
-        pipe = [f'FROM "{tbl}"']
+        resolved_tbl = resolve_table_path(tbl, active_db=active_db or getattr(MergenDB, "active_database", "default"))
+        pipe = [f'FROM "{resolved_tbl}"']
 
         if d.get("join_tbl") and d.get("join_on"):
             j_tbl = d["join_tbl"].strip().strip("'\"`")
-            if not j_tbl.endswith(".mgdb") and not os.path.exists(j_tbl):
-                j_tbl += ".mgdb"
+            resolved_j = resolve_table_path(j_tbl, active_db=active_db or getattr(MergenDB, "active_database", "default"))
             j_type = "LEFT" if (d.get("join_type") and "LEFT" in d["join_type"].upper()) else "INNER"
-            pipe.append(f'| {j_type} JOIN "{j_tbl}" ON {d["join_on"].strip()}')
+            pipe.append(f'| {j_type} JOIN "{resolved_j}" ON {d["join_on"].strip()}')
 
         if d.get("where"):
             pipe.append(f'| WHERE {d["where"].strip()}')
@@ -765,15 +1098,64 @@ class MergenDB:
         return "\n".join(pipe)
 
     @staticmethod
-    def query(sql_or_pipeline: str, show_progress: bool = False) -> QueryResult:
+    def query(sql_or_pipeline: str, active_db: Optional[str] = None, show_progress: bool = False) -> QueryResult:
         query_str = sql_or_pipeline.strip().rstrip(";")
         t0 = time.perf_counter()
+        act_db = active_db or getattr(MergenDB, "active_database", "default")
+
+        # 0.1 SHOW DATABASES
+        if re.match(r"^SHOW\s+DATABASES\b", query_str, re.IGNORECASE):
+            dbs = list_databases()
+            cols = ["Database", "Tables", "Disk_Bytes"]
+            rows = [[d["name"], d["tables_count"], d["total_bytes"]] for d in dbs]
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(cols, rows, ExecutionStats(0, 0, 0, 0, 0, len(rows), elapsed_ms))
+
+        # 0.2 CREATE DATABASE
+        cdb_m = re.match(r"^CREATE\s+DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
+        if cdb_m:
+            db_name = cdb_m.group(1).strip().strip("'\"`")
+            Database.create(db_name)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status", "database"], [["OK", db_name]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
+        # 0.3 DROP DATABASE
+        ddb_m = re.match(r"^DROP\s+DATABASE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
+        if ddb_m:
+            db_name = ddb_m.group(1).strip().strip("'\"`")
+            Database(db_name).drop()
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status", "database"], [["OK", db_name]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
+        # 0.4 USE <database>
+        use_m = re.match(r"^USE\s+([^\s;]+)$", query_str, re.IGNORECASE)
+        if use_m:
+            target = use_m.group(1).strip().strip("'\"`")
+            if target.endswith(".mgdb") or (os.path.isfile(target) and not os.path.isdir(target)):
+                MergenDB.active_database = "default"
+            else:
+                MergenDB.active_database = target
+                Database(target)
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(["status", "database"], [["OK", target]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
+
+        # 0.5 SHOW TABLES [FROM <database>]
+        st_m = re.match(r"^SHOW\s+TABLES(?:\s+FROM\s+([^\s;]+))?$", query_str, re.IGNORECASE)
+        if st_m:
+            target_db = st_m.group(1).strip().strip("'\"`") if st_m.group(1) else act_db
+            db_obj = Database(target_db)
+            tbl_list = db_obj.list_tables()
+            cols = ["Table", "Type", "Parent", "Rows", "Bytes"]
+            rows = [[t["full_name"], t["type"], t["parent"] or "NULL", t["rows"], t["bytes"]] for t in tbl_list]
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            return QueryResult(cols, rows, ExecutionStats(0, 0, 0, 0, 0, len(rows), elapsed_ms))
 
         # 1. UPDATE statement
         update_m = re.match(r"^UPDATE\s+([^\s]+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$", query_str, re.IGNORECASE | re.DOTALL)
         if update_m:
             tbl_name, set_str, where_clause = update_m.groups()
-            tbl = Table(tbl_name.strip().strip("'\"`"))
+            tbl_path = resolve_table_path(tbl_name, active_db=act_db)
+            tbl = Table(tbl_path)
             set_dict = _parse_set_clause(set_str)
             updated = tbl.update(set_dict, where=where_clause)
             elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -783,7 +1165,8 @@ class MergenDB:
         delete_m = re.match(r"^DELETE\s+(?:FROM\s+)?([^\s]+)(?:\s+WHERE\s+(.+))?$", query_str, re.IGNORECASE | re.DOTALL)
         if delete_m:
             tbl_name, where_clause = delete_m.groups()
-            tbl = Table(tbl_name.strip().strip("'\"`"))
+            tbl_path = resolve_table_path(tbl_name, active_db=act_db)
+            tbl = Table(tbl_path)
             deleted = tbl.delete(where=where_clause)
             elapsed_ms = (time.perf_counter() - t0) * 1000
             return QueryResult(["rows_affected"], [[deleted]], ExecutionStats(0, 0, 0, 0, 0, deleted, elapsed_ms))
@@ -792,7 +1175,8 @@ class MergenDB:
         alter_m = re.match(r"^ALTER\s+TABLE\s+([^\s]+)\s+(RENAME\s+COLUMN|DROP\s+COLUMN|ADD\s+COLUMN)\s+(.+)$", query_str, re.IGNORECASE | re.DOTALL)
         if alter_m:
             tbl_name, action, rest = alter_m.groups()
-            tbl = Table(tbl_name.strip().strip("'\"`"))
+            tbl_path = resolve_table_path(tbl_name, active_db=act_db)
+            tbl = Table(tbl_path)
             action_upper = action.upper()
             if "RENAME" in action_upper:
                 ren_m = re.match(r"^([^\s]+)\s+TO\s+([^\s]+)$", rest.strip(), re.IGNORECASE)
@@ -832,7 +1216,8 @@ class MergenDB:
         drop_m = re.match(r"^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
         if drop_m:
             tbl_name = drop_m.group(1).strip().strip("'\"`")
-            tbl = Table(tbl_name)
+            tbl_path = resolve_table_path(tbl_name, active_db=act_db)
+            tbl = Table(tbl_path)
             tbl.drop()
             elapsed_ms = (time.perf_counter() - t0) * 1000
             return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
@@ -841,7 +1226,8 @@ class MergenDB:
         trunc_m = re.match(r"^TRUNCATE\s+(?:TABLE\s+)?([^\s;]+)$", query_str, re.IGNORECASE)
         if trunc_m:
             tbl_name = trunc_m.group(1).strip().strip("'\"`")
-            tbl = Table(tbl_name)
+            tbl_path = resolve_table_path(tbl_name, active_db=act_db)
+            tbl = Table(tbl_path)
             cnt = tbl.truncate()
             elapsed_ms = (time.perf_counter() - t0) * 1000
             return QueryResult(["rows_affected"], [[cnt]], ExecutionStats(0, 0, 0, 0, 0, cnt, elapsed_ms))
@@ -850,13 +1236,15 @@ class MergenDB:
         ren_tbl_m = re.match(r"^RENAME\s+TABLE\s+([^\s]+)\s+TO\s+([^\s;]+)$", query_str, re.IGNORECASE)
         if ren_tbl_m:
             old_tbl, new_tbl = ren_tbl_m.groups()
-            tbl = Table(old_tbl.strip().strip("'\"`"))
-            tbl.rename(new_tbl.strip().strip("'\"`"))
+            old_path = resolve_table_path(old_tbl, active_db=act_db)
+            new_path = resolve_table_path(new_tbl, active_db=act_db, for_create=True)
+            tbl = Table(old_path)
+            tbl.rename(new_path)
             elapsed_ms = (time.perf_counter() - t0) * 1000
             return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, elapsed_ms))
 
         if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
-            query_str = MergenDB._convert_sql_to_pipeline(query_str)
+            query_str = MergenDB._convert_sql_to_pipeline(query_str, active_db=act_db)
 
         tokens = Lexer(query_str).tokenize()
         ast = Parser(tokens).parse()
@@ -865,10 +1253,12 @@ class MergenDB:
             return QueryEngine.execute(ast, show_progress=show_progress)
         elif isinstance(ast, CreateTableNode):
             schema = Schema(ast.columns)
-            MergenDB.create_table(ast.table_path, schema)
+            target_path = resolve_table_path(ast.table_path, active_db=act_db, for_create=True)
+            MergenDB.create_table(target_path, schema)
             return QueryResult(["status"], [["OK"]], ExecutionStats(0, 0, 0, 0, 0, 1, 0.0))
         elif isinstance(ast, InsertNode):
-            table = MergenDB.open_table(ast.table_path)
+            target_path = resolve_table_path(ast.table_path, active_db=act_db)
+            table = MergenDB.open_table(target_path)
             table.insert_many(ast.rows)
             return QueryResult(["rows_affected"], [[len(ast.rows)]], ExecutionStats(0, 0, 0, 0, 0, len(ast.rows), 0.0))
         else:
@@ -894,10 +1284,33 @@ class MergenDB:
 
 
 # High-Level Intuitive Aliases & Shortcuts
-Database = Table
-Connection = Table
-connect = Table
-open = Table
+Connection = Database
+
+def database(name: str = "default", base_dir: Optional[str] = None) -> Database:
+    """Gets or creates a Database container."""
+    return Database(name, base_dir=base_dir)
+
+def create_database(name: str, base_dir: Optional[str] = None) -> Database:
+    """Explicitly creates a new Database container."""
+    return Database.create(name, base_dir=base_dir)
+
+def drop_database(name: str, base_dir: Optional[str] = None):
+    """Deletes a database directory and all contained tables."""
+    Database(name, base_dir=base_dir).drop()
+
+def connect(target: str = "default", base_dir: Optional[str] = None) -> Union[Database, Table]:
+    """
+    Connects to a database or opens a table file.
+    If target ends with .mgdb or is an existing table file, returns Table.
+    Otherwise, returns Database instance.
+    """
+    target_str = str(target).strip()
+    if target_str.endswith(".mgdb") or (os.path.isfile(target_str) and not os.path.isdir(target_str)):
+        return Table(target_str)
+    return Database(target_str, base_dir=base_dir)
+
+def open(target: str = "default", base_dir: Optional[str] = None) -> Union[Database, Table]:
+    return connect(target, base_dir=base_dir)
 
 def query(sql_or_pipeline: str, show_progress: bool = False) -> QueryResult:
     return MergenDB.query(sql_or_pipeline, show_progress=show_progress)

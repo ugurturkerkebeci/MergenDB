@@ -12,11 +12,14 @@ import tempfile
 import re
 from typing import Optional, List, Dict, Any
 
-from mergendb.client import MergenDB, Table
+from mergendb.client import (
+    MergenDB, Table, Database, resolve_table_path, scan_tables_in_dir, list_databases
+)
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
+from mergendb.io.exporter import DataExporter
 
 class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
     """
@@ -51,6 +54,29 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(content)
+
+    def _send_response_streaming_download(self, filename: str, mime_type: str, chunk_generator):
+        """
+        Streams file download directly to client using HTTP chunked transfer.
+        Strict zero-RAM footprint (< 15 MB) regardless of table size.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", f"{mime_type}; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        for chunk in chunk_generator:
+            if chunk:
+                self.wfile.write(f"{len(chunk):X}\r\n".encode("ascii"))
+                self.wfile.write(chunk)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -134,43 +160,43 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json(200, res_obj)
             return
 
+        elif path == "/databases":
+            dbs = list_databases()
+            self._send_response_json(200, {
+                "databases": dbs,
+                "active_database": getattr(MergenDB, "active_database", "default")
+            })
+            return
+
         elif path == "/query":
             q = params.get("q", params.get("query", [""]))[0]
             tbl = params.get("table", params.get("active_table", [""]))[0]
-            self._execute_query(q, tbl)
+            db_name = params.get("database", [""])[0]
+            self._execute_query(q, tbl, db_name)
             return
 
         elif path == "/tables":
-            files = glob.glob("*.mgdb")
-            tables = []
-            for f in files:
-                try:
-                    sz = os.path.getsize(f)
-                    with FileReader(f) as reader:
-                        cols = []
-                        for c in reader.schema.columns:
-                            cols.append({
-                                "name": c.name,
-                                "type": c.data_type.name,
-                                "nullable": getattr(c, "nullable", True)
-                            })
-                        tables.append({
-                            "table": f,
-                            "rows": reader.total_rows,
-                            "blocks": len(reader.blocks),
-                            "bytes": sz,
-                            "columns": [c.name for c in reader.schema.columns],
-                            "schema": cols
-                        })
-                except Exception:
-                    pass
-            self._send_response_json(200, {"tables": tables})
+            db_name = params.get("database", [""])[0]
+            if db_name:
+                db_obj = Database(db_name)
+                tables = db_obj.list_tables()
+            else:
+                tables = []
+                for db_meta in list_databases():
+                    db_tables = scan_tables_in_dir(db_meta["path"], db_name=db_meta["name"])
+                    tables.extend(db_tables)
+            self._send_response_json(200, {
+                "tables": tables,
+                "active_database": getattr(MergenDB, "active_database", "default")
+            })
             return
 
         elif path == "/table_schema":
-            table_name = params.get("table", [""])[0]
+            raw_tbl = params.get("table", [""])[0]
+            db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
+            table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
-                self._send_response_json(404, {"error": f"Table '{table_name}' not found"})
+                self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
 
             try:
@@ -204,9 +230,11 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         elif path == "/table_data":
-            table_name = params.get("table", [""])[0]
+            raw_tbl = params.get("table", [""])[0]
+            db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
+            table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
-                self._send_response_json(404, {"error": f"Table '{table_name}' not found"})
+                self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
 
             try:
@@ -264,74 +292,34 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         elif path == "/export":
-            table_name = params.get("table", [""])[0]
+            raw_tbl = params.get("table", [""])[0]
             fmt = params.get("format", ["csv"])[0].lower()
+            db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
+            table_name = resolve_table_path(raw_tbl, active_db=db_name)
             if not table_name or not os.path.exists(table_name):
-                self._send_response_json(404, {"error": f"Table '{table_name}' not found"})
+                self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
 
             try:
                 base_name = os.path.splitext(os.path.basename(table_name))[0]
-                with FileReader(table_name) as reader:
-                    cols = [c.name for c in reader.schema.columns]
+                mime_map = {
+                    "csv": "text/csv",
+                    "json": "application/json",
+                    "jsonl": "application/x-ndjson",
+                    "sql": "application/sql"
+                }
+                if fmt not in mime_map:
+                    self._send_response_json(400, {"error": f"Unsupported export format '{fmt}'"})
+                    return
 
-                    if fmt == "csv":
-                        buf = io.StringIO()
-                        writer = csv.writer(buf)
-                        writer.writerow(cols)
-                        for batch, _ in reader.scan():
-                            b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
-                            for row in b_rows:
-                                writer.writerow(row)
-                        content = buf.getvalue().encode("utf-8")
-                        self._send_response_download(f"{base_name}.csv", content, "text/csv")
-                        return
-
-                    elif fmt in ("json", "jsonl"):
-                        if fmt == "jsonl":
-                            lines = []
-                            for batch, _ in reader.scan():
-                                b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
-                                for row in b_rows:
-                                    d = dict(zip(cols, row))
-                                    lines.append(json.dumps(d, default=str))
-                            content = ("\n".join(lines) + "\n").encode("utf-8")
-                            self._send_response_download(f"{base_name}.jsonl", content, "application/x-ndjson")
-                            return
-                        else:
-                            all_rows = []
-                            for batch, _ in reader.scan():
-                                b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
-                                for row in b_rows:
-                                    all_rows.append(dict(zip(cols, row)))
-                            content = json.dumps(all_rows, indent=2, default=str).encode("utf-8")
-                            self._send_response_download(f"{base_name}.json", content, "application/json")
-                            return
-
-                    elif fmt == "sql":
-                        lines = [f"-- MergenDB SQL Dump of table `{base_name}`", ""]
-                        col_str = ", ".join(f"`{c}`" for c in cols)
-                        for batch, _ in reader.scan():
-                            b_rows = [list(vals) for vals in zip(*(batch.columns[c] for c in cols))]
-                            for row in b_rows:
-                                vals = []
-                                for v in row:
-                                    if v is None:
-                                        vals.append("NULL")
-                                    elif isinstance(v, (int, float)):
-                                        vals.append(str(v))
-                                    else:
-                                        escaped = str(v).replace("'", "''")
-                                        vals.append(f"'{escaped}'")
-                                lines.append(f"INSERT INTO `{base_name}` ({col_str}) VALUES ({', '.join(vals)});")
-                        content = "\n".join(lines).encode("utf-8")
-                        self._send_response_download(f"{base_name}.sql", content, "application/sql")
-                        return
-                    else:
-                        self._send_response_json(400, {"error": f"Unsupported export format '{fmt}'"})
+                mime_type = mime_map[fmt]
+                filename = f"{base_name}.{fmt}"
+                chunks = DataExporter.stream_chunks(table_name, fmt=fmt)
+                self._send_response_streaming_download(filename, mime_type, chunks)
+                return
             except Exception as e:
                 self._send_response_json(500, {"error": str(e)})
-            return
+                return
 
         elif path == "/help":
             self._send_response_json(200, {
@@ -353,9 +341,10 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_response_json(404, {"error": "Endpoint not found"})
 
-    def _execute_query(self, query_text: str, active_table: str = ""):
+    def _execute_query(self, query_text: str, active_table: str = "", active_database: str = ""):
         query_text = (query_text or "").strip()
         active_table = (active_table or "").strip()
+        act_db = active_database or getattr(MergenDB, "active_database", "default")
 
         if not query_text:
             self._send_response_json(400, {"success": False, "error": "Missing 'query' parameter"})
@@ -368,7 +357,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             t0 = time.perf_counter()
-            result = MergenDB.query(query_text)
+            result = MergenDB.query(query_text, active_db=act_db)
             elapsed_ms = (time.perf_counter() - t0) * 1000
 
             response = {
@@ -390,25 +379,131 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json(400, {"success": False, "error": str(e)})
 
     def do_POST(self):
-        path = self.path.split("?")[0].rstrip("/")
-
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = parsed_url.path.rstrip("/")
+        params = urllib.parse.parse_qs(parsed_url.query)
         content_length = int(self.headers.get("Content-Length", 0))
+
+        if path in ("/import_stream", "/import_file"):
+            raw_tbl = params.get("table", [""])[0]
+            fmt = params.get("format", ["csv"])[0].lower()
+            db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
+
+            if not raw_tbl:
+                self._send_response_json(400, {"error": "Missing 'table' parameter"})
+                return
+
+            target_table = resolve_table_path(raw_tbl, active_db=db_name, for_create=True)
+            t0 = time.perf_counter()
+
+            # Stream direct from socket to temp file in 64KB chunks (strictly bounded RAM)
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{fmt}")
+            bytes_left = content_length
+            chunk_size = 64 * 1024
+            try:
+                while bytes_left > 0:
+                    n = min(chunk_size, bytes_left)
+                    chunk = self.rfile.read(n)
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+                    bytes_left -= len(chunk)
+            finally:
+                tmp.close()
+
+            source_file = tmp.name
+            try:
+                if fmt == "csv":
+                    total_imported = DataImporter.from_csv(source_file, target_table)
+                elif fmt == "sql":
+                    total_imported = DataImporter.from_sql_dump(source_file, target_table)
+                elif fmt in ("json", "jsonl"):
+                    total_imported = 0
+                    tbl = Table(target_table)
+                    with open(source_file, "r", encoding="utf-8", errors="replace") as jf:
+                        first_char = jf.read(1)
+                        jf.seek(0)
+                        if first_char == "[":
+                            data_arr = json.load(jf)
+                            if isinstance(data_arr, list):
+                                tbl.insert(data_arr)
+                                total_imported = len(data_arr)
+                        else:
+                            batch = []
+                            for line in jf:
+                                line = line.strip()
+                                if line:
+                                    batch.append(json.loads(line))
+                                    if len(batch) >= 1000:
+                                        tbl.insert(batch)
+                                        total_imported += len(batch)
+                                        batch = []
+                            if batch:
+                                tbl.insert(batch)
+                                total_imported += len(batch)
+                else:
+                    raise ValueError(f"Unsupported import format: {fmt}")
+
+                elapsed_ms = (time.perf_counter() - t0) * 1000
+                self._send_response_json(200, {
+                    "success": True,
+                    "table": target_table,
+                    "rows_imported": total_imported,
+                    "execution_time_ms": round(elapsed_ms, 2)
+                })
+            except Exception as e:
+                self._send_response_json(400, {"success": False, "error": str(e)})
+            finally:
+                if os.path.exists(source_file):
+                    try:
+                        os.remove(source_file)
+                    except Exception:
+                        pass
+            return
+
         post_data = self.rfile.read(content_length).decode("utf-8")
 
-        if path == "/query":
+        if path == "/database":
+            try:
+                payload = json.loads(post_data) if post_data else {}
+                action = payload.get("action", "create").lower()
+                name = payload.get("name", "").strip()
+                if not name:
+                    self._send_response_json(400, {"error": "Missing database 'name'"})
+                    return
+                if action == "create":
+                    Database.create(name)
+                    msg = f"Database '{name}' created."
+                elif action == "drop":
+                    Database(name).drop()
+                    msg = f"Database '{name}' dropped."
+                elif action == "use":
+                    MergenDB.active_database = name
+                    msg = f"Active database set to '{name}'."
+                else:
+                    self._send_response_json(400, {"error": f"Unknown database action: '{action}'"})
+                    return
+                self._send_response_json(200, {"success": True, "message": msg, "database": name})
+            except Exception as e:
+                self._send_response_json(400, {"error": str(e)})
+            return
+
+        elif path == "/query":
             try:
                 payload = json.loads(post_data) if post_data else {}
             except Exception:
                 payload = {}
             query_text = payload.get("query", payload.get("q", "")).strip()
             active_table = payload.get("active_table", payload.get("table", "")).strip()
-            self._execute_query(query_text, active_table)
+            active_db = payload.get("database", "").strip()
+            self._execute_query(query_text, active_table, active_db)
             return
 
         elif path == "/import":
             try:
                 payload = json.loads(post_data) if post_data else {}
                 target_table = payload.get("table", "").strip()
+                db_name = payload.get("database", "").strip() or getattr(MergenDB, "active_database", "default")
                 fmt = payload.get("format", "csv").lower()
                 content = payload.get("content", "")
                 filepath = payload.get("filepath", "").strip()
@@ -417,8 +512,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     self._send_response_json(400, {"error": "Missing 'table' in import request"})
                     return
 
-                if not target_table.endswith(".mgdb"):
-                    target_table += ".mgdb"
+                target_table = resolve_table_path(target_table, active_db=db_name, for_create=True)
 
                 t0 = time.perf_counter()
                 total_imported = 0
@@ -485,86 +579,39 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                 payload = json.loads(post_data) if post_data else {}
                 action = (payload.get("action") or payload.get("op") or "").lower()
                 target_table = (payload.get("table") or "").strip()
+                db_name = payload.get("database", "").strip() or getattr(MergenDB, "active_database", "default")
 
-                if not target_table and action != "list":
+                if action in ("create_database", "drop_database", "use_database"):
+                    d_name = payload.get("name", target_table).strip()
+                    if not d_name:
+                        self._send_response_json(400, {"error": "Missing database name"})
+                        return
+                    if action == "create_database":
+                        Database.create(d_name)
+                        msg = f"Database '{d_name}' created."
+                    elif action == "drop_database":
+                        Database(d_name).drop()
+                        msg = f"Database '{d_name}' dropped."
+                    elif action == "use_database":
+                        MergenDB.active_database = d_name
+                        msg = f"Active database set to '{d_name}'."
+                    self._send_response_json(200, {"success": True, "message": msg, "database": d_name})
+                    return
+
+                if not target_table and action not in ("create_table", "create_subtable", "list"):
                     self._send_response_json(400, {"error": "Missing 'table' in operation request"})
                     return
 
                 t0 = time.perf_counter()
 
-                if action == "truncate":
-                    tbl = Table(target_table)
-                    tbl.truncate()
-                    msg = f"Table '{target_table}' truncated successfully."
-
-                elif action == "drop":
-                    tbl = Table(target_table)
-                    tbl.drop()
-                    msg = f"Table '{target_table}' dropped successfully."
-
-                elif action == "rename":
-                    new_table = (payload.get("new_table") or payload.get("new_name") or "").strip()
-                    if not new_table:
-                        self._send_response_json(400, {"error": "Missing 'new_table' in rename request"})
-                        return
-                    tbl = Table(target_table)
-                    tbl.rename(new_table)
-                    msg = f"Table renamed to '{new_table}' successfully."
-
-                elif action == "add_column":
-                    col_name = payload.get("name", "").strip()
-                    col_type = payload.get("type", "STRING").strip().upper()
-                    default_val = payload.get("default", None)
-                    if not col_name:
-                        self._send_response_json(400, {"error": "Missing 'name' for new column"})
-                        return
-                    dtype = getattr(DataType, col_type, DataType.STRING)
-                    tbl = Table(target_table)
-                    tbl.add_column(col_name, dtype, default=default_val)
-                    msg = f"Column '{col_name}' ({col_type}) added successfully."
-
-                elif action == "drop_column":
-                    col_name = payload.get("name", "").strip()
-                    if not col_name:
-                        self._send_response_json(400, {"error": "Missing 'name' of column to drop"})
-                        return
-                    tbl = Table(target_table)
-                    tbl.drop_column(col_name)
-                    msg = f"Column '{col_name}' dropped successfully."
-
-                elif action == "rename_column":
-                    old_col = payload.get("old_name", "").strip()
-                    new_col = payload.get("new_name", "").strip()
-                    if not old_col or not new_col:
-                        self._send_response_json(400, {"error": "Missing old_name or new_name in rename_column"})
-                        return
-                    tbl = Table(target_table)
-                    tbl.rename_column(old_col, new_col)
-                    msg = f"Column '{old_col}' renamed to '{new_col}' successfully."
-
-                elif action == "insert":
-                    row_data = payload.get("row") or payload.get("data")
-                    if not row_data:
-                        self._send_response_json(400, {"error": "Missing 'row' data for insert"})
-                        return
-                    tbl = Table(target_table)
-                    if isinstance(row_data, dict):
-                        tbl.insert([row_data])
-                    elif isinstance(row_data, list):
-                        tbl.insert(row_data)
-                    msg = f"Inserted record into '{target_table}' successfully."
-
-                elif action in ("delete", "delete_row"):
-                    where_cond = payload.get("where", "").strip()
-                    if not where_cond:
-                        self._send_response_json(400, {"error": "Missing 'where' condition for delete"})
-                        return
-                    tbl = Table(target_table)
-                    del_count = tbl.delete(where=where_cond)
-                    msg = f"Deleted {del_count} row(s) from '{target_table}'."
-
-                elif action == "create_table":
+                if action in ("create_table", "create_subtable"):
                     cols_def = payload.get("columns", [])
+                    parent_table = payload.get("parent_table", "").strip()
+                    if parent_table and not target_table.startswith(parent_table + "."):
+                        table_ident = f"{parent_table}.{target_table}"
+                    else:
+                        table_ident = target_table
+
                     if not cols_def:
                         self._send_response_json(400, {"error": "At least one column definition is required"})
                         return
@@ -574,14 +621,86 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                         c_type = c.get("type", "STRING").upper()
                         dtype = getattr(DataType, c_type, DataType.STRING)
                         column_defs.append(ColumnDef(c_name, dtype))
-                    if not target_table.endswith(".mgdb"):
-                        target_table += ".mgdb"
-                    Table.create(target_table, Schema(column_defs))
-                    msg = f"Table '{target_table}' created successfully."
+
+                    resolved = resolve_table_path(table_ident, active_db=db_name, for_create=True)
+                    Table.create(resolved, Schema(column_defs))
+                    msg = f"Table '{table_ident}' created successfully."
 
                 else:
-                    self._send_response_json(400, {"error": f"Unknown operation action: '{action}'"})
-                    return
+                    resolved_table = resolve_table_path(target_table, active_db=db_name)
+                    if not os.path.exists(resolved_table) and action != "insert":
+                        self._send_response_json(404, {"error": f"Table '{target_table}' not found"})
+                        return
+
+                    tbl = Table(resolved_table)
+
+                    if action == "truncate":
+                        tbl.truncate()
+                        msg = f"Table '{target_table}' truncated successfully."
+
+                    elif action == "drop":
+                        tbl.drop()
+                        msg = f"Table '{target_table}' dropped successfully."
+
+                    elif action == "rename":
+                        new_table = (payload.get("new_table") or payload.get("new_name") or "").strip()
+                        if not new_table:
+                            self._send_response_json(400, {"error": "Missing 'new_table' in rename request"})
+                            return
+                        new_resolved = resolve_table_path(new_table, active_db=db_name, for_create=True)
+                        tbl.rename(new_resolved)
+                        msg = f"Table renamed to '{new_table}' successfully."
+
+                    elif action == "add_column":
+                        col_name = payload.get("name", "").strip()
+                        col_type = payload.get("type", "STRING").strip().upper()
+                        default_val = payload.get("default", None)
+                        if not col_name:
+                            self._send_response_json(400, {"error": "Missing 'name' for new column"})
+                            return
+                        dtype = getattr(DataType, col_type, DataType.STRING)
+                        tbl.add_column(col_name, dtype, default=default_val)
+                        msg = f"Column '{col_name}' ({col_type}) added successfully."
+
+                    elif action == "drop_column":
+                        col_name = payload.get("name", "").strip()
+                        if not col_name:
+                            self._send_response_json(400, {"error": "Missing 'name' of column to drop"})
+                            return
+                        tbl.drop_column(col_name)
+                        msg = f"Column '{col_name}' dropped successfully."
+
+                    elif action == "rename_column":
+                        old_col = payload.get("old_name", "").strip()
+                        new_col = payload.get("new_name", "").strip()
+                        if not old_col or not new_col:
+                            self._send_response_json(400, {"error": "Missing old_name or new_name in rename_column"})
+                            return
+                        tbl.rename_column(old_col, new_col)
+                        msg = f"Column '{old_col}' renamed to '{new_col}' successfully."
+
+                    elif action == "insert":
+                        row_data = payload.get("row") or payload.get("data")
+                        if not row_data:
+                            self._send_response_json(400, {"error": "Missing 'row' data for insert"})
+                            return
+                        if isinstance(row_data, dict):
+                            tbl.insert([row_data])
+                        elif isinstance(row_data, list):
+                            tbl.insert(row_data)
+                        msg = f"Inserted record into '{target_table}' successfully."
+
+                    elif action in ("delete", "delete_row"):
+                        where_cond = payload.get("where", "").strip()
+                        if not where_cond:
+                            self._send_response_json(400, {"error": "Missing 'where' condition for delete"})
+                            return
+                        del_count = tbl.delete(where=where_cond)
+                        msg = f"Deleted {del_count} row(s) from '{target_table}'."
+
+                    else:
+                        self._send_response_json(400, {"error": f"Unknown operation action: '{action}'"})
+                        return
 
                 elapsed_ms = (time.perf_counter() - t0) * 1000
                 self._send_response_json(200, {

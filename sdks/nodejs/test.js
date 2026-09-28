@@ -197,6 +197,61 @@ async function run() {
     }
     console.log('    [+] Table Data Export (JSON): PASS');
 
+    // 16b. Streaming Export to File & Streaming Import from File
+    const streamExportPath = path.join(TEST_DIR, 'streamed_sensors.csv');
+    await sensorTable.exportToFile(streamExportPath, 'csv');
+    if (!fs.existsSync(streamExportPath) || fs.statSync(streamExportPath).size === 0) {
+      throw new Error('exportToFile() failed or produced empty file');
+    }
+    console.log('    [+] Zero-Memory Streaming exportToFile(): PASS');
+
+    const streamImportTable = client.table('stream_imported.mgdb');
+    await client.createTable('stream_imported.mgdb', [
+      { name: 'id', type: 'INT64' },
+      { name: 'sensor', type: 'STRING' },
+      { name: 'temperature', type: 'FLOAT64' },
+      { name: 'active', type: 'BOOL' }
+    ]);
+    const streamImportRes = await streamImportTable.importFile(streamExportPath, 'csv');
+    if (!streamImportRes.success || streamImportRes.rows_imported !== 4) {
+      throw new Error(`importFile() failed: ${JSON.stringify(streamImportRes)}`);
+    }
+    console.log('    [+] Zero-Memory Streaming importFile(): PASS');
+    await streamImportTable.drop();
+
+    // 16c. Database & Sub-table Hierarchy Tests
+    console.log('[*] Testing Database container and sub-table hierarchy in Node.js...');
+    await client.createDatabase('okul_node');
+    const dbsList = await client.listDatabases();
+    if (!dbsList.some(d => d.name === 'okul_node')) {
+      throw new Error('Database okul_node not found in listDatabases()');
+    }
+    const okulDb = client.database('okul_node');
+    await okulDb.createTable('ogrenciler', [
+      { name: 'id', type: 'INT64' },
+      { name: 'name', type: 'STRING' }
+    ]);
+    const ogrencilerTable = okulDb.table('ogrenciler');
+    await ogrencilerTable.insert([
+      { id: 1, name: 'Ali' },
+      { id: 2, name: 'Veli' }
+    ]);
+    // Create nested sub-table: okul_node.ogrenciler.a_sinifi
+    await ogrencilerTable.createSubtable('a_sinifi', [
+      { name: 'student_id', type: 'INT64' },
+      { name: 'grade', type: 'STRING' }
+    ]);
+    const aSinifiTable = ogrencilerTable.subtable('a_sinifi');
+    await aSinifiTable.insert([
+      { student_id: 1, grade: 'A+' }
+    ]);
+    const aSinifiRows = await aSinifiTable.find();
+    if (aSinifiRows.length !== 1 || aSinifiRows[0].grade !== 'A+') {
+      throw new Error('Sub-table query failed');
+    }
+    console.log('    [+] Database & Nested Sub-table Hierarchy: PASS');
+    await okulDb.drop();
+
     // 17. Truncate Table
     await sensorTable.truncate();
     const countAfterTruncate = await sensorTable.count();
@@ -215,7 +270,7 @@ async function run() {
     console.log('    [+] Table Drop Operation: PASS');
 
     console.log('----------------------------------------------------------------');
-    console.log('   [SUCCESS] ALL 18 NODE.JS SDK TESTS PASSED WITH 0 ERRORS!');
+    console.log('   [SUCCESS] ALL NODE.JS SDK TESTS PASSED WITH 0 ERRORS!');
     console.log('================================================================');
   } finally {
     // Terminate server process cleanly
