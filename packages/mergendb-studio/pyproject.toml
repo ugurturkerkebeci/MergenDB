@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mergendb-studio"
+version = "0.6.10"
+description = "Official phpMyAdmin-style Web Management Dashboard extension for MergenDB"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Ugur Turker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+]
+dependencies = [
+    "mergendb>=0.6.10"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mergendb_studio*"]

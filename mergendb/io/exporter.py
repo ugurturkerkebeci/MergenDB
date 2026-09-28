@@ -10,6 +10,7 @@ import json
 import io
 from typing import Generator, Union, TextIO, BinaryIO, Optional
 from mergendb.storage.reader import FileReader
+from mergendb.storage.lock import TableLockManager
 from mergendb.core.types import DataType
 
 
@@ -36,7 +37,10 @@ class DataExporter:
 
         base_name = os.path.splitext(os.path.basename(table_path))[0]
 
-        with FileReader(table_path) as reader:
+        lock_ctx = TableLockManager.get_lock(table_path).read()
+        lock_ctx.__enter__()
+        reader = FileReader(table_path)
+        try:
             cols = [c.name for c in reader.schema.columns]
 
             if fmt == "csv":
@@ -135,6 +139,10 @@ class DataExporter:
 
             else:
                 raise ValueError(f"Unsupported export format: {fmt}")
+        finally:
+            reader.close()
+            lock_ctx.__exit__(None, None, None)
+
 
     @classmethod
     def to_file(

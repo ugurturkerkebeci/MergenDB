@@ -3,6 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple, Union
 from mergendb.storage.reader import FileReader, ScanStats, ColumnBatch
+from mergendb.storage.lock import TableLockManager
 from mergendb.core.schema import Schema
 from mergendb.core.types import DataType
 from mergendb.io.progress import ProgressBar
@@ -304,11 +305,14 @@ class QueryEngine:
     def execute(cls, plan: QueryPlan, show_progress: bool = False) -> QueryResult:
         start_time = time.perf_counter()
 
-        # Open storage reader
-        reader = FileReader(plan.table_source)
+        # Open storage reader with concurrent read lock
+        lock_ctx = TableLockManager.get_lock(plan.table_source).read()
+        lock_ctx.__enter__()
+        reader = None
         right_reader = None
 
         try:
+            reader = FileReader(plan.table_source)
             # Pre-coerce literals to column schema types for zero-overhead evaluation
             cls._coerce_expr_literals(plan.where_expr, reader.schema)
 
@@ -604,9 +608,11 @@ class QueryEngine:
                 collected_rows = collected_rows[:plan.limit]
 
         finally:
-            reader.close()
+            if reader is not None:
+                reader.close()
             if right_reader is not None:
                 right_reader.close()
+            lock_ctx.__exit__(None, None, None)
 
         end_time = time.perf_counter()
         exec_ms = (end_time - start_time) * 1000.0

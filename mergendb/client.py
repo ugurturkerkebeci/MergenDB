@@ -4,15 +4,18 @@ import csv
 import json
 import time
 import builtins
+import threading
 from typing import List, Dict, Any, Union, Optional
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType, cast_value
 from mergendb.storage.writer import FileWriter
 from mergendb.storage.reader import FileReader
+from mergendb.storage.lock import TableLockManager, safe_atomic_replace
 from mergendb.query.engine import QueryEngine, QueryResult, ExecutionStats, ExpressionEvaluator
 from mergendb.query.parser import Parser
 from mergendb.query.lexer import Lexer
 from mergendb.query.ast_nodes import QueryPlan, CreateTableNode, InsertNode
+
 
 
 def _parse_set_clause(clause: str) -> Dict[str, Any]:
@@ -481,20 +484,28 @@ class Table:
 
     def insert_many(self, rows: List[Any], block_size: int = 1024):
         """
-        Appends rows to the table with streaming block preservation.
+        Appends rows to the table with streaming block preservation and concurrency write lock.
         """
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' does not exist. Call create_table first.")
 
-        temp_path = self.filepath + ".tmp"
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            with FileWriter(temp_path, schema, block_size=block_size) as writer:
-                for batch, _ in reader.scan():
-                    writer.write_columns(batch.columns, batch.row_count)
-                writer.write_rows(rows)
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    with FileWriter(temp_path, schema, block_size=block_size) as writer:
+                        for batch, _ in reader.scan():
+                            writer.write_columns(batch.columns, batch.row_count)
+                        writer.write_rows(rows)
 
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
 
     def rename_column(self, old_name: str, new_name: str) -> "Table":
         """
@@ -503,28 +514,37 @@ class Table:
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
 
-        temp_path = self.filepath + ".tmp"
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            if not schema.has_column(old_name):
-                raise KeyError(f"Column '{old_name}' not found in table schema.")
-            if schema.has_column(new_name):
-                raise ValueError(f"Column '{new_name}' already exists in table schema.")
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    if not schema.has_column(old_name):
+                        raise KeyError(f"Column '{old_name}' not found in table schema.")
+                    if schema.has_column(new_name):
+                        raise ValueError(f"Column '{new_name}' already exists in table schema.")
 
-            new_columns = [
-                ColumnDef(new_name, c.data_type, c.nullable) if c.name == old_name else c
-                for c in schema.columns
-            ]
-            new_schema = Schema(new_columns)
+                    new_columns = [
+                        ColumnDef(new_name, c.data_type, c.nullable) if c.name == old_name else c
+                        for c in schema.columns
+                    ]
+                    new_schema = Schema(new_columns)
 
-            with FileWriter(temp_path, new_schema) as writer:
-                for batch, _ in reader.scan():
-                    cols = dict(batch.columns)
-                    cols[new_name] = cols.pop(old_name)
-                    writer.write_columns(cols, batch.row_count)
+                    with FileWriter(temp_path, new_schema) as writer:
+                        for batch, _ in reader.scan():
+                            cols = dict(batch.columns)
+                            cols[new_name] = cols.pop(old_name)
+                            writer.write_columns(cols, batch.row_count)
 
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return self
+
 
     def drop_column(self, column_name: str) -> "Table":
         """
@@ -533,24 +553,32 @@ class Table:
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
 
-        temp_path = self.filepath + ".tmp"
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            if not schema.has_column(column_name):
-                raise KeyError(f"Column '{column_name}' not found in table schema.")
-            if len(schema.columns) <= 1:
-                raise ValueError("Cannot drop the only column in the table.")
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    if not schema.has_column(column_name):
+                        raise KeyError(f"Column '{column_name}' not found in table schema.")
+                    if len(schema.columns) <= 1:
+                        raise ValueError("Cannot drop the only column in the table.")
 
-            new_columns = [c for c in schema.columns if c.name != column_name]
-            new_schema = Schema(new_columns)
+                    new_columns = [c for c in schema.columns if c.name != column_name]
+                    new_schema = Schema(new_columns)
 
-            with FileWriter(temp_path, new_schema) as writer:
-                for batch, _ in reader.scan():
-                    cols = dict(batch.columns)
-                    cols.pop(column_name, None)
-                    writer.write_columns(cols, batch.row_count)
+                    with FileWriter(temp_path, new_schema) as writer:
+                        for batch, _ in reader.scan():
+                            cols = dict(batch.columns)
+                            cols.pop(column_name, None)
+                            writer.write_columns(cols, batch.row_count)
 
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return self
 
     def add_column(self, column_name: str, data_type: Union[DataType, str], default: Any = None, nullable: bool = True) -> "Table":
@@ -583,24 +611,33 @@ class Table:
         else:
             dt = data_type
 
-        temp_path = self.filepath + ".tmp"
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            if schema.has_column(column_name):
-                raise ValueError(f"Column '{column_name}' already exists in table schema.")
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    if schema.has_column(column_name):
+                        raise ValueError(f"Column '{column_name}' already exists in table schema.")
 
-            new_columns = list(schema.columns) + [ColumnDef(column_name, dt, nullable)]
-            new_schema = Schema(new_columns)
-            cast_default = cast_value(default, dt)
+                    new_columns = list(schema.columns) + [ColumnDef(column_name, dt, nullable)]
+                    new_schema = Schema(new_columns)
+                    cast_default = cast_value(default, dt)
 
-            with FileWriter(temp_path, new_schema) as writer:
-                for batch, _ in reader.scan():
-                    cols = dict(batch.columns)
-                    cols[column_name] = [cast_default] * batch.row_count
-                    writer.write_columns(cols, batch.row_count)
+                    with FileWriter(temp_path, new_schema) as writer:
+                        for batch, _ in reader.scan():
+                            cols = dict(batch.columns)
+                            cols[column_name] = [cast_default] * batch.row_count
+                            writer.write_columns(cols, batch.row_count)
 
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return self
+
 
     def update(self, set_values: Dict[str, Any], where: Optional[str] = None) -> int:
         """
@@ -614,50 +651,57 @@ class Table:
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
 
-        temp_path = self.filepath + ".tmp"
-        updated_count = 0
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            updated_count = 0
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    col_map = {c.name: c for c in schema.columns}
+                    for col in set_values:
+                        if col not in col_map:
+                            raise KeyError(f"Column '{col}' does not exist in table schema.")
 
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            col_map = {c.name: c for c in schema.columns}
-            for col in set_values:
-                if col not in col_map:
-                    raise KeyError(f"Column '{col}' does not exist in table schema.")
+                    casted_updates = {
+                        col: cast_value(val, col_map[col].data_type)
+                        for col, val in set_values.items()
+                    }
 
-            casted_updates = {
-                col: cast_value(val, col_map[col].data_type)
-                for col, val in set_values.items()
-            }
+                    where_expr = None
+                    if where and where.strip():
+                        tokens = Lexer(where).tokenize()
+                        where_expr = Parser(tokens)._parse_expression()
+                        QueryEngine._coerce_expr_literals(where_expr, schema)
 
-            where_expr = None
-            if where and where.strip():
-                tokens = Lexer(where).tokenize()
-                where_expr = Parser(tokens)._parse_expression()
-                QueryEngine._coerce_expr_literals(where_expr, schema)
+                    with FileWriter(temp_path, schema) as writer:
+                        for batch, _ in reader.scan():
+                            cols = dict(batch.columns)
+                            count = batch.row_count
 
-            with FileWriter(temp_path, schema) as writer:
-                for batch, _ in reader.scan():
-                    cols = dict(batch.columns)
-                    count = batch.row_count
+                            if where_expr is not None:
+                                mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
+                                matches = [i for i, m in enumerate(mask) if m]
+                                if matches:
+                                    for col_name, new_val in casted_updates.items():
+                                        col_list = list(cols[col_name])
+                                        for idx in matches:
+                                            col_list[idx] = new_val
+                                        cols[col_name] = col_list
+                                    updated_count += len(matches)
+                            else:
+                                for col_name, new_val in casted_updates.items():
+                                    cols[col_name] = [new_val] * count
+                                updated_count += count
 
-                    if where_expr is not None:
-                        mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
-                        matches = [i for i, m in enumerate(mask) if m]
-                        if matches:
-                            for col_name, new_val in casted_updates.items():
-                                col_list = list(cols[col_name])
-                                for idx in matches:
-                                    col_list[idx] = new_val
-                                cols[col_name] = col_list
-                            updated_count += len(matches)
-                    else:
-                        for col_name, new_val in casted_updates.items():
-                            cols[col_name] = [new_val] * count
-                        updated_count += count
+                            writer.write_columns(cols, count)
 
-                    writer.write_columns(cols, count)
-
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return updated_count
 
     def delete(self, where: Optional[str] = None) -> int:
@@ -672,32 +716,39 @@ class Table:
         if where is None or not where.strip():
             return self.truncate()
 
-        temp_path = self.filepath + ".tmp"
-        deleted_count = 0
+        with TableLockManager.get_lock(self.filepath).write():
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            deleted_count = 0
+            try:
+                with FileReader(self.filepath) as reader:
+                    schema = reader.schema
+                    tokens = Lexer(where).tokenize()
+                    where_expr = Parser(tokens)._parse_expression()
+                    QueryEngine._coerce_expr_literals(where_expr, schema)
 
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            tokens = Lexer(where).tokenize()
-            where_expr = Parser(tokens)._parse_expression()
-            QueryEngine._coerce_expr_literals(where_expr, schema)
+                    with FileWriter(temp_path, schema) as writer:
+                        for batch, _ in reader.scan():
+                            cols = dict(batch.columns)
+                            count = batch.row_count
+                            mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
+                            match_count = sum(1 for m in mask if m)
 
-            with FileWriter(temp_path, schema) as writer:
-                for batch, _ in reader.scan():
-                    cols = dict(batch.columns)
-                    count = batch.row_count
-                    mask = ExpressionEvaluator.evaluate(where_expr, cols, count)
-                    match_count = sum(1 for m in mask if m)
+                            if match_count == 0:
+                                writer.write_columns(cols, count)
+                            elif match_count == count:
+                                deleted_count += match_count
+                            else:
+                                filtered = {c: [v for v, m in zip(vals, mask) if not m] for c, vals in cols.items()}
+                                deleted_count += match_count
+                                writer.write_columns(filtered, count - match_count)
 
-                    if match_count == 0:
-                        writer.write_columns(cols, count)
-                    elif match_count == count:
-                        deleted_count += match_count
-                    else:
-                        filtered = {c: [v for v, m in zip(vals, mask) if not m] for c, vals in cols.items()}
-                        deleted_count += match_count
-                        writer.write_columns(filtered, count - match_count)
-
-        os.replace(temp_path, self.filepath)
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return deleted_count
 
     def truncate(self) -> int:
@@ -707,15 +758,22 @@ class Table:
         """
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Table file '{self.filepath}' not found.")
-        with FileReader(self.filepath) as reader:
-            schema = reader.schema
-            total = reader.total_rows
+        with TableLockManager.get_lock(self.filepath).write():
+            with FileReader(self.filepath) as reader:
+                schema = reader.schema
+                total = reader.total_rows
 
-        temp_path = self.filepath + ".tmp"
-        with FileWriter(temp_path, schema) as writer:
-            pass
-
-        os.replace(temp_path, self.filepath)
+            temp_path = f"{self.filepath}.tmp_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}"
+            try:
+                with FileWriter(temp_path, schema) as writer:
+                    pass
+                safe_atomic_replace(temp_path, self.filepath)
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
         return total
 
     def drop(self) -> bool:
@@ -740,13 +798,15 @@ class Table:
         return self
 
     def query(self, pipeline: str, show_progress: bool = False) -> QueryResult:
-        """Runs a MergenQL pipeline query against this table."""
-        full_query = f'FROM "{self.filepath}"\n' + pipeline.strip()
-        tokens = Lexer(full_query).tokenize()
-        plan = Parser(tokens).parse()
-        if not isinstance(plan, QueryPlan):
-            raise ValueError("Expected a query pipeline")
-        return QueryEngine.execute(plan, show_progress=show_progress)
+        """Runs a MergenQL pipeline query against this table with non-blocking read lock."""
+        with TableLockManager.get_lock(self.filepath).read():
+            full_query = f'FROM "{self.filepath}"\n' + pipeline.strip()
+            tokens = Lexer(full_query).tokenize()
+            plan = Parser(tokens).parse()
+            if not isinstance(plan, QueryPlan):
+                raise ValueError("Expected a query pipeline")
+            return QueryEngine.execute(plan, show_progress=show_progress)
+
 
     def sql(self, query_str: str, show_progress: bool = False) -> QueryResult:
         """Executes a standard SQL query against this table."""
@@ -1369,6 +1429,19 @@ class MergenDB:
         from mergendb.io.importer import DataImporter
         DataImporter.from_csv(csv_path, output_mgdb_path, delimiter=delimiter, block_size=block_size)
         return Table(output_mgdb_path)
+
+    @staticmethod
+    def from_jsonl(jsonl_path: str, output_mgdb_path: str, block_size: int = 1024) -> Table:
+        from mergendb.io.importer import DataImporter
+        DataImporter.from_jsonl(jsonl_path, output_mgdb_path, block_size=block_size)
+        return Table(output_mgdb_path)
+
+    @staticmethod
+    def from_json(json_path: str, output_mgdb_path: str, block_size: int = 1024) -> Table:
+        from mergendb.io.importer import DataImporter
+        DataImporter.from_json(json_path, output_mgdb_path, block_size=block_size)
+        return Table(output_mgdb_path)
+
 
 
 # High-Level Intuitive Aliases & Shortcuts

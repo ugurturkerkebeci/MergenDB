@@ -33,21 +33,69 @@ TYPE_FIXED_SIZES = {
 def is_numeric(dtype: DataType) -> bool:
     return dtype in (DataType.INT32, DataType.INT64, DataType.FLOAT32, DataType.FLOAT64, DataType.TIMESTAMP)
 
-def cast_value(val: Any, dtype: DataType) -> Any:
-    """Safely cast a raw Python value to the expected type."""
+def cast_value(val: Any, dtype: DataType, safe: bool = True) -> Any:
+    """Safely cast a raw Python value to the expected type with zero crash tolerance."""
     if val is None:
         return None
     try:
-        if dtype == DataType.INT32 or dtype == DataType.INT64 or dtype == DataType.TIMESTAMP:
-            return int(val)
-        elif dtype == DataType.FLOAT32 or dtype == DataType.FLOAT64:
-            return float(val)
+        # Check dirty null tokens
+        if isinstance(val, str):
+            v_strip = val.strip()
+            v_upper = v_strip.upper()
+            if dtype != DataType.STRING:
+                if v_upper in ("", "NULL", "NONE", "N/A", "NA", "NAN", "\\N", "NIL", "-"):
+                    return None
+            else:
+                if v_upper in ("NULL", "\\N"):
+                    return None
+
+        if dtype in (DataType.INT32, DataType.INT64, DataType.TIMESTAMP):
+            if isinstance(val, (int, float)):
+                return int(val)
+            v_str = str(val).strip()
+            try:
+                return int(v_str)
+            except ValueError:
+                # Handle floats represented as strings like "42.0"
+                try:
+                    return int(float(v_str))
+                except (ValueError, OverflowError):
+                    if safe:
+                        return None
+                    raise
+
+        elif dtype in (DataType.FLOAT32, DataType.FLOAT64):
+            if isinstance(val, (int, float)):
+                return float(val)
+            v_str = str(val).strip()
+            try:
+                return float(v_str)
+            except (ValueError, OverflowError):
+                if safe:
+                    return None
+                raise
+
         elif dtype == DataType.BOOL:
             if isinstance(val, str):
-                return val.lower() in ("true", "1", "yes", "t")
+                v_clean = val.strip().lower()
+                if v_clean in ("true", "1", "yes", "t", "y", "on"):
+                    return True
+                if v_clean in ("false", "0", "no", "f", "n", "off"):
+                    return False
+                return False if safe else (len(v_clean) > 0)
             return bool(val)
+
         elif dtype == DataType.STRING:
+            if isinstance(val, (bytes, bytearray, memoryview)):
+                try:
+                    return bytes(val).decode("utf-8", errors="replace")
+                except Exception:
+                    return str(val)
             return str(val)
+
         return val
     except Exception as e:
+        if safe:
+            return None
         raise ValueError(f"Cannot cast value {repr(val)} to {dtype.name}: {e}")
+

@@ -12,7 +12,7 @@ def get_version():
             for line in f:
                 if line.startswith("__version__"):
                     return line.split("=")[1].strip().strip('"').strip("'")
-    return "0.6.8"
+    return "0.6.10"
 
 setup(
     name="mergendb",
@@ -42,6 +42,9 @@ setup(
         "Topic :: Database :: Database Engines/Servers",
     ],
     python_requires=">=3.8",
+    extras_require={
+        "studio": ["mergendb-studio>=0.6.10"],
+    },
     entry_points={
         "console_scripts": [
             "mergen=mergendb.cli.repl:main",

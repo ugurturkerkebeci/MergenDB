@@ -847,6 +847,11 @@ def main():
             from mergendb.server.server import start_server
             start_server(port=port)
             return
+        elif arg1 == "studio":
+            sub = sys.argv[2].lower() if len(sys.argv) > 2 else "status"
+            from mergendb.cli.studio_manager import handle_studio_cli
+            handle_studio_cli(sub)
+            sys.exit(0)
         elif arg1 in ("test", "benchmark", "diagnose", "check"):
             from mergendb.testing.suite import run_diagnostics
             res = run_diagnostics()

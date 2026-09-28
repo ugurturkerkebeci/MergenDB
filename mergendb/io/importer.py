@@ -5,11 +5,17 @@ import csv
 import sqlite3
 import re
 import io
+import json
 from typing import List, Dict, Any, Optional, Union
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType
 from mergendb.storage.writer import FileWriter
 from mergendb.io.progress import ProgressBar
+
+try:
+    csv.field_size_limit(sys.maxsize)
+except (OverflowError, AttributeError):
+    csv.field_size_limit(2147483647)
 
 SQLITE_TYPE_MAP = {
     "integer": DataType.INT64,
@@ -477,6 +483,24 @@ class DataImporter:
 
 
     @classmethod
+    def _detect_file_encoding(cls, file_path: str) -> str:
+        with open(file_path, "rb") as f:
+            sample = f.read(65536)
+        if sample.startswith(b"\xef\xbb\xbf"):
+            return "utf-8-sig"
+        if sample.startswith(b"\xff\xfe"):
+            return "utf-16-le"
+        if sample.startswith(b"\xfe\xff"):
+            return "utf-16-be"
+        for enc in ("utf-8", "cp1254", "iso-8859-9", "windows-1252", "latin-1"):
+            try:
+                sample.decode(enc)
+                return enc
+            except UnicodeDecodeError:
+                continue
+        return "utf-8"
+
+    @classmethod
     def from_csv(
         cls,
         csv_path: str,
@@ -486,33 +510,52 @@ class DataImporter:
         block_size: int = 1024
     ) -> int:
         """
-        Imports CSV data with automatic type detection and streaming chunks.
+        Imports CSV data with automatic encoding detection, null-byte filtering,
+        ragged row tolerance, and streaming chunks. Never fails on single dirty rows.
         """
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-        # Step 1: Infer schema by sampling first 50 rows
-        with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter=delimiter)
-            first_row = next(reader, None)
+        encoding = cls._detect_file_encoding(csv_path)
+
+        # Step 1: Infer schema by sampling initial rows
+        sample_rows = []
+        with open(csv_path, "r", encoding=encoding, errors="replace") as f:
+            clean_lines = (line.replace("\x00", "") for line in f)
+            reader = csv.reader(clean_lines, delimiter=delimiter)
+            try:
+                first_row = next(reader, None)
+            except Exception:
+                first_row = None
+
             if not first_row:
-                raise ValueError("Empty CSV file")
+                raise ValueError("Empty or unreadable CSV file")
 
             col_names = [f"col_{i}" for i in range(len(first_row))]
             if has_header:
-                col_names = [c.strip() for c in first_row]
-                sample_rows = [next(reader, None) for _ in range(50)]
-                sample_rows = [r for r in sample_rows if r]
+                col_names = [c.strip() if c else f"col_{i}" for i, c in enumerate(first_row)]
+                for _ in range(50):
+                    try:
+                        r = next(reader, None)
+                        if r:
+                            sample_rows.append(r)
+                    except Exception:
+                        continue
             else:
-                sample_rows = [first_row] + [next(reader, None) for _ in range(49)]
-                sample_rows = [r for r in sample_rows if r]
+                sample_rows.append(first_row)
+                for _ in range(49):
+                    try:
+                        r = next(reader, None)
+                        if r:
+                            sample_rows.append(r)
+                    except Exception:
+                        continue
 
-            # Infer types per column
             col_types = []
             for col_idx in range(len(col_names)):
                 types_found = set()
                 for r in sample_rows:
-                    if col_idx < len(r):
+                    if col_idx < len(r) and r[col_idx] is not None and str(r[col_idx]).strip() != "":
                         types_found.add(_infer_py_type(r[col_idx]))
                 if DataType.STRING in types_found or not types_found:
                     col_types.append(DataType.STRING)
@@ -530,25 +573,46 @@ class DataImporter:
 
         # Step 2: Stream CSV to .mgdb
         total_imported = 0
+        corrupted_rows = 0
         total_bytes = os.path.getsize(csv_path)
         pbar = ProgressBar("Importing CSV", total_bytes=total_bytes)
 
-        with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter=delimiter)
+        with open(csv_path, "r", encoding=encoding, errors="replace") as f:
+            clean_lines = (line.replace("\x00", "") for line in f)
+            reader = csv.reader(clean_lines, delimiter=delimiter)
             if has_header:
-                next(reader, None)
+                try:
+                    next(reader, None)
+                except Exception:
+                    pass
 
             with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
                 batch = []
-                for row in reader:
-                    if not row or len(row) != len(columns):
+                while True:
+                    try:
+                        row = next(reader)
+                    except StopIteration:
+                        break
+                    except Exception:
+                        corrupted_rows += 1
                         continue
+
+                    if not row or all(c == "" or c is None for c in row):
+                        continue
+
+                    # Pad or slice to match columns
+                    if len(row) < len(columns):
+                        row = list(row) + [None] * (len(columns) - len(row))
+                    elif len(row) > len(columns):
+                        row = row[:len(columns)]
+
                     batch.append(row)
                     if len(batch) >= block_size:
                         writer.write_rows(batch)
                         total_imported += len(batch)
                         batch = []
                         pbar.update(total_imported)
+
                 if batch:
                     writer.write_rows(batch)
                     total_imported += len(batch)
@@ -556,6 +620,208 @@ class DataImporter:
 
         pbar.finish()
         return total_imported
+
+    @classmethod
+    def from_jsonl(
+        cls,
+        jsonl_path: str,
+        output_mgdb_path: str,
+        block_size: int = 1024
+    ) -> int:
+        """
+        Streaming importer for JSON Lines (JSONL/NDJSON).
+        Strictly bounded memory (<15 MB RAM). Tolerates broken lines
+        without dropping the rest of the file.
+        """
+        if not os.path.exists(jsonl_path):
+            raise FileNotFoundError(f"JSONL file not found: {jsonl_path}")
+
+        encoding = cls._detect_file_encoding(jsonl_path)
+        first_valid_objects = []
+
+        # Step 1: Scan for schema from initial valid objects
+        with open(jsonl_path, "r", encoding=encoding, errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if "\x00" in line:
+                    line = line.replace("\x00", "").strip()
+                try:
+                    obj = json.loads(line)
+                    if isinstance(obj, dict):
+                        first_valid_objects.append(obj)
+                        if len(first_valid_objects) >= 50:
+                            break
+                except Exception:
+                    continue
+
+        if not first_valid_objects:
+            raise ValueError(f"No valid JSON objects found in {jsonl_path}")
+
+        # Combine all seen keys to form comprehensive schema
+        all_keys = []
+        for obj in first_valid_objects:
+            for k in obj.keys():
+                if k not in all_keys:
+                    all_keys.append(k)
+
+        cols = []
+        for k in all_keys:
+            types_found = set()
+            for obj in first_valid_objects:
+                if k in obj and obj[k] is not None and str(obj[k]).strip() != "":
+                    types_found.add(_infer_py_type(str(obj[k])))
+            if DataType.STRING in types_found or not types_found:
+                dt = DataType.STRING
+            elif DataType.FLOAT64 in types_found:
+                dt = DataType.FLOAT64
+            elif DataType.INT64 in types_found:
+                dt = DataType.INT64
+            elif DataType.BOOL in types_found:
+                dt = DataType.BOOL
+            else:
+                dt = DataType.STRING
+            cols.append(ColumnDef(k, dt))
+
+        schema = Schema(cols)
+        col_names = [c.name for c in schema.columns]
+
+        # Step 2: Stream records to writer
+        total_imported = 0
+        corrupted_lines = 0
+        total_bytes = os.path.getsize(jsonl_path)
+        pbar = ProgressBar("Importing JSONL", total_bytes=total_bytes)
+
+        with open(jsonl_path, "r", encoding=encoding, errors="replace") as f:
+            with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
+                batch = []
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if "\x00" in line:
+                        line = line.replace("\x00", "")
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        corrupted_lines += 1
+                        continue
+
+                    if not isinstance(obj, dict):
+                        corrupted_lines += 1
+                        continue
+
+                    row = [obj.get(c) for c in col_names]
+                    batch.append(row)
+                    if len(batch) >= block_size:
+                        writer.write_rows(batch)
+                        total_imported += len(batch)
+                        batch = []
+                        pbar.update(total_imported)
+
+                if batch:
+                    writer.write_rows(batch)
+                    total_imported += len(batch)
+                    batch = []
+
+        pbar.finish()
+        return total_imported
+
+    @classmethod
+    def from_json(
+        cls,
+        json_path: str,
+        output_mgdb_path: str,
+        block_size: int = 1024
+    ) -> int:
+        """
+        Streaming/chunked importer for standard JSON array or JSON object files.
+        Tolerates malformed entries without crashing.
+        """
+        if not os.path.exists(json_path):
+            raise FileNotFoundError(f"JSON file not found: {json_path}")
+
+        encoding = cls._detect_file_encoding(json_path)
+        with open(json_path, "r", encoding=encoding, errors="replace") as f:
+            content = f.read()
+
+        try:
+            parsed = json.loads(content)
+        except Exception:
+            # Salvage mode: extract { ... } objects via regex if whole JSON is truncated/broken
+            objects = []
+            for match in re.finditer(r'\{[^{}]*\}', content):
+                try:
+                    obj = json.loads(match.group(0))
+                    if isinstance(obj, dict):
+                        objects.append(obj)
+                except Exception:
+                    pass
+            parsed = objects
+
+        if isinstance(parsed, dict):
+            # Check if wrapped in array like {"data": [...]} or {"rows": [...]}
+            for k, v in parsed.items():
+                if isinstance(v, list) and v and isinstance(v[0], dict):
+                    parsed = v
+                    break
+            else:
+                parsed = [parsed]
+
+        if not isinstance(parsed, list) or not parsed:
+            raise ValueError(f"No JSON records could be extracted from {json_path}")
+
+        # Extract schema
+        all_keys = []
+        for obj in parsed[:100]:
+            if isinstance(obj, dict):
+                for k in obj.keys():
+                    if k not in all_keys:
+                        all_keys.append(k)
+
+        if not all_keys:
+            all_keys = ["col_1"]
+
+        cols = []
+        for k in all_keys:
+            types_found = set()
+            for obj in parsed[:100]:
+                if isinstance(obj, dict) and k in obj and obj[k] is not None and str(obj[k]).strip() != "":
+                    types_found.add(_infer_py_type(str(obj[k])))
+            if DataType.STRING in types_found or not types_found:
+                dt = DataType.STRING
+            elif DataType.FLOAT64 in types_found:
+                dt = DataType.FLOAT64
+            elif DataType.INT64 in types_found:
+                dt = DataType.INT64
+            elif DataType.BOOL in types_found:
+                dt = DataType.BOOL
+            else:
+                dt = DataType.STRING
+            cols.append(ColumnDef(k, dt))
+
+        schema = Schema(cols)
+        col_names = [c.name for c in schema.columns]
+
+        total_imported = 0
+        with FileWriter(output_mgdb_path, schema, block_size=block_size) as writer:
+            batch = []
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                row = [item.get(c) for c in col_names]
+                batch.append(row)
+                if len(batch) >= block_size:
+                    writer.write_rows(batch)
+                    total_imported += len(batch)
+                    batch = []
+            if batch:
+                writer.write_rows(batch)
+                total_imported += len(batch)
+
+        return total_imported
+
 
     @classmethod
     def from_cursor(

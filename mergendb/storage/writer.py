@@ -53,12 +53,13 @@ class FileWriter:
                 cast_v = cast_value(val, col.data_type)
                 self._current_buffer[col.name].append(cast_v)
         else:
-            if len(row) != len(self.schema.columns):
-                raise ValueError(f"Expected {len(self.schema.columns)} values, got {len(row)}")
+            num_expected = len(self.schema.columns)
+            row_len = len(row)
             for i, col in enumerate(self.schema.columns):
-                val = row[i]
-                cast_v = cast_value(val, col.data_type)
+                val = row[i] if i < row_len else None
+                cast_v = cast_value(val, col.data_type, safe=True)
                 self._current_buffer[col.name].append(cast_v)
+
 
         self._buffered_count += 1
         self._total_rows += 1

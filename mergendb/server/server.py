@@ -21,6 +21,66 @@ from mergendb.storage.reader import FileReader
 from mergendb.io.importer import DataImporter
 from mergendb.io.exporter import DataExporter
 
+_STUDIO_UPGRADE_NOTICE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mergen Studio - Optional Upgrade Package</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 40px; max-width: 580px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
+    h1 { font-size: 24px; color: #38bdf8; margin-bottom: 12px; }
+    p { font-size: 15px; color: #94a3b8; line-height: 1.6; }
+    .badge { display: inline-block; background: #0284c7; color: #fff; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 9999px; margin-bottom: 20px; }
+    .command-box { background: #0b1120; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 14px; color: #4ade80; margin: 15px 0; text-align: left; user-select: all; }
+    .note { font-size: 13px; color: #64748b; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">OPTIONAL ADDON</div>
+    <h1>Mergen Studio Web Dashboard</h1>
+    <p>The core MergenDB database engine is running in ultra-lean headless mode with strictly bounded memory footprint for low-spec systems.</p>
+    <p>To enable the full-featured Mergen Studio Web UI, install the official studio upgrade package:</p>
+    <div class="command-box">pip install "mergendb[studio]"</div>
+    <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">or using the CLI:</p>
+    <div class="command-box">mergen studio install</div>
+    <div class="note">Once installed, refresh this page to access Mergen Studio.</div>
+  </div>
+</body>
+</html>"""
+
+def _get_studio_html() -> str:
+    """
+    Decoupled loader for Mergen Studio Web UI.
+    Allows Mergen Studio to be completely optional or dynamically installed.
+    """
+    try:
+        import mergendb_studio
+        if hasattr(mergendb_studio, "get_studio_html"):
+            return mergendb_studio.get_studio_html()
+        elif hasattr(mergendb_studio, "STUDIO_HTML"):
+            return mergendb_studio.STUDIO_HTML
+    except ImportError:
+        pass
+
+    cache_path = os.path.expanduser(os.path.join("~", ".mergendb", "studio", "index.html"))
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+
+    try:
+        from mergendb.server.studio_ui import STUDIO_HTML
+        return STUDIO_HTML
+    except ImportError:
+        pass
+
+    return _STUDIO_UPGRADE_NOTICE_HTML
+
+
 class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
     """
     High-performance, zero-dependency REST, Studio Web UI, & Query API handler for MergenDB server.
@@ -90,8 +150,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
         if path in ("", "/"):
             if "text/html" in accept:
-                from mergendb.server.studio_ui import STUDIO_HTML
-                self._send_response_html(200, STUDIO_HTML)
+                self._send_response_html(200, _get_studio_html())
                 return
 
             from mergendb import __version__
@@ -106,8 +165,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         elif path == "/studio":
-            from mergendb.server.studio_ui import STUDIO_HTML
-            self._send_response_html(200, STUDIO_HTML)
+            self._send_response_html(200, _get_studio_html())
             return
 
         elif path == "/logo" or path == "/logo.png":
@@ -430,30 +488,10 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                     total_imported = DataImporter.from_csv(source_file, target_table)
                 elif fmt == "sql":
                     total_imported = DataImporter.from_sql_dump(source_file, target_table)
-                elif fmt in ("json", "jsonl"):
-                    total_imported = 0
-                    tbl = Table(target_table)
-                    with open(source_file, "r", encoding="utf-8", errors="replace") as jf:
-                        first_char = jf.read(1)
-                        jf.seek(0)
-                        if first_char == "[":
-                            data_arr = json.load(jf)
-                            if isinstance(data_arr, list):
-                                tbl.insert(data_arr)
-                                total_imported = len(data_arr)
-                        else:
-                            batch = []
-                            for line in jf:
-                                line = line.strip()
-                                if line:
-                                    batch.append(json.loads(line))
-                                    if len(batch) >= 1000:
-                                        tbl.insert(batch)
-                                        total_imported += len(batch)
-                                        batch = []
-                            if batch:
-                                tbl.insert(batch)
-                                total_imported += len(batch)
+                elif fmt == "jsonl":
+                    total_imported = DataImporter.from_jsonl(source_file, target_table)
+                elif fmt == "json":
+                    total_imported = DataImporter.from_json(source_file, target_table)
                 else:
                     raise ValueError(f"Unsupported import format: {fmt}")
 
@@ -552,24 +590,10 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
                         total_imported = DataImporter.from_csv(source_file, target_table)
                     elif fmt == "sql":
                         total_imported = DataImporter.from_sql_dump(source_file, target_table)
-                    elif fmt in ("json", "jsonl"):
-                        # Parse JSON/JSONL and insert
-                        rows = []
-                        with open(source_file, "r", encoding="utf-8", errors="replace") as jf:
-                            first_char = jf.read(1)
-                            jf.seek(0)
-                            if first_char == "[":
-                                data_arr = json.load(jf)
-                                if isinstance(data_arr, list):
-                                    rows = data_arr
-                            else:
-                                for line in jf:
-                                    line = line.strip()
-                                    if line:
-                                        rows.append(json.loads(line))
-                        tbl = Table(target_table)
-                        tbl.insert(rows)
-                        total_imported = len(rows)
+                    elif fmt == "jsonl":
+                        total_imported = DataImporter.from_jsonl(source_file, target_table)
+                    elif fmt == "json":
+                        total_imported = DataImporter.from_json(source_file, target_table)
                     else:
                         raise ValueError(f"Unsupported import format: {fmt}")
                 finally:
