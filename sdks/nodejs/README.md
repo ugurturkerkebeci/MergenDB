@@ -4,7 +4,7 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.5-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.6.6-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Node.js Tests](https://img.shields.io/badge/tests-18%2F18%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -86,43 +86,43 @@ async function hierarchicalExample() {
   const client = connect({ host: '127.0.0.1', port: 8765 });
 
   // 1. Create and manage databases
-  await client.createDatabase('school');
+  await client.createDatabase('enterprise');
   const dbs = await client.listDatabases();
   console.log('Databases:', dbs);
 
-  const schoolDb = client.database('school');
+  const enterpriseDb = client.database('enterprise');
 
   // 2. Create tables inside the database
-  await schoolDb.createTable('students', [
-    { name: 'student_id', type: 'INT' },
+  await enterpriseDb.createTable('employees', [
+    { name: 'employee_id', type: 'INT' },
     { name: 'full_name', type: 'TEXT' },
-    { name: 'grade', type: 'INT' }
+    { name: 'department', type: 'TEXT' }
   ]);
 
-  const studentsTable = schoolDb.table('students');
-  await studentsTable.insert([
-    { student_id: 101, full_name: 'John Doe', grade: 10 },
-    { student_id: 102, full_name: 'Jane Smith', grade: 11 }
+  const employeesTable = enterpriseDb.table('employees');
+  await employeesTable.insert([
+    { employee_id: 101, full_name: 'Alice Johnson', department: 'Engineering' },
+    { employee_id: 102, full_name: 'Bob Smith', department: 'Research' }
   ]);
 
-  // 3. Create nested sub-tables (e.g. specific classes under students)
-  await studentsTable.createSubtable('class_a', [
-    { name: 'student_id', type: 'INT' },
-    { name: 'desk_number', type: 'INT' },
-    { name: 'attendance_pct', type: 'FLOAT' }
+  // 3. Create nested sub-tables (e.g. division-specific teams under employees)
+  await employeesTable.createSubtable('engineering', [
+    { name: 'employee_id', type: 'INT' },
+    { name: 'team', type: 'TEXT' },
+    { name: 'code_score', type: 'FLOAT' }
   ]);
 
-  const classATable = studentsTable.subtable('class_a');
-  await classATable.insert([
-    { student_id: 101, desk_number: 14, attendance_pct: 98.5 }
+  const engineeringTable = employeesTable.subtable('engineering');
+  await engineeringTable.insert([
+    { employee_id: 101, team: 'Infrastructure', code_score: 98.5 }
   ]);
 
-  // List all sub-tables under students
-  const subtables = await studentsTable.listSubtables();
-  console.log('Sub-tables under students:', subtables);
+  // List all sub-tables under employees
+  const subtables = await employeesTable.listSubtables();
+  console.log('Sub-tables under employees:', subtables);
 
   // 4. Query nested sub-tables using dot notation
-  const res = await client.query('SELECT * FROM school.students.class_a');
+  const res = await client.query('SELECT * FROM enterprise.employees.engineering');
   console.table(res.rows);
 }
 

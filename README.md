@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.5-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.5-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.6-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.6-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-89%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -17,10 +17,10 @@ Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemet
 
 ---
 
-## What Is New in v0.6.5
+## What Is New in v0.6.6
 
 1. **Hierarchical Database Containers & Nested Sub-tables:**
-   - Organize data just like modern RDBMS platforms: **Databases -> Tables -> Nested Sub-tables** (e.g. `okul.ogrenciler.a_sinifi`).
+   - Organize data just like modern RDBMS platforms: **Databases -> Tables -> Nested Sub-tables** (e.g. `enterprise.employees.engineering`).
    - Store root records or partition sub-groups into isolated columnar files while preserving relational hierarchy.
    - Comprehensive SQL support: `SHOW DATABASES;`, `CREATE DATABASE <name>;`, `DROP DATABASE <name>;`, `USE <name>;`, `SHOW TABLES [FROM <name>];`.
    - Native dot-notation resolution across Python (`mergendb.database()`, `table.create_subtable()`), Node.js (`client.database()`, `table.createSubtable()`), CLI, REST server, and Studio Web UI.
@@ -133,11 +133,11 @@ Even though you only care about `name` and `balance`, row stores must read **eve
 MergenDB supports multi-tier hierarchical data management matching traditional relational databases while retaining columnar performance:
 
 ```text
-[DB] okul
- |-- [TBL] ogretmenler (1,200 rows)
- \-- [TBL] ogrenciler (4,500 rows)
-      |-- [SUB] a_sinifi (32 rows)
-      \-- [SUB] b_sinifi (30 rows)
+[DB] enterprise
+ |-- [TBL] departments (1,200 rows)
+ \-- [TBL] employees (4,500 rows)
+      |-- [SUB] engineering (320 rows)
+      \-- [SUB] marketing (150 rows)
 ```
 
 ### Python API
@@ -145,48 +145,49 @@ MergenDB supports multi-tier hierarchical data management matching traditional r
 import mergendb
 
 # 1. Create or open database container
-okul = mergendb.create_database("okul")
+enterprise = mergendb.create_database("enterprise")
 
 # 2. Create tables inside database
-ogretmenler = okul.create_table("ogretmenler", [
+departments = enterprise.create_table("departments", [
     ("id", "INT64"),
     ("name", "STRING"),
-    ("branch", "STRING")
+    ("location", "STRING")
 ])
-ogrenciler = okul.create_table("ogrenciler", [
+employees = enterprise.create_table("employees", [
     ("id", "INT64"),
     ("name", "STRING"),
-    ("grade_level", "INT32")
+    ("role", "STRING")
 ])
 
 # 3. Insert records directly
-ogrenciler.insert([
-    {"id": 1, "name": "Ali", "grade_level": 5},
-    {"id": 2, "name": "Veli", "grade_level": 5},
+employees.insert([
+    {"id": 1, "name": "Alice", "role": "Staff Engineer"},
+    {"id": 2, "name": "Bob", "role": "Data Scientist"},
 ])
 
 # 4. Create nested sub-tables inside a table
-a_sinifi = ogrenciler.create_subtable("a_sinifi", [
-    ("student_id", "INT64"),
-    ("score", "FLOAT64")
+engineering = employees.create_subtable("engineering", [
+    ("employee_id", "INT64"),
+    ("project_code", "STRING"),
+    ("clearance_level", "INT32")
 ])
-a_sinifi.insert([{"student_id": 1, "score": 95.5}])
+engineering.insert([{"employee_id": 1, "project_code": "ATLAS", "clearance_level": 4}])
 
 # 5. Access via dot-notation
-tbl = mergendb.connect("okul.ogrenciler.a_sinifi")
-results = tbl.find(student_id=1)
+tbl = mergendb.connect("enterprise.employees.engineering")
+results = tbl.find(employee_id=1)
 print(results)
 ```
 
 ### SQL Commands
 ```sql
 SHOW DATABASES;
-CREATE DATABASE okul;
-USE okul;
+CREATE DATABASE enterprise;
+USE enterprise;
 SHOW TABLES;
-CREATE TABLE ogrenciler (id BIGINT, name TEXT);
-INSERT INTO ogrenciler VALUES (1, 'Ali');
-SELECT * FROM ogrenciler;
+CREATE TABLE employees (id BIGINT, name TEXT, salary DOUBLE);
+INSERT INTO employees VALUES (1, 'Alice', 95000.0);
+SELECT * FROM employees;
 ```
 
 ---
@@ -200,9 +201,9 @@ The server reads column blocks and yields encoded byte chunks directly into the 
 
 ```bash
 # Stream table directly to disk
-curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=csv" -o ogrenciler.csv
-curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=json" -o ogrenciler.json
-curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=sql" -o ogrenciler.sql
+curl -N "http://localhost:8765/export?table=enterprise.employees&format=csv" -o employees.csv
+curl -N "http://localhost:8765/export?table=enterprise.employees&format=json" -o employees.json
+curl -N "http://localhost:8765/export?table=enterprise.employees&format=sql" -o employees.sql
 ```
 
 ### 2. Zero-Memory Import (`POST /import_stream`)
@@ -210,7 +211,7 @@ Mergen Studio streams the raw native `File` object directly over an HTTP socket 
 
 ```bash
 # Direct zero-memory streaming upload
-curl -X POST "http://localhost:8765/import_stream?table=okul.ogrenciler&format=csv" \
+curl -X POST "http://localhost:8765/import_stream?table=enterprise.employees&format=csv" \
   --data-binary @large_dataset.csv
 ```
 
@@ -300,14 +301,14 @@ mergen
 
 # Inside REPL:
 SHOW DATABASES;
-CREATE DATABASE okul;
-USE okul;
-CREATE TABLE ogrenciler (id BIGINT, name TEXT, score DOUBLE);
-INSERT INTO ogrenciler VALUES (1, 'Alice', 95.5), (2, 'Bob', 82.0);
-SELECT * FROM ogrenciler;
-EXPORT ogrenciler TO CSV;
-EXPORT ogrenciler TO JSON;
-EXPORT ogrenciler TO SQL;
+CREATE DATABASE enterprise;
+USE enterprise;
+CREATE TABLE employees (id BIGINT, name TEXT, salary DOUBLE);
+INSERT INTO employees VALUES (1, 'Alice', 95000.0), (2, 'Bob', 82000.0);
+SELECT * FROM employees;
+EXPORT employees TO CSV;
+EXPORT employees TO JSON;
+EXPORT employees TO SQL;
 ```
 
 ---
