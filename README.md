@@ -4,31 +4,63 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.3-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.5-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.5-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-88%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-89%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
-**MergenDB** is a lightweight, ultra-fast embedded columnar database engine and ecosystem designed to run massive analytical queries and multi-million row table scans on small, resource-constrained hardware. It delivers **zero external runtime dependencies** — no C compilers, no native C++ libraries, and no bulky runtimes across both Python and Node.js.
+**MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
 
-Whether you're querying a 10-million row dataset on a 500 MB RAM VPS, analyzing sensor telemetry on a Raspberry Pi, streaming analytics inside a modern Next.js/Express app, or embedding a blazing-fast local analytical store inside your Python application, MergenDB gives you columnar performance without the operational headache.
+Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
 
 ---
 
-## Installation & Zero-Dependency Quickstart
+## What Is New in v0.6.5
 
-MergenDB requires **ZERO external packages or compilers** (`dependencies: {}`). It runs purely on the standard library of Python and Node.js.
+1. **Hierarchical Database Containers & Nested Sub-tables:**
+   - Organize data just like modern RDBMS platforms: **Databases -> Tables -> Nested Sub-tables** (e.g. `okul.ogrenciler.a_sinifi`).
+   - Store root records or partition sub-groups into isolated columnar files while preserving relational hierarchy.
+   - Comprehensive SQL support: `SHOW DATABASES;`, `CREATE DATABASE <name>;`, `DROP DATABASE <name>;`, `USE <name>;`, `SHOW TABLES [FROM <name>];`.
+   - Native dot-notation resolution across Python (`mergendb.database()`, `table.create_subtable()`), Node.js (`client.database()`, `table.createSubtable()`), CLI, REST server, and Studio Web UI.
+
+2. **Zero-Memory Chunked Streaming Import & Export Engine:**
+   - Dedicated `DataExporter` streaming engine utilizing HTTP Chunked Transfer Encoding (`Transfer-Encoding: chunked`).
+   - Tables of arbitrary size stream directly to disk or network sockets without ever accumulating full datasets into memory buffers.
+   - Dedicated `/import_stream` endpoint accepts raw chunked streams in 64 KB blocks directly from network sockets to temporary disk files, eliminating browser V8 heap bloat and preventing GPU/compositor memory crashes.
+   - Live **0% to 100% upload progress telemetry** with transferred byte counters in Mergen Studio.
+
+3. **Mergen Studio Web Dashboard Enhancements:**
+   - Complete phpMyAdmin-style tree hierarchy sidebar with collapsible database, table, and sub-table nodes.
+   - Visual creation modals: **+ DB**, **+ Table**, and **+ Sub**.
+   - Streamlined DOM rendering without dataset string serialization, protecting browser memory.
+   - Comprehensive internationalization: **English (Default)**, **German (Deutsch)**, and **Turkish (Turkce)**.
+   - Strict Zero-Emoji policy enforced across all interfaces, logs, and documentation.
+
+4. **Node.js & TypeScript SDK 100% Parity:**
+   - Added `DatabaseHandle`, `database()`, `listDatabases()`, `createDatabase()`, `dropDatabase()`.
+   - Added `createSubtable()`, `subtable()`, `listSubtables()`.
+   - Added zero-memory file stream operations: `exportToFile(destPath)` and `importFile(filePath)` powered by standard library streams (`pipe`).
+
+---
+
+## Zero-Dependency Installation
+
+MergenDB requires **zero external packages or compilers** (`dependencies: {}`). It runs purely on the standard library of Python and Node.js.
 
 ### Python Engine & CLI
 ```bash
-# Standard install via PyPI
+# Install via PyPI
 pip install --upgrade mergendb
 
-# Run directly without configuring PATH:
+# Run interactive CLI REPL directly:
 python -m mergendb
+
+# Start HTTP server & Mergen Studio:
 python -m mergendb serve 8765
+
+# Run embedded diagnostics & hardware benchmark:
 python -m mergendb test
 ```
 
@@ -37,46 +69,47 @@ python -m mergendb test
 # Install SDK via npm
 npm install mergendb
 
-# Run server or launch studio directly via npx:
+# Run server or open studio directly via npx:
 npx mergendb serve 8765
 npx mergendb studio 8765
 ```
 
-Requires **Python 3.8+** and/or **Node.js 16+**. Works out-of-the-box on Windows, macOS, Linux, and Docker with zero extra setup.
+Requires **Python 3.8+** and/or **Node.js 16+**. Works out-of-the-box on Windows, macOS, Linux, and Docker with zero additional setup.
 
 ---
 
 ## Why MergenDB? (The Problem with Row Stores)
 
-Traditional embedded databases like SQLite store data row-by-row (`[id, name, age, address, notes, ...]`). When you run an analytical query like:
+Traditional embedded databases like SQLite store data row-by-row (`[id, name, age, address, notes, ...]`). When running analytical queries:
 
 ```sql
 SELECT name, balance FROM users WHERE balance > 1000;
 ```
 
-Even though you only care about `name` and `balance`, row stores must read **every single column of every row** off disk — including massive text columns like `address` and `notes`. On a 10-million row database, that translates to gigabytes of useless disk I/O and heavy memory exhaustion.
+Even though you only care about `name` and `balance`, row stores must read **every single column of every row** off disk -- including massive text fields like `address` and `notes`. On a 10-million row database, that translates to gigabytes of unnecessary disk I/O and heavy memory exhaustion.
 
-**MergenDB takes the modern columnar approach:**
+**MergenDB utilizes the columnar approach:**
 1. **Column-Isolated I/O:** Every column is stored and compressed independently. Unqueried columns are never read from disk.
 2. **ZoneMap Pruning:** Every block records `min_value` and `max_value`. If a block cannot contain matching rows, it is skipped with zero disk reads.
 3. **1024-bit Block Bloom Filters:** Instant single-pass lookup index skips blocks that do not contain a queried ID, text, or UUID.
-4. **Demand-Driven Late Materialization (`LazyColumnDict`):** In multi-column filters (`WHERE status = 'ACTIVE' AND balance > 50`), MergenDB checks `status` first. If no rows in the block match, `balance` and all other columns are never decompressed.
-5. **Strictly Bounded Memory:** Data streams in small, tunable blocks (1,024–8,192 rows). Memory usage stays under **15–20 MB RAM**, whether your database is 100 MB or 100 GB.
+4. **Demand-Driven Late Materialization (`LazyColumnDict`):** In multi-column filters (`WHERE status = 'ACTIVE' AND balance > 50`), MergenDB evaluates `status` first. If no rows in the block match, `balance` and all other columns are never decompressed.
+5. **Strictly Bounded Memory:** Data streams in small, tunable blocks (1,024-8,192 rows). Memory usage stays under **15-20 MB RAM**, whether the database is 100 MB or 100 GB.
 
 ---
 
-## MergenDB v0.6+ Ecosystem Architecture
+## MergenDB Ecosystem Architecture
 
 ```text
 +---------------------------------------------------------------------------------+
 |                                 CLIENT LAYER                                    |
 |   Python Library (mergendb)   |   Node.js / TS SDK   |   Mergen Studio (Web)    |
-|   db.find() / db.sql()        |   db.sql`...`        |   phpMyAdmin UI Grid     |
+|   db.find() / db.sql()        |   db.sql`...`        |   phpMyAdmin UI Tree     |
 +---------------------------------------+-----------------------------------------+
                                         | HTTP / REST (Zero-Dependency)
 +---------------------------------------v-----------------------------------------+
 |                                SERVER ENGINE                                    |
-|   Multi-threaded HTTP Server  |  Smart Content-Negotiation  |  Progress Stream  |
+|   Multi-threaded HTTP Server  |  Chunked Stream Transfer    |  Progress Stream  |
+|   GET /export (Chunked)       |  POST /import_stream (Raw)  |  Hierarchical DB  |
 +---------------------------------------+-----------------------------------------+
                                         | Analytical AST / Execution Plans
 +---------------------------------------v-----------------------------------------+
@@ -95,653 +128,239 @@ Even though you only care about `name` and `balance`, row stores must read **eve
 
 ---
 
-## 5-Minute Quickstart
+## Hierarchical Database & Nested Sub-tables System
 
-### 1. The Human-Friendly Python API
+MergenDB supports multi-tier hierarchical data management matching traditional relational databases while retaining columnar performance:
 
-You don't need to manually define schemas or data types unless you want to. Just connect and insert:
+```text
+[DB] okul
+ |-- [TBL] ogretmenler (1,200 rows)
+ \-- [TBL] ogrenciler (4,500 rows)
+      |-- [SUB] a_sinifi (32 rows)
+      \-- [SUB] b_sinifi (30 rows)
+```
 
+### Python API
 ```python
 import mergendb
 
-# 1. Connect to a database file (created automatically if it doesn't exist)
-db = mergendb.connect("users.mgdb")
+# 1. Create or open database container
+okul = mergendb.create_database("okul")
 
-# 2. Insert records using plain Python dictionaries (Schema is auto-inferred!)
-db.insert([
-    {"id": 1, "name": "Alice", "role": "admin", "balance": 1500, "city": "San Francisco"},
-    {"id": 2, "name": "Bob", "role": "engineer", "balance": 2400, "city": "New York"},
-    {"id": 3, "name": "Charlie", "role": "designer", "balance": 1800, "city": "London"},
-    {"id": 4, "name": "Diana", "role": "admin", "balance": 3200, "city": "Tokyo"},
+# 2. Create tables inside database
+ogretmenler = okul.create_table("ogretmenler", [
+    ("id", "INT64"),
+    ("name", "STRING"),
+    ("branch", "STRING")
+])
+ogrenciler = okul.create_table("ogrenciler", [
+    ("id", "INT64"),
+    ("name", "STRING"),
+    ("grade_level", "INT32")
 ])
 
-print(f"Total Rows: {len(db)}")  # 4
-print(f"Columns: {db.columns}")   # ['id', 'name', 'role', 'balance', 'city']
+# 3. Insert records directly
+ogrenciler.insert([
+    {"id": 1, "name": "Ali", "grade_level": 5},
+    {"id": 2, "name": "Veli", "grade_level": 5},
+])
+
+# 4. Create nested sub-tables inside a table
+a_sinifi = ogrenciler.create_subtable("a_sinifi", [
+    ("student_id", "INT64"),
+    ("score", "FLOAT64")
+])
+a_sinifi.insert([{"student_id": 1, "score": 95.5}])
+
+# 5. Access via dot-notation
+tbl = mergendb.connect("okul.ogrenciler.a_sinifi")
+results = tbl.find(student_id=1)
+print(results)
 ```
 
-### 2. Querying with Simple Key-Value Filters (`.find`)
-
-Find records with zero SQL boilerplate:
-
-```python
-# Multiple conditions: role == 'admin' AND city == 'Tokyo'
-results = db.find(role="admin", city="Tokyo")
-print(results.to_dicts())
-# [{'id': 4, 'name': 'Diana', 'role': 'admin', 'balance': 3200, 'city': 'Tokyo'}]
-
-# Fetch the first match directly as a dict
-user = db.find_one(name="Alice")
-print(user["city"])  # "San Francisco"
+### SQL Commands
+```sql
+SHOW DATABASES;
+CREATE DATABASE okul;
+USE okul;
+SHOW TABLES;
+CREATE TABLE ogrenciler (id BIGINT, name TEXT);
+INSERT INTO ogrenciler VALUES (1, 'Ali');
+SELECT * FROM ogrenciler;
 ```
-
-### 3. Full-Text Search Across All Text Columns (`.search`)
-
-Search for any substring across all string columns with case-insensitivity:
-
-```python
-matches = db.search("admin")
-matches.show()
-```
-
-### 4. Running Standard SQL Queries (`.sql`)
-
-```python
-result = db.sql("SELECT id, name, balance FROM users WHERE balance >= 50 ORDER BY id DESC")
-
-# Print a formatted ASCII table
-result.show()
-
-# Iterate over matching rows
-for row in result:
-    print(row)
-
-# Convert directly to a pandas DataFrame (if pandas is installed)
-df = result.to_df()
-```
-
-### 5. Updating & Deleting Records (`.update`, `.delete`)
-
-All row mutations execute with streaming block preservation to keep memory under 20 MB:
-
-```python
-# Update balance for matching records
-updated = db.update({"balance": 999}, where="name = 'Alice'")
-print(f"Updated {updated} records")
-
-# Delete inactive or zero-balance records
-deleted = db.delete(where="balance <= 0 OR active = false")
-print(f"Deleted {deleted} records")
-```
-
-### 6. Modifying Table Schema (`.rename_column`, `.drop_column`, `.add_column`)
-
-Instantly alter table layout without losing data:
-
-```python
-# Rename a column
-db.rename_column("name", "full_name")
-
-# Add a new column with a default value
-db.add_column("country", "string", default="US")
-
-# Drop an unneeded column
-db.drop_column("city")
-```
-
-### 7. Diagnostics & Hardware Profiling (`mergendb.test()`, `mergen test`)
-
-MergenDB includes an integrated, zero-dependency diagnostic suite and hardware benchmarking engine. In under 1 second, it verifies the entire engine pipeline (Zero-Copy mmap I/O, dictionary pushdown, ZoneMap skipping, mutations), tests the MergenQL network server over HTTP, and benchmarks your device's realistic processing capabilities:
-
-```python
-import mergendb
-
-# Run full system diagnostics and hardware throughput benchmark
-mergendb.test()
-```
-
-Or directly from the terminal or CLI REPL:
-```bash
-# From terminal
-mergen test
-
-# Inside interactive REPL
-mergen> TEST;
-```
-
-#### Diagnostic Output Sample:
-```text
-==========================================================================
-   [+] MERGENDB SYSTEM DIAGNOSTICS & HARDWARE PROFILER
-==========================================================================
-[*] Running engine core integrity checks...
-    [+] Zero-Copy mmap I/O          : PASS
-    [+] Dictionary Pushdown Engine : PASS
-    [+] ZoneMap Block Pruning      : PASS
-    [+] ACID Data & Schema Mutation: PASS
-[*] Verifying MergenQL Network HTTP Server...
-    [+] HTTP Endpoint /status      : PASS (Port 54664)
-    [+] POST /query SQL Dispatch   : PASS
-[*] Profiling device hardware and benchmarking throughput...
-
---------------------------------------------------------------------------
-  [DEVICE HARDWARE SPECIFICATIONS & DETECTED ENVIRONMENT]
---------------------------------------------------------------------------
-  * Operating System   : Windows 10 / Linux 6.x / macOS
-  * CPU Architecture   : AMD64 / ARM64 (12 logical threads)
-  * Python Runtime     : CPython 3.8+
-  * Engine Version     : v0.6.3 (Pure Python / Zero-Dependency)
-
---------------------------------------------------------------------------
-  [ESTIMATED PROCESSING SPEEDS FOR THIS HARDWARE]
---------------------------------------------------------------------------
-  * Ingestion / Append : ~216,558 rows/sec
-  * CSV / SQL Import   : ~220,762 rows/sec
-  * Table Export       : ~749,968 rows/sec
-  * Analytical Queries : ~1,417,836 rows/sec (Zero-Copy Column Scan)
-  * Performance Tier   : A-Tier (Performance Desktop / Modern Laptop)
-  * Optimal Block Size : 2,048 - 4,096 rows
-  * Assessment         : High single-core speed and fast page cache.
---------------------------------------------------------------------------
-  [SUCCESS] ALL CHECKS PASSED PERFECTLY in 0.68s
-==========================================================================
-```
-
-### 8. Embedded Web UI: "Mergen Studio" (Mergen Studio)
-
-MergenDB includes **Mergen Studio**, an ultra-fast, zero-dependency interactive web dashboard inspired by phpMyAdmin. Launch it with a single command:
-
-```bash
-# Start server and launch Mergen Studio
-mergen serve
-# Or specify a custom port
-mergen serve 8765
-```
-
-Open your browser to:
- **`http://localhost:8765/studio`** (or simply `http://localhost:8765/`)
-
-**Key Capabilities in Mergen Studio (Mergen Studio):**
-- ** Active Data File Selector:** Switch between `.mgdb` tables via the top navigation dropdown or sidebar. All tabs automatically bind to the selected table.
-- ** Browse (Gözat):** Interactive spreadsheet grid with pagination (`<< < Page 1/10 > >>`), sortable column headers (`▲▼`), row range indicators, and inline inspection.
-- ** Structure (Yapı / Şema):** View column names, data types, nullability, block counts, and disk size. Add new columns dynamically with default values or drop unused columns.
-- ** SQL:** Large interactive query editor with one-click snippets (`SELECT *`, `COUNT(*)`, `GROUP BY + HAVING`, `Bloom Filter`, `Hash JOIN`), execution stats (`ms`, blocks scanned vs skipped via ZoneMaps), and `Ctrl+Enter` hotkey.
-- ** Import (İçe Aktar):** Drag-and-drop or select `.csv`, `.sql`, or `.json` files to stream data directly into any `.mgdb` table.
-- ** Export (Dışa Aktar):** One-click download of tables to `CSV`, `JSON`, `JSONL`, or `SQL Dump (INSERT statements)`.
-- ** Operations (İşlemler):** Rename tables (`RENAME`), clear data while keeping schema (`TRUNCATE`), or permanently delete (`DROP`).
-- ** Universal Percentage Progress Bar (%0.0 -> %100.0):** Active on **all waiting operations** (browse loading, SQL queries, import, export, table operations) showing live progress %, throughput (~rows/sec), and ETA countdown!
 
 ---
 
-### 9. Universal Node.js & TypeScript Client SDK
+## Zero-Memory Streaming Import & Export
 
-MergenDB includes an official **zero-dependency** Node.js and TypeScript client SDK (`mergendb`). Connect your Node.js, Express, Next.js, or NestJS backend to MergenDB with full analytical SQL and document-style APIs:
+When handling multi-gigabyte datasets, traditional engines often buffer entire payloads into RAM, leading to memory exhaustion and browser compositor crashes. MergenDB resolves this with true streaming architecture:
+
+### 1. Chunked Export (`GET /export`)
+The server reads column blocks and yields encoded byte chunks directly into the HTTP response socket using standard HTTP Chunked Transfer Encoding. Server-side memory usage remains strictly bounded (< 1 MB RAM) regardless of table size.
 
 ```bash
-# Install via npm
-npm install mergendb
+# Stream table directly to disk
+curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=csv" -o ogrenciler.csv
+curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=json" -o ogrenciler.json
+curl -N "http://localhost:8765/export?table=okul.ogrenciler&format=sql" -o ogrenciler.sql
 ```
 
-#### JavaScript / TypeScript Example:
+### 2. Zero-Memory Import (`POST /import_stream`)
+Mergen Studio streams the raw native `File` object directly over an HTTP socket using `XMLHttpRequest`. The server buffers incoming bytes in 64 KB chunks directly to a temporary file on disk, parses it with `DataImporter`, and indexes columnar blocks without consuming V8 heap memory.
 
-```typescript
-import { connect } from 'mergendb';
+```bash
+# Direct zero-memory streaming upload
+curl -X POST "http://localhost:8765/import_stream?table=okul.ogrenciler&format=csv" \
+  --data-binary @large_dataset.csv
+```
 
-async function run() {
-  // Connect to MergenDB server
-  const db = connect('http://localhost:8765');
+---
 
-  // Ping server health
-  const isHealthy = await db.ping();
-  console.log('MergenDB status:', isHealthy ? 'ONLINE' : 'OFFLINE');
+## 5-Minute Quickstart
 
-  // Analytical SQL Query with execution telemetry
-  const result = await db.query(
-    "SELECT sensor, COUNT(*), AVG(temperature) FROM telemetry GROUP BY sensor HAVING COUNT(*) > 100"
-  );
-  console.log(`Scanned in ${result.stats.execution_time_ms} ms (Pruned blocks: ${result.stats.blocks_skipped})`);
-  console.table(result.rows);
+### 1. Python API
+```python
+import mergendb
 
-  // Safe tagged template literals with parameter escaping
-  const status = 'ACTIVE';
-  const sensors = await db.sql`SELECT id, sensor, temperature FROM telemetry WHERE status = ${status}`;
-  console.log(`Found ${sensors.row_count} active sensors`);
+# 1. Connect to table (Auto-created if not exists)
+db = mergendb.connect("telemetry.mgdb")
 
-  // Document-style Table API
-  const table = db.table('telemetry.mgdb');
-  const activeSensors = await table.find({ status: 'ACTIVE' }, { limit: 10 });
-  const count = await table.count({ status: 'ERROR' });
+# 2. Insert records (Schema is auto-inferred)
+db.insert([
+    {"id": 1, "sensor": "TEMP-01", "reading": 23.5, "active": True},
+    {"id": 2, "sensor": "TEMP-02", "reading": 28.1, "active": True},
+    {"id": 3, "sensor": "TEMP-01", "reading": 24.0, "active": False},
+])
 
-  // Administrative actions
-  await table.truncate(); // Clear rows, preserve schema
-  await table.drop();     // Drop table file
+# 3. Document-Style Queries
+active_sensors = db.find(sensor="TEMP-01", active=True)
+first = db.find_one(sensor="TEMP-02")
+matches = db.search("TEMP")  # Substring search across all text columns
+
+# 4. Analytical SQL
+res = db.sql("SELECT sensor, COUNT(*), AVG(reading) FROM telemetry GROUP BY sensor")
+res.show()
+
+# 5. Zero-Memory File Streaming
+db.export_csv("telemetry_export.csv")
+mergendb.from_csv("telemetry_export.csv", "backup.mgdb")
+
+# 6. Live Hardware Diagnostics
+mergendb.benchmark()
+```
+
+### 2. Node.js & TypeScript SDK
+```javascript
+const { connect } = require('mergendb');
+
+async function main() {
+  const client = connect('http://localhost:8765');
+
+  // Database Container Operations
+  await client.createDatabase('analytics');
+  const analyticsDb = client.database('analytics');
+
+  // Create Table
+  await analyticsDb.createTable('metrics', [
+    { name: 'id', type: 'INT64' },
+    { name: 'host', type: 'STRING' },
+    { name: 'cpu_usage', type: 'FLOAT64' }
+  ]);
+
+  const metrics = analyticsDb.table('metrics');
+  await metrics.insert([
+    { id: 1, host: 'prod-api-1', cpu_usage: 42.5 },
+    { id: 2, host: 'prod-api-2', cpu_usage: 78.1 }
+  ]);
+
+  // Nested Sub-table
+  await metrics.createSubtable('hourly', [
+    { name: 'metric_id', type: 'INT64' },
+    { name: 'val', type: 'FLOAT64' }
+  ]);
+  const hourly = metrics.subtable('hourly');
+  await hourly.insert([{ metric_id: 1, val: 41.2 }]);
+
+  // Zero-Memory File Streaming
+  await metrics.exportToFile('metrics_stream.csv', 'csv');
+  await metrics.importFile('metrics_stream.csv', 'csv');
+
+  // Analytical Query
+  const summary = await client.sql`SELECT host, AVG(cpu_usage) FROM analytics.metrics GROUP BY host`;
+  console.table(summary.rows);
 }
 
-run().catch(console.error);
+main().catch(console.error);
 ```
 
----
-
-## Python API Reference
-
-MergenDB provides both a clean, high-level developer API and low-level engine primitives.
-
-### Top-Level Module Functions
-
-```python
-import mergendb
-
-# Open or create a table
-db = mergendb.connect("data.mgdb")
-db = mergendb.open("data.mgdb")
-
-# Direct queries without creating a connection object
-res = mergendb.sql("SELECT * FROM 'data.mgdb' WHERE status = 'active'")
-res = mergendb.find("data.mgdb", status="active", role="admin")
-res = mergendb.search("data.mgdb", "search_term")
-
-# Streaming data migration
-mergendb.import_sql("dump.sql", "output.mgdb")
-mergendb.import_sqlite("legacy.db", "output.mgdb", table_name="customers")
-mergendb.import_csv("records.csv", "output.mgdb")
-
-# Table exports
-mergendb.export_csv("data.mgdb", "output.csv")
-mergendb.export_json("data.mgdb", "output.jsonl")
-mergendb.export_sql("data.mgdb", "output.sql")
-```
-
----
-
-### `mergendb.Table` / `mergendb.Database`
-
-The primary object representing an `.mgdb` table.
-
-| Method / Property | Description |
-| :--- | :--- |
-| `db.columns` | Returns a `List[str]` of column names. |
-| `db.schema` | Returns the `Schema` object with column names and `DataType`s. |
-| `db.row_count` / `len(db)` / `db.count()` | Returns the total number of rows. |
-| `db.find(limit=None, **kwargs)` | Filters rows by exact key-value match. Returns `QueryResult`. |
-| `db.find_one(**kwargs)` | Returns the first matching row as a `dict`, or `None`. |
-| `db.first(where=None)` | Returns the first row in the table, optionally filtered. |
-| `db.where(condition, limit=None)` | Filters by raw SQL condition (`"age > 21 AND active = 1"`). |
-| `db.search(text, limit=None)` | Searches all string columns for substring `text`. |
-| `db.select(*cols, where, order_by, limit)` | Fluent query builder. |
-| `db.sql(query_str)` | Executes a standard SQL query string on this table. |
-| `db.execute(query_or_sql)` | Executes SQL or MergenQL pipeline query. |
-| `db.insert(data)` | Inserts a single dict, list of dicts, or list of row lists. Auto-creates table if missing. |
-| `db.insert_many(rows, block_size=1024)` | Inserts a list of raw value rows into the columnar storage. |
-| `db.update(set_values, where=None)` | Updates matching rows with `{col: val}` mapping. Returns updated count. |
-| `db.delete(where=None)` | Deletes matching rows from the table. Returns deleted count. |
-| `db.rename_column(old_name, new_name)` | Renames an existing column without data loss. |
-| `db.drop_column(column_name)` | Removes a column from the schema and table file. |
-| `db.add_column(column_name, data_type, default=None)` | Adds a new column with a default value. |
-| `db.truncate()` | Clears all rows while keeping schema and structure intact. |
-| `db.drop()` | Permanently deletes the table file from disk. |
-| `db.rename(new_filepath)` | Renames the table file on disk. |
-| `db.all(limit=None)` | Returns all rows as a list of dictionaries (`List[Dict[str, Any]]`). |
-| `db.to_dicts(limit=None)` | Returns rows as dictionaries. |
-| `db.to_list(limit=None)` | Returns rows as a raw list of lists (`List[List[Any]]`). |
-| `db.to_df(limit=None)` | Converts rows into a `pandas.DataFrame`. |
-| `db.show(limit=10)` | Prints a formatted ASCII table of the first `N` rows to console. |
-| `db.export(output_path)` | Exports data based on extension (`.csv`, `.json`, `.sql`). |
-| `db.export_csv(path)` | Exports data to CSV. |
-| `db.export_json(path)` | Exports data to JSON Lines (`.jsonl`). |
-| `db.export_sql(path)` | Exports data to SQL `CREATE TABLE` and `INSERT` statements. |
-
----
-
-### `mergendb.QueryResult`
-
-The container returned by all queries.
-
-| Method / Property | Description |
-| :--- | :--- |
-| `len(result)` | Returns number of rows returned. |
-| `for row in result:` | Directly iterate over rows. |
-| `result[0]` | Access row by index. |
-| `result.first` | Returns the first row list, or `None`. |
-| `result.to_dicts()` | Converts rows to a `List[Dict[str, Any]]`. |
-| `result.to_dict()` | Converts the first row to a `Dict[str, Any]`, or `None`. |
-| `result.to_list()` | Returns raw `List[List[Any]]`. |
-| `result.to_df()` | Converts result into a `pandas.DataFrame`. |
-| `result.display(max_rows=50)` | Formats the result as an aligned ASCII table with execution stats. |
-| `result.show(max_rows=50)` | Prints `display()` to stdout. |
-| `result.stats` | Contains execution telemetry (`execution_time_ms`, `blocks_scanned`, `blocks_skipped`, `bytes_read`). |
-
----
-
-## Interactive Command-Line Interface (REPL)
-
-MergenDB includes an interactive terminal shell designed for database administrators and data exploration.
-
-### Starting the CLI
-
+### 3. Mergen CLI REPL
 ```bash
-# Start global shell
+# Launch interactive REPL
 mergen
 
-# Start shell directly attached to a table
-mergen users.mgdb
-
-# Run built-in diagnostic test suite
-mergen test
-```
-
-When you enter the shell, the prompt displays your active table context:
-
-```text
-mergen[users.mgdb]>
-```
-
-### Complete CLI Command Reference
-
-All commands can be terminated with an optional semicolon (`;`).
-
-| Command | Description & Example |
-| :--- | :--- |
-| **`USE <table.mgdb>;`** | Switch active table context. <br>`USE orders.mgdb;` |
-| **`SHOW TABLES;`** | Lists all `.mgdb` tables in the current directory with row counts and file sizes. |
-| **`SHOW COLUMNS;`** <br> **`DESCRIBE;`** | Displays schema (columns, types, nullability) for the active table. <br>`SHOW COLUMNS;` or `SHOW COLUMNS FROM users;` |
-| **`WHERE <condition>;`** | Instant query against the active table without typing `SELECT * FROM`. <br>`WHERE balance > 500 AND status = 'active';` |
-| **`SELECT ...;`** | Standard SQL query with projection, filtering, ordering, and limits. <br>`SELECT id, name, balance WHERE balance > 100 ORDER BY balance DESC LIMIT 10;` |
-| **`UPDATE ...;`** | Updates matching rows with streaming block safety. <br>`UPDATE users SET balance = 500 WHERE id = 1;` or `UPDATE SET balance = 500;` |
-| **`DELETE ...;`** | Deletes matching rows from the active or specified table. <br>`DELETE FROM users WHERE balance <= 0;` or `DELETE WHERE balance <= 0;` |
-| **`ALTER TABLE ...;`** | Modify table schema without data loss. <br>`ALTER TABLE users RENAME COLUMN old TO new;`<br>`ALTER TABLE users ADD COLUMN age INT DEFAULT 18;`<br>`ALTER TABLE users DROP COLUMN old_col;` |
-| **`RENAME COLUMN ...;`**<br>**`DROP COLUMN ...;`**<br>**`ADD COLUMN ...;`** | Short forms directly against active table context.<br>`RENAME COLUMN old TO new;` |
-| **`FROM ...;`** | MergenQL pipeline query. <br>`FROM users.mgdb \| WHERE age >= 18 \| SELECT name, age \| LIMIT 5` |
-| **`IMPORT SQL <file.sql> <table.mgdb>;`** | Stream-imports raw MySQL / phpMyAdmin SQL dump into MergenDB with a live progress bar. <br>`IMPORT SQL backup.sql users.mgdb;` |
-| **`IMPORT SQLITE <file.db> <table.mgdb> [tbl];`** | Imports an SQLite table into MergenDB. <br>`IMPORT SQLITE app.db customers.mgdb users;` |
-| **`IMPORT CSV <file.csv> <table.mgdb>;`** | Imports a CSV file into MergenDB. <br>`IMPORT CSV logs.csv logs.mgdb;` |
-| **`EXPORT <table.mgdb> TO CSV <file.csv>;`** | Exports table to CSV. <br>`EXPORT users.mgdb TO CSV users_backup.csv;` |
-| **`EXPORT <table.mgdb> TO JSON <file.json>;`** | Exports table to JSON Lines. <br>`EXPORT users.mgdb TO JSON users.jsonl;` |
-| **`EXPORT <table.mgdb> TO SQL <file.sql>;`** | Exports table to SQL DDL and INSERT statements. <br>`EXPORT users.mgdb TO SQL dump.sql;` |
-| **`BENCHMARK <table.mgdb>;`** | Runs a live sequential I/O read and decompression benchmark. <br>`BENCHMARK users.mgdb;` |
-| **`INFO <table.mgdb>;`** | Displays detailed compression ratios, block telemetry, and disk space saved. <br>`INFO users.mgdb;` |
-| **`OPTIMIZE TABLE <table.mgdb>;`** | Defragments and repacks blocks into uniform block sizes. <br>`OPTIMIZE TABLE users.mgdb;` |
-| **`COUNT <table.mgdb>;`** | Displays total row count. <br>`COUNT users.mgdb;` |
-| **`TRUNCATE TABLE <table.mgdb>;`** | Clears all rows while preserving schema. <br>`TRUNCATE TABLE users.mgdb;` |
-| **`RENAME TABLE <old> TO <new>;`** | Renames a table file. <br>`RENAME TABLE old_users.mgdb TO users.mgdb;` |
-| **`DROP TABLE <table.mgdb>;`** | Permanently deletes a table file from disk. <br>`DROP TABLE temp.mgdb;` |
-| **`EXPLAIN <query>;`** | Shows the query execution plan, pushdown ZoneMap predicates, and required columns. <br>`EXPLAIN SELECT name WHERE age > 30;` |
-| **`STATUS;`** | Displays engine version, process PID, and total local storage usage. |
-| **`SERVE [port];`** | Starts the built-in HTTP query server directly from the REPL. <br>`SERVE 8765;` |
-| **`HELP;`** | Displays quick command reference. |
-| **`EXIT;` / `QUIT;` / `\Q`** | Exits the shell. |
-
----
-
-### Real-Time Live Progress Bar
-
-When executing queries or data transfers in the CLI, MergenDB displays a dynamic, cross-platform progress bar:
-
-```text
-mergen[customers.mgdb]> SELECT name, city, balance WHERE city = 'New York' AND balance > 5000;
-
-[*] Querying 'customers.mgdb': 9,350,762 / 9,350,762 rows [========================] 100.0% | 2,841,200 rows/s | ETA: 0s  
-+--------------------+----------+---------+
-| name               | city     | balance |
-+--------------------+----------+---------+
-| Alex Morgan        | New York | 12450   |
-| Sarah Jenkins      | New York | 8900    |
-+--------------------+----------+---------+
-Returned 2 rows in 4.12 ms | Blocks: 1142 scanned, 0 skipped | Read: 21,410 KB
+# Inside REPL:
+SHOW DATABASES;
+CREATE DATABASE okul;
+USE okul;
+CREATE TABLE ogrenciler (id BIGINT, name TEXT, score DOUBLE);
+INSERT INTO ogrenciler VALUES (1, 'Alice', 95.5), (2, 'Bob', 82.0);
+SELECT * FROM ogrenciler;
+EXPORT ogrenciler TO CSV;
+EXPORT ogrenciler TO JSON;
+EXPORT ogrenciler TO SQL;
 ```
 
 ---
 
-## Query Engine: MergenQL & Standard SQL
+## Adaptive Compression Pipeline
 
-MergenDB supports two query paradigms:
-
-### 1. Standard SQL
-You can write familiar SQL queries:
-```sql
-SELECT id, name, (salary * 1.10) AS new_salary
-FROM employees.mgdb
-WHERE department = 'Engineering' AND salary < 120000
-ORDER BY salary DESC
-LIMIT 10;
-```
-
-### 2. MergenQL (Pipeline Syntax)
-Inspired by Unix pipes and functional pipelines, MergenQL breaks queries into distinct, composable processing stages:
-
-```text
-FROM "employees.mgdb"
-| WHERE department = 'Engineering' AND salary < 120000
-| COMPUTE new_salary = (salary * 1.10)
-| SELECT id, name, new_salary
-| SORT salary DESC
-| LIMIT 10
-```
-
-### Supported Operators & Expressions
-
-- **Comparison Operators:** `=`, `==`, `!=`, `<>`, `>`, `>=`, `<`, `<=`, `LIKE` (supports `%` and `_` wildcards).
-- **Logical Operators:** `AND`, `OR`, `NOT`, and parenthesized groups `( ... )`.
-- **Arithmetic Operators:** `+`, `-`, `*`, `/`, `%`.
-- **Aggregate Functions:** `COUNT(*)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, `MEDIAN(col)`, `STDDEV(col)` with multi-column `GROUP BY col1, col2` and `HAVING` filters.
-- **Computed Columns:** `COMPUTE total = price * quantity`.
-- **Streaming Hash JOIN:** In-memory hash join between tables with `[INNER|LEFT] JOIN <table> ON left_col = right_col`.
-
-### Analytical SQL & Hash JOINs
-
-MergenDB v0.5.8+ brings full analytical joins and aggregation filters:
-
-```sql
--- Analytical Hash JOIN between two columnar tables
-SELECT users.name, orders.item, orders.amount
-FROM "users.mgdb"
-LEFT JOIN "orders.mgdb" ON users.id = orders.user_id
-WHERE users.city = 'Istanbul' AND orders.amount > 50
-ORDER BY orders.amount DESC
-LIMIT 10;
-```
-
-```sql
--- Multi-Column GROUP BY with HAVING clause filtering
-SELECT department, city, COUNT(*), SUM(salary) AS total_sal
-FROM "employees.mgdb"
-GROUP BY department, city
-HAVING total_sal > 100000
-ORDER BY total_sal DESC;
-```
-
-Or using MergenQL pipeline syntax:
-```text
-FROM "users.mgdb"
-| LEFT JOIN "orders.mgdb" ON id = user_id
-| WHERE city = 'Istanbul' AND amount > 50
-| SELECT name, item, amount
-| SORT amount DESC
-| LIMIT 10
-```
-
-### Multi-Column Filter Optimization (`LazyColumnDict`)
-
-When executing compound filters like:
-```sql
-WHERE country = 'US' AND balance > 1000
-```
-MergenDB optimizes execution through **Demand-Driven Lazy Evaluation**:
-1. It decompresses **only** the `country` column for the block.
-2. If zero rows in the block have `country == 'US'`, the `AND` operator short-circuits.
-3. The `balance` column (and all other columns in the table) are **never read from disk and never decompressed**.
-4. On large tables, this cuts disk read volume and CPU decompression time by up to **90%**.
-
----
-
-## Streaming Data Migration (Import & Export)
-
-Migrating multi-gigabyte SQL dumps into embedded databases often crashes with `Out Of Memory` errors. MergenDB is engineered to stream large dumps line-by-line:
-
-```python
-from mergendb import import_sql, import_sqlite, import_csv
-
-# Ingest a 10 GB MySQL / phpMyAdmin dump under 20 MB of RAM
-import_sql("huge_production_dump.sql", "analytics.mgdb")
-
-# Ingest an existing SQLite database table
-import_sqlite("legacy_app.db", "customers.mgdb", table_name="customers")
-
-# Ingest a CSV dataset
-import_csv("telemetry.csv", "sensors.mgdb")
-```
-
----
-
-## Built-in HTTP REST API Server
-
-MergenDB includes an asynchronous HTTP query server. This allows backend services written in **Node.js, Go, Rust, Java, C#, or PHP** to query local MergenDB files over JSON:
-
-### Starting the Server
-
-```bash
-mergendb-server --port 8765
-```
-
-### Querying via `curl`
-
-```bash
-curl -X POST http://localhost:8765/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "SELECT id, name, balance FROM \"users.mgdb\" WHERE balance > 100 LIMIT 2;"}'
-```
-
-### Response
-
-```json
-{
-  "success": true,
-  "columns": ["id", "name", "balance"],
-  "rows": [
-    [1, "Alice", 100],
-    [5, "Emma", 250]
-  ],
-  "stats": {
-    "execution_time_ms": 1.25,
-    "rows_returned": 2,
-    "blocks_scanned": 1,
-    "blocks_skipped": 14,
-    "bytes_read": 1024
-  }
-}
-```
-
----
-
-## Storage & Compression Architecture
-
-MergenDB files (`.mgdb`) are structured into independent, immutable blocks:
-
-```text
-+-----------------------------------------------------------------------+
-| Header: Magic (4B) | Version (2B) | Created (8B) | Schema JSON       |
-+-----------------------------------------------------------------------+
-| Block 0: Column Chunk 0 | Column Chunk 1 | ...                        |
-+-----------------------------------------------------------------------+
-| Block 1: Column Chunk 0 | Column Chunk 1 | ...                        |
-+-----------------------------------------------------------------------+
-| Footer: Block Offsets, Column Meta, ZoneMaps | Footer Len | Magic (4B)|
-+-----------------------------------------------------------------------+
-```
-
-### Adaptive Compression Pipeline
-
-When writing each column block, MergenDB analyzes the values and selects the encoding with the smallest byte size:
+When writing column blocks, MergenDB analyzes incoming values and applies the most optimal encoding scheme:
 
 1. **Bit-Packed Booleans:** Stores boolean flags at 1 bit per value (8 values per byte).
-2. **Delta / FoR:** Stores sequential numbers as offsets from `min_value`, reducing 8-byte integers to 1- or 2-byte deltas.
-3. **Dictionary Encoding:** Ideal for low-cardinality text (gender, country, status). Stores unique strings once in a block dictionary and encodes rows as 1-byte indices.
+2. **Delta / FoR (Frame-of-Reference):** Stores sequential numbers as offsets from `min_value`, reducing 8-byte integers to 1- or 2-byte deltas.
+3. **Block Dictionary Encoding:** Optimal for low-cardinality text (gender, country, status). Stores unique strings once in a block dictionary and encodes rows as 1-byte indices.
 4. **Run-Length Encoding (RLE):** Collapses repeated identical values into `(count, value)` pairs.
-5. **Secondary Zlib Compression:** Applied with level 1 (fast throughput) to cold byte streams.
+5. **Secondary Zlib Compression:** Applied to compressed byte streams for secondary compaction.
 
 ---
 
 ## Performance Benchmarks
 
-Tested on an Intel Core i7 with 100,000 mixed telemetry records (12 columns: integers, floats, timestamps, statuses, long strings):
+Tested on an Intel Core i5 / i7 with 100,000 mixed telemetry records (12 columns: integers, floats, timestamps, statuses, long strings):
 
 | Storage Format | Disk Size | Space Saved | 2-Column Query Disk Read | Peak RAM |
 | :--- | :--- | :--- | :--- | :--- |
 | **JSON Lines (`.jsonl`)** | 19.5 MB | 0% (Baseline) | 19.5 MB | Unbounded |
 | **SQLite 3 (`.db`)** | 8.1 MB | 58.4% | 8.1 MB (reads full row) | ~30 MB |
-| **MergenDB (`.mgdb`)** | **1.6 MB** | **91.5%** | **0.29 MB (pruned)** | **< 18 MB RAM** |
+| **MergenDB (`.mgdb`)** | **1.6 MB** | **91.5%** | **0.29 MB (pruned)** | **< 15 MB RAM** |
 
 - **Exact Filter Scan Throughput:** ~50,000,000 rows/sec (single core)
 - **Substring (`LIKE '%term%'`) Scan:** ~10,000,000 rows/sec (single core)
-- **SQL Streaming Import Speed:** ~70,000–120,000 rows/sec on standard SSD
+- **SQL Streaming Import Speed:** ~70,000-120,000 rows/sec on standard SSD
 
 ---
 
-## Version Updates & Release Comparisons
-
-### Version Comparison: v0.6.2 vs v0.6.3
-
-| Capability / Feature | v0.6.2 (Multi-Runtime & Zero-Dependency) | v0.6.3 (Official Identity & Zero-Emoji Internationalization) | Status & Impact |
-| :--- | :--- | :--- | :--- |
-| **Mergen Studio Identity** | "phpMyAdmin Edition" text badge | **Official MergenDB Logo & Crisp Emblem** | Rendered directly adjacent to MergenDB brand title in header; edition tags eliminated |
-| **Emoji Policy** | Scattered Unicode emojis across UI & docs | **Strict Zero-Emoji Policy Enforced** | 100% emoji-free codebase, UI, and documentation; zero Windows CP1254 terminal crashes |
-| **Language & Localization** | Turkish-centric UI strings | **Default English with Multi-Language Support** | Complete English default UI with instantaneous live translation for Deutsch (German) and Turkce (Turkish) |
-| **Cross-Language Parity** | Python & Node.js test suites | **106 Tests Verified (88 Py + 18 Node)** | Complete verification across all runtimes with zero dependency footprint |
-
----
-
-### Version Comparison: v0.6.1 vs v0.6.2
-
-| Capability / Feature | v0.6.1 (phpMyAdmin & Node SDK Parity) | v0.6.2 (Zero-Dependency & Multi-Runtime Optimization) | Status & Impact |
-| :--- | :--- | :--- | :--- |
-| **Plain Python Execution** | `mergen` script only | **Direct `python -m mergendb` Runner** | Run CLI, server, tests, and REPL without requiring PATH modifications (`mergendb/__main__.py`) |
-| **Plain Node.js Execution** | Programmatic HTTP client only | **Direct `npx mergendb` Executable CLI** | Run `npx mergendb serve`, `npx mergendb studio`, `benchmark`, and `query` directly (`sdks/nodejs/bin/mergendb.js`) |
-| **Node.js Server Auto-Spawn** | Manual server startup required | **Transparent `autoStart: true`** | Client auto-spawns and manages local MergenDB server in background with zero extra setup |
-| **REST Query Interface** | `POST /query` only | **Unified `GET /query?q=...` & `POST`** | Run instant queries from web browsers, simple curl scripts, or any programming language |
-| **Mergen Studio Versioning** | Hardcoded display strings | **Dynamic Runtime Engine Binding** | Studio UI automatically renders the exact engine version across header, status, and diagnostic tabs |
-| **Zero External Dependencies** | Verified | **100% Zero-Dependency across Python & Node** | Pure standard library across all supported environments (`dependencies: {}`) |
-
----
-
-### Version Comparison: v0.6.0 vs v0.6.1
-
-| Capability / Feature | v0.6.0 (Initial Node.js SDK Release) | v0.6.1 (phpMyAdmin Redesign & Full Ecosystem Parity) | Status & Impact |
-| :--- | :--- | :--- | :--- |
-| **Mergen Studio UI** | Heavy animations, blocking modal overlay stuck at 92% on page turns | **Authentic phpMyAdmin Architecture** | Clean, crisp, lightweight `#f5f7fa` styling with Mergen logo/icon; zero UI lockups |
-| **UI CLI Parity** | Read-only schema and basic queries | **100% Full CLI Parity in Browser** | 10 dedicated tabs: Gözat, Yapı, SQL, Ara, Ekle, Dışa Aktar, İçe Aktar, İşlemler, Sunucu, Kılavuz |
-| **Browser Pagination & Sort** | Blocked by progress modal, no sorting | **Instant Pagination & Column Sorting** | Instant `<< < [page] > >>` navigation; click headers to sort ASC/DESC on disk |
-| **Data Mutations in UI** | CLI only | **Direct Insert & Row Deletion in UI** | Schema-driven dynamic insert form + one-click delete row in Browse tab |
-| **Schema Alterations in UI** | CLI only | **Add, Drop, and Rename Columns in UI** | Full column lifecycle directly from the Yapı (Structure) tab |
-| **Node.js SDK Feature Parity** | `query()`, `find()`, `count()` only | **100% Full Python Parity in JS/TS** | Added `insert()`, `search()`, `update()`, `delete()`, `addColumn()`, `renameColumn()`, `dropColumn()`, `benchmark()` |
-| **Live Hardware Profiling** | CLI only | **Real-Time Profiler in UI & Node.js** | Browser-triggered benchmark test + `client.benchmark()` running live hardware speed test (1M+ rows/s) |
-| **Multi-Language Guides** | Separate docs | **Embedded Runnables for All 4 Runtimes** | Side-by-side executable code examples for Python, Node.js / TypeScript, CLI, and REST API |
-| **Total Test Suite** | 100 Tests (88 Py + 12 JS) | **106 Tests (88 Py + 18 JS, 100% Pass)** | Expanded end-to-end Node.js SDK test coverage with zero regressions |
-
----
-
-### Roadmap & Version Progression
+## Version Changelog & Release Progression
 
 | Version | Milestone | Key Deliverables | Status |
 | :--- | :--- | :--- | :--- |
-| **v0.5.5** | CLI & Ingestion Polish | Universal `EXPORT [csv\|json\|sql]` syntax & extension resolution | Released |
-| **v0.5.6** | Multi-Core Scan Engine | Zero-copy `mmap` ThreadPool scan + C-level `itertools.compress` | Released |
-| **v0.5.7** | Bloom Filter Lookups | 1024-bit 4-hash block Bloom filters for instant text/UUID pruning | Released |
 | **v0.5.8** | Analytical SQL & JOINs | In-Memory Hash JOIN (`INNER`/`LEFT`), Multi-Column GROUP BY, HAVING | Released |
-| **v0.5.9** | Embedded Web UI | **Mergen Studio**: phpMyAdmin-style dashboard, active file selector & % progress bars | Released |
-| **v0.6.0** | Universal Node.js SDK | **Node.js/TypeScript SDK** + CLI completions + Hardware profiling polish | Released |
-| **v0.6.1** | phpMyAdmin Overhaul & Full Parity | **Authentic phpMyAdmin UI**, 100% CLI feature parity in UI and Node.js SDK, 106 tests | Released |
-| **v0.6.2** | Multi-Runtime & Zero-Dependency | **Direct `python -m mergendb` & `npx mergendb` runners**, `autoStart: true`, `GET /query`, zero-dependency optimization | Released |
-| **v0.6.3** | Identity & Zero-Emoji i18n | **Official Logo Integration**, removal of edition badges, strict zero-emoji policy, English/German/Turkish localization | Released (Current) |
+| **v0.5.9** | Embedded Web UI | Initial **Mergen Studio** web interface | Released |
+| **v0.6.0** | Universal Node.js SDK | Zero-dependency Node.js/TypeScript SDK + CLI runner | Released |
+| **v0.6.1** | phpMyAdmin Overhaul | 100% CLI feature parity in browser and Node.js SDK, 106 tests | Released |
+| **v0.6.2** | Multi-Runtime & Zero-Dependency | `python -m mergendb` & `npx mergendb` runners, `autoStart: true`, `GET /query` | Released |
+| **v0.6.3** | Official Identity & i18n | Official Logo, strict zero-emoji policy, English/German/Turkish localization | Released |
+| **v0.6.4** | Hierarchical Architecture | Database containers, nested sub-tables, and streaming export/import | Released |
+| **v0.6.5** | Zero-Memory Streaming Engine | **Zero-Memory Chunked Streaming Engine**, crash-free browser file upload with live % progress bar, 107 tests (100% pass) | **Current Release** |
 
 ---
 
 ## Running the Test Suite
 
-MergenDB includes an embedded test suite with **106 comprehensive tests** (88 Python unit tests covering storage, compression algorithms, query planning, Bloom filters, and analytical joins + 18 end-to-end Node.js SDK integration tests):
+MergenDB includes an embedded test suite with **107 comprehensive tests** (89 Python unit tests covering storage, compression algorithms, query planning, Bloom filters, hierarchical databases, sub-tables, and analytical joins + 18 end-to-end Node.js SDK integration tests):
 
 ```bash
-# Run Python unit tests & hardware profiler via CLI
-mergen test
-
-# Or run via unittest
+# Run Python unit tests via unittest
 python -m unittest discover -s tests
 
 # Run Node.js Client SDK integration tests
@@ -754,4 +373,4 @@ node sdks/nodejs/test.js
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
-Developed by [Uğur Türker Kebeci](https://github.com/ugurturkerkebeci).
+Developed by [Ugur Turker Kebeci](https://github.com/ugurturkerkebeci).

@@ -4,25 +4,25 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.6.3-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.6.5-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Node.js Tests](https://img.shields.io/badge/tests-18%2F18%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 
-The official **zero-dependency** Node.js and TypeScript client for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytics, and memory-constrained workloads.
+The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytical SQL, and memory-constrained workloads.
 
 ---
 
-## Features & Zero Extra Installation
+## Highlights
 
-- **Zero Runtime Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`). No external packages (`dependencies: {}`).
-- **Zero Configuration Runner:** Run `npx mergendb serve` or `npx mergendb studio` directly from your project without installing global CLI tools.
-- **Auto-Start Server (`autoStart: true`):** The client can automatically spawn and manage the background MergenDB server transparently.
-- **TypeScript First:** Complete typings, interfaces, and autocompletion out of the box.
-- **100% Feature Parity with Python CLI:** Insert, query, search, update, delete, schema alteration, and benchmarks.
-- **SQL & Document-Style APIs:** Run analytical SQL or use fluent `.find()` / `.findOne()` / `.search()` syntax.
-- **Tagged Template Literals (`db.sql`):** Safe parameter interpolation preventing SQL injection.
-- **Live Hardware Profiling:** Direct access to `db.benchmark()` scanning over 1,000,000+ rows/sec.
-- **Full phpMyAdmin Studio Operations:** Truncate, Drop, Rename, Import, and Export directly from JS/TS.
+- **Zero External Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`, `fs`, `stream`). Zero third-party packages installed in your runtime.
+- **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces and dot-notation SQL queries.
+- **Zero-Memory Streaming File Engine:** Pipe multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or server in 64 KB blocks without memory exhaustion or process crashes.
+- **Auto-Start Server (`autoStart: true`):** Spawns and manages the local background MergenDB server transparently if it is not already running.
+- **TypeScript First:** Complete typings, interfaces, and code completions included out of the box.
+- **Dual Query Paradigm:** Execute full analytical SQL or use fluent document-style APIs (`find`, `findOne`, `search`, `insert`, `update`, `delete`).
+- **Safe Parameterized SQL:** Tagged template literal `db.sql` prevents SQL injection with automatic escaping.
+- **Live Hardware Telemetry:** Access CPU model, thread topology, and columnar scan benchmarks exceeding 1,000,000 rows/second.
 
 ---
 
@@ -36,73 +36,38 @@ npm install mergendb
 
 ## Quick Start
 
-### Option A: Automatic Server Management (Zero Extra Setup)
+### 1. Zero-Setup Auto-Start Connection
 
 ```javascript
 const { connect } = require('mergendb');
-
-// Spawns and manages the local MergenDB server automatically!
-const db = connect({ autoStart: true, port: 8765 });
-```
-
-### Option B: Start Server via `npx` or CLI
-
-```bash
-# Start server
-npx mergendb serve 8765
-
-# Or open phpMyAdmin Studio in your default browser
-npx mergendb studio 8765
-```
-
-```javascript
-const { connect } = require('mergendb');
-// Or with ESM / TypeScript:
-// import { connect } from 'mergendb';
 
 async function main() {
-  // Connect to local or remote MergenDB server
-  const db = connect('http://localhost:8765');
+  // Spawns and connects to the background MergenDB engine automatically
+  const db = connect({ autoStart: true, port: 8765 });
 
-  // Check connection health & CPU specs
-  const isHealthy = await db.ping();
+  // Verify server health and hardware specifications
   const status = await db.status();
-  console.log(`Connected to MergenDB ${status.version} on ${status.system?.cpu || 'system'}`);
+  console.log(`Connected to MergenDB v${status.version} (${status.cpu_threads} CPU threads)`);
 
-  // Insert records directly (auto-inferred schema)
+  // Insert records into a table (auto-infers schema)
   const users = db.table('users.mgdb');
   await users.insert([
-    { id: 1, name: 'Alice', role: 'admin', balance: 1500 },
-    { id: 2, name: 'Bob', role: 'engineer', balance: 2400 }
+    { id: 1, name: 'Alice', department: 'Engineering', salary: 95000 },
+    { id: 2, name: 'Bob', department: 'Research', salary: 88000 },
+    { id: 3, name: 'Charlie', department: 'Engineering', salary: 102000 }
   ]);
 
-  // Full-text substring search across all columns
-  const searchResults = await users.search('Ali');
-  console.log('Search matches:', searchResults.rows);
+  // Execute analytical SQL with columnar filtering and aggregation
+  const queryResult = await db.query(
+    "SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department"
+  );
+  console.log(`Query completed in ${queryResult.stats.execution_time_ms} ms`);
+  console.table(queryResult.rows);
 
-  // Update records
-  await users.update({ balance: 1750 }, "name = 'Alice'");
-
-  // Delete records
-  await users.delete("balance < 1000");
-
-  // Schema alterations
-  await users.addColumn('last_login', 'TIMESTAMP');
-  await users.renameColumn('role', 'user_role');
-
-  // Analytical SQL Query
-  const result = await db.query("SELECT user_role, COUNT(*), AVG(balance) FROM users GROUP BY user_role");
-  console.log(`Executed in ${result.stats.execution_time_ms} ms`);
-  console.table(result.rows);
-
-  // Tagged template literal with automatic escaping
-  const targetId = 1;
-  const user = await db.sql`SELECT * FROM users WHERE id = ${targetId}`;
-  console.log('User found:', user.rows[0]);
-
-  // Live hardware benchmark
-  const bench = await db.benchmark();
-  console.log(`Hardware Scan Throughput: ${bench.scan_throughput}`);
+  // Tagged template literal with automatic SQL escaping
+  const targetName = 'Alice';
+  const match = await db.sql`SELECT * FROM users.mgdb WHERE name = ${targetName}`;
+  console.log('User found:', match.rows[0]);
 }
 
 main().catch(console.error);
@@ -110,86 +75,211 @@ main().catch(console.error);
 
 ---
 
-## API Reference
+## Hierarchical Database Containers & Nested Sub-tables
 
-### Connection
+MergenDB provides structured hierarchy: **Databases -> Tables -> Nested Sub-tables**.
 
-```typescript
-const db = connect({
-  host: '127.0.0.1',
-  port: 8765,
-  activeTable: 'analytics.mgdb',
-  timeout: 30000 // ms
-});
+```javascript
+const { connect } = require('mergendb');
+
+async function hierarchicalExample() {
+  const client = connect({ host: '127.0.0.1', port: 8765 });
+
+  // 1. Create and manage databases
+  await client.createDatabase('school');
+  const dbs = await client.listDatabases();
+  console.log('Databases:', dbs);
+
+  const schoolDb = client.database('school');
+
+  // 2. Create tables inside the database
+  await schoolDb.createTable('students', [
+    { name: 'student_id', type: 'INT' },
+    { name: 'full_name', type: 'TEXT' },
+    { name: 'grade', type: 'INT' }
+  ]);
+
+  const studentsTable = schoolDb.table('students');
+  await studentsTable.insert([
+    { student_id: 101, full_name: 'John Doe', grade: 10 },
+    { student_id: 102, full_name: 'Jane Smith', grade: 11 }
+  ]);
+
+  // 3. Create nested sub-tables (e.g. specific classes under students)
+  await studentsTable.createSubtable('class_a', [
+    { name: 'student_id', type: 'INT' },
+    { name: 'desk_number', type: 'INT' },
+    { name: 'attendance_pct', type: 'FLOAT' }
+  ]);
+
+  const classATable = studentsTable.subtable('class_a');
+  await classATable.insert([
+    { student_id: 101, desk_number: 14, attendance_pct: 98.5 }
+  ]);
+
+  // List all sub-tables under students
+  const subtables = await studentsTable.listSubtables();
+  console.log('Sub-tables under students:', subtables);
+
+  // 4. Query nested sub-tables using dot notation
+  const res = await client.query('SELECT * FROM school.students.class_a');
+  console.table(res.rows);
+}
+
+hierarchicalExample().catch(console.error);
 ```
 
-### Table CRUD & Search Operations
+---
+
+## Zero-Memory Streaming File Import & Export
+
+Large dataset exports and imports operate via pure Node.js streams. Data is processed in 64 KB chunks without buffering entire tables into V8 heap memory, completely preventing out-of-memory errors and browser crashes.
+
+```javascript
+const { connect } = require('mergendb');
+const path = require('path');
+
+async function streamingExample() {
+  const db = connect('http://localhost:8765');
+  const table = db.table('analytics_events.mgdb');
+
+  const exportPath = path.join(__dirname, 'events_dump.csv');
+  const importPath = path.join(__dirname, 'new_records.csv');
+
+  // Export table directly to disk via HTTP chunked stream
+  console.log('Starting stream export...');
+  await table.exportToFile(exportPath, 'csv');
+  console.log('Export written successfully to', exportPath);
+
+  // Import file directly via raw socket streaming (64 KB chunks)
+  console.log('Starting stream import...');
+  const importResult = await table.importFile(importPath, 'csv');
+  console.log(`Imported ${importResult.rows_imported} rows in ${importResult.execution_time_ms} ms`);
+}
+
+streamingExample().catch(console.error);
+```
+
+---
+
+## Complete API Reference
+
+### Connection & Client
 
 ```typescript
-const table = db.table('users.mgdb');
+import { connect, MergenDB } from 'mergendb';
 
-// Insert rows
-await table.insert([{ id: 1, name: 'Charlie', balance: 500 }]);
+const client = connect({
+  host: '127.0.0.1',
+  port: 8765,
+  activeTable: 'users.mgdb',
+  timeout: 30000,
+  autoStart: true
+});
 
-// Key-value filtering
-const active = await table.find({ role: 'admin' }, { limit: 10, offset: 0 });
+// Ping server
+const isAlive: boolean = await client.ping();
 
-// Full-text search
-const matches = await table.search('engineering');
+// Hardware and runtime metrics
+const sys = await client.status();
 
-// In-place updates
-await table.update({ balance: 600 }, "id = 1");
+// Columnar benchmark
+const bench = await client.benchmark();
+```
 
-// Deletion
-await table.delete("id = 1");
+### Database Management
 
-// Schema alterations
-await table.addColumn('country', 'TEXT', 'TR');
-await table.renameColumn('country', 'nation');
-await table.dropColumn('nation');
+```typescript
+// Create database
+await client.createDatabase('analytics');
 
-// Administrative
+// List databases with sizes and table counts
+const dbList = await client.listDatabases();
+
+// Get database handle
+const analytics = client.database('analytics');
+
+// List tables in database
+const tables = await analytics.listTables();
+
+// Drop database
+await client.dropDatabase('analytics');
+```
+
+### Table Operations
+
+```typescript
+const table = client.table('sensor_data.mgdb');
+
+// Schema inspection
+const schema = await table.schema();
+
+// Paginated data retrieval
+const page1 = await table.data(1, 50);
+
+// Key-value search
+const results = await table.find({ status: 'active' }, { limit: 100 });
+
+// Full-text substring search across all columns
+const matched = await table.search('temperature_alert');
+
+// Record count with optional filter
+const count = await table.count({ status: 'active' });
+
+// Insert single or batch records
+await table.insert([{ timestamp: 1710000000, reading: 42.1 }]);
+
+// Column schema alterations
+await table.addColumn('location', 'TEXT', 'Room 1');
+await table.renameColumn('reading', 'sensor_value');
+await table.dropColumn('location');
+
+// In-place updates and deletions
+await table.update({ sensor_value: 45.0 }, "timestamp = 1710000000");
+await table.delete("sensor_value < 10.0");
+
+// Truncate and drop
 await table.truncate();
 await table.drop();
 ```
 
-### Analytical SQL Execution
+### Analytical SQL Queries
 
 ```typescript
-const res = await db.query("SELECT * FROM logs WHERE severity = 'ERROR'");
+const result = await client.query(
+  "SELECT region, COUNT(*), SUM(sales) FROM transactions GROUP BY region HAVING SUM(sales) > 50000 ORDER BY SUM(sales) DESC"
+);
 
-console.log(res.columns);               // ['timestamp', 'severity', 'message']
-console.log(res.rows);                  // [[1695840000, 'ERROR', 'Disk full'], ...]
-console.log(res.stats.execution_time_ms); // 0.42 ms
-console.log(res.stats.blocks_pruned);    // 8 (Skipped via ZoneMaps & Bloom filter)
+console.log(result.columns);                // Column headers
+console.log(result.rows);                   // Matrix rows
+console.log(result.stats.execution_time_ms); // Query execution duration
+console.log(result.stats.blocks_pruned);     // Blocks skipped via ZoneMaps & Bloom filters
+console.log(result.stats.bytes_read);        // Total raw bytes scanned
 ```
 
-### Fluent Table Operations
+---
 
-```typescript
-const table = db.table('users');
+## Web Studio & CLI Runner
 
-// Inspect schema
-const schema = await table.schema();
-console.log(schema.columns);
+MergenDB includes an integrated, zero-dependency web interface modeled after phpMyAdmin:
 
-// Paginated data view
-const page1 = await table.data(1, 25);
+```bash
+# Launch server
+npx mergendb serve 8765
 
-// Count records
-const totalAdmins = await table.count({ role: 'admin' });
-
-// Export data
-const csvData = await table.export('csv');
-const jsonData = await table.export('json');
-
-// Administrative actions
-await table.truncate(); // Clear records
-await table.drop();     // Delete .mgdb file
+# Open MergenDB Studio in your default browser
+npx mergendb studio 8765
 ```
+
+The Web Studio provides:
+- Hierarchical database, table, and sub-table navigation tree with expand/collapse states.
+- Zero-memory streaming file import and export dialogs with live byte-level progress bars.
+- Interactive SQL console with syntax feedback and query timer.
+- Dynamic pagination and in-place row editing.
+- Full multi-language support (English, German, Turkish).
 
 ---
 
 ## License
 
-MIT © [Uğur Türker Kebeci](https://github.com/ugurturkerkebeci)
+MIT License. Copyright (c) 2026 Uğur Türker Kebeci.
