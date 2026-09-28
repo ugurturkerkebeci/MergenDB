@@ -46,3 +46,4 @@ ENV/
 mergen_auth.json
 scratch/
 .npmrc
+vault/
