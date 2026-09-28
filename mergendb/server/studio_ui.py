@@ -2987,6 +2987,6 @@ curl -X POST http://localhost:8765/import \
 try:
     from mergendb import __version__ as _version
 except Exception:
-    _version = "0.6.7"
+    _version = "0.6.8"
 
 STUDIO_HTML = STUDIO_HTML.replace("__MERGEN_VERSION__", _version)

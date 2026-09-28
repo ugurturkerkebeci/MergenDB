@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.7-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.7-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.8-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.8-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-89%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -14,6 +14,21 @@
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
 
 Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
+
+---
+
+## What Is New in v0.6.8
+
+1. **HTTP Streaming Export Payload Fix:**
+   - Resolved an issue in MergenDB Server where manual chunk-length framing headers were injected into streaming file downloads (`_send_response_streaming_download`), causing chunk byte counts to be saved into downloaded CSV/JSON/SQL files.
+   - Configured `protocol_version = "HTTP/1.1"` and switched to raw streaming byte payloads, terminated cleanly upon stream closure (`Connection: close`). Multi-gigabyte downloads now write 100% clean, valid data files with zero corrupt header bytes.
+
+2. **Mergen Studio Active Table Indicator in Export Tab:**
+   - Added an active table indicator badge (`Selected Table: <name> (<N> rows)`) directly inside the Export tab.
+   - Prevents accidental exports of unintended tables by giving clear, unambiguous visual confirmation of which table is queued for export before clicking the Export button.
+
+3. **Multi-Runtime Packaging & Version Alignment:**
+   - Bumped and synchronized all Python wheels/sdist and Node.js SDK npm packages to `v0.6.8`.
 
 ---
 
@@ -368,7 +383,10 @@ Tested on an Intel Core i5 / i7 with 100,000 mixed telemetry records (12 columns
 | **v0.6.2** | Multi-Runtime & Zero-Dependency | `python -m mergendb` & `npx mergendb` runners, `autoStart: true`, `GET /query` | Released |
 | **v0.6.3** | Official Identity & i18n | Official Logo, strict zero-emoji policy, English/German/Turkish localization | Released |
 | **v0.6.4** | Hierarchical Architecture | Database containers, nested sub-tables, and streaming export/import | Released |
-| **v0.6.5** | Zero-Memory Streaming Engine | **Zero-Memory Chunked Streaming Engine**, crash-free browser file upload with live % progress bar, 107 tests (100% pass) | **Current Release** |
+| **v0.6.5** | Zero-Memory Streaming Engine | Zero-Memory Chunked Streaming Engine, crash-free browser upload | Released |
+| **v0.6.6** | Hierarchical Containers & Streaming | Database containers, sub-tables, and chunked streaming import/export | Released |
+| **v0.6.7** | Studio Navigation & Table Selection | Restored table selection, top nav sync, i18n fix, Node.js multi-database routing | Released |
+| **v0.6.8** | Streaming Raw Payload & Export UX | Clean streaming export raw payload, active table indicator in Studio export | **Current Release** |
 
 ---
 
