@@ -25,6 +25,7 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
     """
     High-performance, zero-dependency REST, Studio Web UI, & Query API handler for MergenDB server.
     """
+    protocol_version = "HTTP/1.1"
 
     def _send_response_json(self, status_code: int, data: dict):
         body = json.dumps(data, default=str).encode("utf-8")
@@ -57,26 +58,22 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _send_response_streaming_download(self, filename: str, mime_type: str, chunk_generator):
         """
-        Streams file download directly to client using HTTP chunked transfer.
+        Streams file download directly to client using standard HTTP streaming.
         Strict zero-RAM footprint (< 15 MB) regardless of table size.
+        Writes raw payload bytes without chunk framing headers so exported files are never corrupted.
         """
         self.send_response(200)
         self.send_header("Content-Type", f"{mime_type}; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Transfer-Encoding", "chunked")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Connection", "close")
         self.end_headers()
 
         for chunk in chunk_generator:
             if chunk:
-                self.wfile.write(f"{len(chunk):X}\r\n".encode("ascii"))
                 self.wfile.write(chunk)
-                self.wfile.write(b"\r\n")
                 self.wfile.flush()
-        self.wfile.write(b"0\r\n\r\n")
-        self.wfile.flush()
 
     def do_OPTIONS(self):
         self.send_response(204)

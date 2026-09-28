@@ -853,9 +853,14 @@ STUDIO_HTML = r"""<!DOCTYPE html>
         <div class="tab-pane" id="pane-export">
           <div class="card-box">
             <div class="card-title" data-i18n="export_title">Export Table Data</div>
-            <p style="font-size: 12px; color: #666; margin-bottom: 16px;" data-i18n="export_desc">
+            <p style="font-size: 12px; color: #666; margin-bottom: 14px;" data-i18n="export_desc">
               Stream and export columnar table data into standard portable file formats.
             </p>
+
+            <div id="exportTableInfoBox" style="margin-bottom: 16px; padding: 10px 14px; background: #f0f7ff; border: 1px solid #c2e0ff; border-radius: 4px; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <span>Selected Table: <b id="exportActiveTableLabel" style="color: var(--pma-blue);">(No table selected)</b></span>
+              <span id="exportActiveTableRows" style="color: #64748b; font-size: 11px;">0 rows</span>
+            </div>
 
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 16px;">
               <div style="border: 1px solid #ccd8e4; border-radius: 4px; padding: 12px; background: #fdfdfd;">
@@ -1745,7 +1750,19 @@ curl -X POST http://localhost:8765/import \
       else if (tabId === 'structure') loadStructureData();
       else if (tabId === 'search') setupSearchTab();
       else if (tabId === 'insert') setupInsertForm();
+      else if (tabId === 'export') updateExportTabInfo();
       else if (tabId === 'status') loadServerStatus();
+    }
+
+    function updateExportTabInfo() {
+      const lbl = document.getElementById('exportActiveTableLabel');
+      const rlbl = document.getElementById('exportActiveTableRows');
+      if (lbl) {
+        lbl.textContent = activeTable ? `${activeDatabase ? activeDatabase + '.' : ''}${activeTable}` : '(No table selected - Please select a table from the sidebar)';
+      }
+      if (rlbl) {
+        rlbl.textContent = activeTable ? `${(totalRows || 0).toLocaleString()} rows` : '';
+      }
     }
 
     // Load Databases and Hierarchical Tables Tree
@@ -1966,6 +1983,7 @@ curl -X POST http://localhost:8765/import \
       }
 
       switchTab(tabName);
+      updateExportTabInfo();
     }
 
     function changeActiveTable(val) {
