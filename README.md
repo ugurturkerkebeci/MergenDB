@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.6-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.6.6-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.6.7-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.6.7-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-89%20Python%20%7C%2018%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -14,6 +14,22 @@
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
 
 Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
+
+---
+
+## What Is New in v0.6.7
+
+1. **Mergen Studio Table Selection & Navigation Fix:**
+   - Restored internationalization engine (EN/DE/TR) and resolved `setLanguage` reference errors in the browser client.
+   - Synchronized top navigation dropdown (`Table:`) with the active database and active table selections.
+   - Fully enabled one-click table browsing and structure views across all databases and subtables.
+
+2. **Node.js SDK Multi-Database Context:**
+   - `TableHandle` now properly encapsulates its parent database context, routing all schema, query, update, delete, column mutations, export, and import commands to the intended database.
+
+3. **CLI REPL Absolute Path Export & Terminal Polish:**
+   - REPL `EXPORT` now explicitly prints full absolute filesystem paths on export start and finish.
+   - Cleaned terminal progress bar carriage-return output to eliminate leftover progress telemetry.
 
 ---
 

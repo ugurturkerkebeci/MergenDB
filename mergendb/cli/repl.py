@@ -15,7 +15,7 @@ from mergendb.io.progress import ProgressBar
 try:
     from mergendb import __version__
 except Exception:
-    __version__ = "0.6.3"
+    __version__ = "0.6.7"
 
 BANNER = r"""
                 _
