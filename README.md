@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+  <img src="[https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg](https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/refs/heads/main/docs/images/logo.jpg)" alt="MergenDB Banner" width="100%" />
 </p>
 
 # MergenDB
