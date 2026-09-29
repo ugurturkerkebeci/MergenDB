@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="[https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg](https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/refs/heads/main/docs/images/logo.jpg)" alt="MergenDB Banner" width="100%" />
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/logo.jpg" alt="MergenDB Banner" width="50%" />
 </p>
 
 # MergenDB
@@ -16,6 +16,7 @@
 Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
 
 ---
+<img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
 
 ## What Is New in v0.7.3
 
