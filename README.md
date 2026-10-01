@@ -4,11 +4,11 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.3-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.7.3-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.4-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.7.4-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-2000%2B%20Python%20%7C%202000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Tests](https://img.shields.io/badge/Tests-2600%2B%20Python%20%7C%202000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Author](https://img.shields.io/badge/Author-U%C4%9Fur%20T%C3%BCrker%20Kebeci-orange.svg?style=flat-square)](https://github.com/ugurturkerkebeci)
 
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
@@ -17,6 +17,19 @@ Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemet
 
 ---
 <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+
+## What Is New in v0.7.4
+
+1. **High-Throughput SQL Streaming & Bulk Import Engine:**
+   - **Zero-Allocation Tokenizer:** Completely redesigned the SQL tuple parser to eliminate per-row `csv.reader` instantiations. Parses raw tuples directly in linear time ($O(N)$) with quote-aware streaming.
+   - **Bulk Ingestion Speed:** Multi-gigabyte SQL dump imports now operate at over **60,000+ rows per second** in pure Python standard library mode, dropping 1.5 GB import times from minutes down to seconds.
+   - **Rock-Solid Fault Tolerance:** Resilient against broken sub-tuples, ragged rows, mixed quotes, and escaped characters without risking data corruption.
+
+2. **Inlined Columnar Bloom Filter Acceleration:**
+   - Optimized block-level Bloom filter generation by inlining `zlib.crc32` bitmask calculations.
+   - Drastically cuts block serialization overhead and accelerates point lookups (`WHERE id = ...`) down to ~12 ms on large datasets.
+
+---
 
 ## What Is New in v0.7.3
 

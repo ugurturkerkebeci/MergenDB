@@ -389,36 +389,78 @@ class DataImporter:
                         open_paren = combined.find('(', i)
                         if open_paren == -1:
                             break
-                        close_paren = combined.find(')', open_paren + 1)
-                        if close_paren == -1:
-                            break
 
-                        # Quote-aware paren matching on slice
-                        while close_paren != -1:
-                            sub = combined[open_paren + 1:close_paren]
-                            q_count = sub.count("'")
-                            if q_count % 2 != 0 or ('"' in sub and sub.count('"') % 2 != 0):
-                                if "\\" in sub:
-                                    q_count -= sub.count(r"\'")
-                                    d_count = sub.count('"') - sub.count(r'\"')
-                                    if q_count % 2 == 0 and d_count % 2 == 0:
-                                        break
-                                close_paren = combined.find(')', close_paren + 1)
+                        # High-speed quote-aware linear scanner for matching closing paren
+                        curr = open_paren + 1
+                        in_q = False
+                        q_char = None
+                        esc = False
+                        while curr < n:
+                            ch = combined[curr]
+                            if in_q:
+                                if esc:
+                                    esc = False
+                                elif ch == '\\':
+                                    esc = True
+                                elif ch == q_char:
+                                    in_q = False
                             else:
-                                break
+                                if ch == "'" or ch == '"':
+                                    in_q = True
+                                    q_char = ch
+                                elif ch == ')':
+                                    break
+                            curr += 1
 
-                        if close_paren == -1:
+                        if curr >= n or combined[curr] != ')':
                             break
 
-                        tuple_str = combined[open_paren + 1:close_paren]
-                        i = close_paren + 1
+                        tuple_str = combined[open_paren + 1:curr]
+                        i = curr + 1
 
-                        quote = "'" if "'" in tuple_str else '"'
-                        reader = csv.reader([tuple_str], delimiter=',', quotechar=quote, skipinitialspace=True)
+                        # Zero-allocation fast tokenizer for tuple values
                         try:
-                            raw_row = [c.strip() if c is not None else None for c in next(reader)]
+                            vals = []
+                            v_start = 0
+                            v_in_q = False
+                            v_qc = None
+                            v_esc = False
+                            t_len = len(tuple_str)
+                            for v_idx in range(t_len):
+                                c = tuple_str[v_idx]
+                                if v_in_q:
+                                    if v_esc:
+                                        v_esc = False
+                                    elif c == '\\':
+                                        v_esc = True
+                                    elif c == v_qc:
+                                        v_in_q = False
+                                else:
+                                    if c == "'" or c == '"':
+                                        v_in_q = True
+                                        v_qc = c
+                                    elif c == ',':
+                                        v = tuple_str[v_start:v_idx].strip()
+                                        if v.startswith(("'", '"')) and len(v) >= 2 and v[-1] == v[0]:
+                                            v = v[1:-1].replace(r"\'", "'").replace(r'\"', '"').replace(r"\\", "\\")
+                                        elif v.upper() == "NULL" or v == "":
+                                            v = None
+                                        vals.append(v)
+                                        v_start = v_idx + 1
+                            last_v = tuple_str[v_start:].strip()
+                            if last_v.startswith(("'", '"')) and len(last_v) >= 2 and last_v[-1] == last_v[0]:
+                                last_v = last_v[1:-1].replace(r"\'", "'").replace(r'\"', '"').replace(r"\\", "\\")
+                            elif last_v.upper() == "NULL" or last_v == "":
+                                last_v = None
+                            vals.append(last_v)
+                            raw_row = vals
                         except Exception:
-                            continue
+                            quote = "'" if "'" in tuple_str else '"'
+                            reader = csv.reader([tuple_str], delimiter=',', quotechar=quote, skipinitialspace=True)
+                            try:
+                                raw_row = [c.strip() if c is not None else None for c in next(reader)]
+                            except Exception:
+                                continue
 
                         if not raw_row:
                             continue

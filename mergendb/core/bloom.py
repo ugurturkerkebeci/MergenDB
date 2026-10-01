@@ -42,11 +42,16 @@ class BlockBloomFilter:
 
     @classmethod
     def build_from_values(cls, values: Iterable[Any]) -> "BlockBloomFilter":
-        bf = cls()
+        bitmask = 0
+        bits = cls.BITS
+        crc = zlib.crc32
         for v in values:
             if v is not None:
-                bf.add(v)
-        return bf
+                s = str(v).encode("utf-8")
+                h1 = crc(s)
+                h2 = ((h1 >> 16) ^ (h1 * 0x45d9f3b)) & 0xFFFFFFFF
+                bitmask |= (1 << (h1 % bits)) | (1 << ((h1 + h2) % bits)) | (1 << ((h1 + (h2 << 1)) % bits)) | (1 << ((h1 + 3 * h2) % bits))
+        return cls(bitmask)
 
     def to_hex(self) -> str:
         return hex(self.bitmask)
