@@ -17,6 +17,8 @@ try:
 except (OverflowError, AttributeError):
     csv.field_size_limit(2147483647)
 
+SQL_VAL_REGEX = re.compile(r"\s*(?:'((?:''|\\.|[^'\\])*)'|\"((?:\"\"|\\.|[^\"\\])*)\"|([^,]+))\s*(?:,|$)")
+
 SQLITE_TYPE_MAP = {
     "integer": DataType.INT64,
     "int": DataType.INT64,
@@ -331,16 +333,12 @@ class DataImporter:
             return convs
 
         def _write_columnar_batch(wr, sch, convs, b):
-            expected_cols = len(sch.columns)
-            padded_b = [r + [None] * (expected_cols - len(r)) if len(r) < expected_cols else r[:expected_cols] for r in b]
-            cols_transposed = list(zip(*padded_b))
             col_map = {}
+            row_cnt = len(b)
             for idx, col in enumerate(sch.columns):
-                if idx < len(cols_transposed):
-                    col_map[col.name] = convs[idx](cols_transposed[idx])
-                else:
-                    col_map[col.name] = [None] * len(b)
-            wr.write_columns(col_map, len(b))
+                raw_col = [r[idx] if idx < len(r) else None for r in b]
+                col_map[col.name] = convs[idx](raw_col)
+            wr.write_columns(col_map, row_cnt)
 
         total_imported = 0
         batch = []
@@ -371,19 +369,13 @@ class DataImporter:
 
                     combined = (pending + " " + s).strip() if pending else s
 
-                    # Check quote balance
-                    single_q = combined.count("'") - combined.count(r"\'")
-                    double_q = combined.count('"') - combined.count(r'\"')
-                    if (single_q % 2 != 0) or (double_q % 2 != 0):
-                        pending = combined
-                        continue
-
                     # Extract tuples from line
                     v_idx = combined.find("VALUES")
                     if v_idx == -1:
                         v_idx = combined.find("values")
                     i = v_idx + 6 if v_idx != -1 else 0
                     n = len(combined)
+                    incomplete = False
 
                     while i < n:
                         open_paren = combined.find('(', i)
@@ -403,7 +395,10 @@ class DataImporter:
                                 elif ch == '\\':
                                     esc = True
                                 elif ch == q_char:
-                                    in_q = False
+                                    if q_char == "'" and curr + 1 < n and combined[curr + 1] == "'":
+                                        curr += 1  # SQL doubled quote ''
+                                    else:
+                                        in_q = False
                             else:
                                 if ch == "'" or ch == '"':
                                     in_q = True
@@ -413,54 +408,29 @@ class DataImporter:
                             curr += 1
 
                         if curr >= n or combined[curr] != ')':
+                            # Incomplete tuple at end of line: buffer only from open_paren onwards
+                            pending = combined[open_paren:]
+                            if len(pending) > 65536:
+                                pending = ""  # safety guard against runaway malformed line
+                            incomplete = True
                             break
 
                         tuple_str = combined[open_paren + 1:curr]
                         i = curr + 1
 
-                        # Zero-allocation fast tokenizer for tuple values
-                        try:
-                            vals = []
-                            v_start = 0
-                            v_in_q = False
-                            v_qc = None
-                            v_esc = False
-                            t_len = len(tuple_str)
-                            for v_idx in range(t_len):
-                                c = tuple_str[v_idx]
-                                if v_in_q:
-                                    if v_esc:
-                                        v_esc = False
-                                    elif c == '\\':
-                                        v_esc = True
-                                    elif c == v_qc:
-                                        v_in_q = False
+                        # C-level regex extraction for tuple values
+                        raw_row = []
+                        for sq, dq, raw in SQL_VAL_REGEX.findall(tuple_str):
+                            if sq is not None and sq != "":
+                                raw_row.append(sq.replace("''", "'").replace(r"\'", "'").replace(r"\\", "\\"))
+                            elif dq is not None and dq != "":
+                                raw_row.append(dq.replace('""', '"').replace(r'\"', '"').replace(r"\\", "\\"))
+                            else:
+                                raw_clean = raw.strip() if raw else ""
+                                if raw_clean.upper() == "NULL" or raw_clean == "":
+                                    raw_row.append(None)
                                 else:
-                                    if c == "'" or c == '"':
-                                        v_in_q = True
-                                        v_qc = c
-                                    elif c == ',':
-                                        v = tuple_str[v_start:v_idx].strip()
-                                        if v.startswith(("'", '"')) and len(v) >= 2 and v[-1] == v[0]:
-                                            v = v[1:-1].replace(r"\'", "'").replace(r'\"', '"').replace(r"\\", "\\")
-                                        elif v.upper() == "NULL" or v == "":
-                                            v = None
-                                        vals.append(v)
-                                        v_start = v_idx + 1
-                            last_v = tuple_str[v_start:].strip()
-                            if last_v.startswith(("'", '"')) and len(last_v) >= 2 and last_v[-1] == last_v[0]:
-                                last_v = last_v[1:-1].replace(r"\'", "'").replace(r'\"', '"').replace(r"\\", "\\")
-                            elif last_v.upper() == "NULL" or last_v == "":
-                                last_v = None
-                            vals.append(last_v)
-                            raw_row = vals
-                        except Exception:
-                            quote = "'" if "'" in tuple_str else '"'
-                            reader = csv.reader([tuple_str], delimiter=',', quotechar=quote, skipinitialspace=True)
-                            try:
-                                raw_row = [c.strip() if c is not None else None for c in next(reader)]
-                            except Exception:
-                                continue
+                                    raw_row.append(raw_clean)
 
                         if not raw_row:
                             continue
@@ -513,11 +483,7 @@ class DataImporter:
                             batch = []
                             pbar.update(total_imported, current_bytes=bytes_processed)
 
-                    # Check remainder after last processed tuple
-                    rem = combined[i:].strip()
-                    if rem and not rem.endswith(";"):
-                        pending = rem
-                    else:
+                    if not incomplete:
                         pending = ""
 
                 if batch and writer:
