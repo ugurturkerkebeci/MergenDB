@@ -4,8 +4,8 @@
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.5-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.7.5-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.7.6-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.7.6-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-2600%2B%20Python%20%7C%202000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -17,6 +17,18 @@ Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemet
 
 ---
 <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+
+## What Is New in v0.7.6
+
+1. **Zero-Row-Drop SQL Ingestion (100M+ Row Integrity):**
+   - **Linear `parse_sql_tuple` Parser:** Completely replaced regex extraction with a specialized zero-regex linear tuple scanner running at up to 95,000+ rows/second.
+   - **Consecutive & Trailing Commas (`,,`):** Correctly preserves empty, null, and trailing unquoted fields without skipping columns or triggering row discards.
+   - **Automatic Schema Padding:** Legitimate rows with missing optional trailing columns are automatically padded with `None` to match the table schema, completely eliminating dropped rows on massive (100M+) datasets.
+
+2. **Context-Aware `VALUES` Keyword Resolution:**
+   - Restricted `VALUES` keyword parsing strictly to the header of `INSERT INTO` / `REPLACE INTO` statements, preventing data corruption or skipped rows when field values contain the word "values".
+
+---
 
 ## What Is New in v0.7.5
 
