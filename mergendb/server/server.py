@@ -274,10 +274,18 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             raw_tbl = params.get("table", [""])[0]
             explicit_path = params.get("path", [""])[0]
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            if explicit_path and os.path.isfile(explicit_path):
-                table_name = explicit_path
+            if explicit_path:
+                explicit_path = explicit_path.strip().strip("'\"`")
+            if explicit_path and (os.path.isfile(explicit_path) or os.path.isfile(explicit_path.replace("\\", "/")) or os.path.isfile(os.path.normpath(explicit_path))):
+                table_name = os.path.normpath(explicit_path)
             else:
                 table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if not table_name or not os.path.exists(table_name):
+                for db_meta in list_databases():
+                    cand = resolve_table_path(raw_tbl, active_db=db_meta["name"])
+                    if cand and os.path.exists(cand):
+                        table_name = cand
+                        break
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
@@ -316,10 +324,18 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             raw_tbl = params.get("table", [""])[0]
             explicit_path = params.get("path", [""])[0]
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            if explicit_path and os.path.isfile(explicit_path):
-                table_name = explicit_path
+            if explicit_path:
+                explicit_path = explicit_path.strip().strip("'\"`")
+            if explicit_path and (os.path.isfile(explicit_path) or os.path.isfile(explicit_path.replace("\\", "/")) or os.path.isfile(os.path.normpath(explicit_path))):
+                table_name = os.path.normpath(explicit_path)
             else:
                 table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if not table_name or not os.path.exists(table_name):
+                for db_meta in list_databases():
+                    cand = resolve_table_path(raw_tbl, active_db=db_meta["name"])
+                    if cand and os.path.exists(cand):
+                        table_name = cand
+                        break
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return
@@ -383,10 +399,18 @@ class MergenRequestHandler(http.server.BaseHTTPRequestHandler):
             explicit_path = params.get("path", [""])[0]
             fmt = params.get("format", ["csv"])[0].lower()
             db_name = params.get("database", [""])[0] or getattr(MergenDB, "active_database", "default")
-            if explicit_path and os.path.isfile(explicit_path):
-                table_name = explicit_path
+            if explicit_path:
+                explicit_path = explicit_path.strip().strip("'\"`")
+            if explicit_path and (os.path.isfile(explicit_path) or os.path.isfile(explicit_path.replace("\\", "/")) or os.path.isfile(os.path.normpath(explicit_path))):
+                table_name = os.path.normpath(explicit_path)
             else:
                 table_name = resolve_table_path(raw_tbl, active_db=db_name)
+            if not table_name or not os.path.exists(table_name):
+                for db_meta in list_databases():
+                    cand = resolve_table_path(raw_tbl, active_db=db_meta["name"])
+                    if cand and os.path.exists(cand):
+                        table_name = cand
+                        break
             if not table_name or not os.path.exists(table_name):
                 self._send_response_json(404, {"error": f"Table '{raw_tbl}' not found"})
                 return

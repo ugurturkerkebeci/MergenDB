@@ -102,6 +102,24 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
 
     clean_raw = raw[:-5] if raw.endswith(".mgdb") else raw
 
+    # Strip default. or default/ prefix if present
+    clean_no_default = clean_raw
+    if clean_no_default.startswith("default."):
+        clean_no_default = clean_no_default[8:]
+    elif clean_no_default.startswith("default/"):
+        clean_no_default = clean_no_default[8:]
+
+    if clean_no_default != clean_raw:
+        cand = os.path.join(base_dir, clean_no_default)
+        if os.path.isfile(cand):
+            return os.path.normpath(cand)
+        if os.path.isfile(cand + ".mgdb"):
+            return os.path.normpath(cand + ".mgdb")
+        if "." in clean_no_default:
+            cand_nested = os.path.join(base_dir, *clean_no_default.split(".")) + ".mgdb"
+            if os.path.isfile(cand_nested):
+                return os.path.normpath(cand_nested)
+
     # 2. Check inside active_db if specified
     if active_db and active_db != "default":
         db_folder = os.path.join(base_dir, active_db)
@@ -143,18 +161,26 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
         parts = clean_raw.split(".")
         first_db = parts[0]
         rest = parts[1:]
-        cand_db = os.path.join(base_dir, first_db)
-        if os.path.isdir(cand_db):
-            if len(rest) == 1:
-                cand = os.path.join(cand_db, f"{rest[0]}.mgdb")
-                if os.path.isfile(cand):
-                    return os.path.normpath(cand)
-            cand_nested = os.path.join(cand_db, *rest) + ".mgdb"
-            if os.path.isfile(cand_nested):
-                return os.path.normpath(cand_nested)
-            cand_flat = os.path.join(cand_db, ".".join(rest)) + ".mgdb"
+        if first_db.lower() == "default":
+            cand = os.path.join(base_dir, *rest) + ".mgdb"
+            if os.path.isfile(cand):
+                return os.path.normpath(cand)
+            cand_flat = os.path.join(base_dir, ".".join(rest)) + ".mgdb"
             if os.path.isfile(cand_flat):
                 return os.path.normpath(cand_flat)
+        else:
+            cand_db = os.path.join(base_dir, first_db)
+            if os.path.isdir(cand_db):
+                if len(rest) == 1:
+                    cand = os.path.join(cand_db, f"{rest[0]}.mgdb")
+                    if os.path.isfile(cand):
+                        return os.path.normpath(cand)
+                cand_nested = os.path.join(cand_db, *rest) + ".mgdb"
+                if os.path.isfile(cand_nested):
+                    return os.path.normpath(cand_nested)
+                cand_flat = os.path.join(cand_db, ".".join(rest)) + ".mgdb"
+                if os.path.isfile(cand_flat):
+                    return os.path.normpath(cand_flat)
 
         cand_root_nested = os.path.join(base_dir, *parts) + ".mgdb"
         if os.path.isfile(cand_root_nested):
@@ -163,13 +189,32 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
         if os.path.isfile(cand_root_flat):
             return os.path.normpath(cand_root_flat)
 
-    # 4. Handle creation path
+    # 4. Fallback search across any database subdirectory if not for_create
+    if not for_create:
+        search_target = clean_no_default
+        try:
+            for entry in os.listdir(base_dir):
+                entry_dir = os.path.join(base_dir, entry)
+                if os.path.isdir(entry_dir) and not entry.startswith(".") and entry not in SYSTEM_IGNORED_DIRS:
+                    cand = os.path.join(entry_dir, f"{search_target}.mgdb")
+                    if os.path.isfile(cand):
+                        return os.path.normpath(cand)
+                    if "." in search_target:
+                        cand_nest = os.path.join(entry_dir, *search_target.split(".")) + ".mgdb"
+                        if os.path.isfile(cand_nest):
+                            return os.path.normpath(cand_nest)
+        except Exception:
+            pass
+
+    # 5. Handle creation path
     if for_create:
         clean = clean_raw
         if active_db and active_db != "default":
             db_dir = os.path.join(base_dir, active_db)
             os.makedirs(db_dir, exist_ok=True)
             if clean.startswith(active_db + "."):
+                clean = clean[len(active_db) + 1:]
+            elif clean.startswith(active_db + "/"):
                 clean = clean[len(active_db) + 1:]
             if "." in clean:
                 parts = clean.split(".")
@@ -178,6 +223,7 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
                 return os.path.normpath(os.path.join(sub_dir, f"{parts[-1]}.mgdb"))
             return os.path.normpath(os.path.join(db_dir, f"{clean}.mgdb"))
         else:
+            clean = clean_no_default
             if "." in clean:
                 parts = clean.split(".")
                 if os.path.isdir(os.path.join(base_dir, parts[0])) or os.path.isfile(os.path.join(base_dir, f"{parts[0]}.mgdb")):
@@ -186,9 +232,13 @@ def resolve_table_path(table_name: str, active_db: Optional[str] = None, for_cre
                     return os.path.normpath(os.path.join(sub_dir, f"{parts[-1]}.mgdb"))
             return os.path.normpath(os.path.join(base_dir, f"{clean}.mgdb"))
 
-    # 5. Default fallback
-    clean_name = raw[:-5] if raw.endswith(".mgdb") else raw
+    # 6. Default fallback
+    clean_name = clean_no_default
     if active_db and active_db != "default":
+        if clean_name.startswith(active_db + "."):
+            clean_name = clean_name[len(active_db) + 1:]
+        elif clean_name.startswith(active_db + "/"):
+            clean_name = clean_name[len(active_db) + 1:]
         return os.path.normpath(os.path.join(base_dir, active_db, f"{clean_name}.mgdb"))
     return os.path.normpath(os.path.join(base_dir, f"{clean_name}.mgdb"))
 
@@ -1525,11 +1575,41 @@ class RemoteTable:
     def drop(self) -> QueryResult:
         return self.client.query(f"DROP TABLE {self.name}", database=self.database)
 
+    def data(self, page: int = 1, limit: int = 50, sort_col: str = "", sort_dir: str = "asc") -> Dict[str, Any]:
+        params: Dict[str, Any] = {"table": self.name, "page": page, "limit": limit}
+        if self.database:
+            params["database"] = self.database
+        if sort_col:
+            params["sort_col"] = sort_col
+            params["sort_dir"] = sort_dir
+        return self.client._request("GET", f"/table_data?{urllib.parse.urlencode(params)}")
+
     def export(self, format: str = "json") -> str:
         params = {"table": self.name, "format": format}
         if self.database:
             params["database"] = self.database
         return self.client._request("GET", f"/export?{urllib.parse.urlencode(params)}", return_raw=True)
+
+
+class RemoteDatabase:
+    """
+    Handle for a database container on a remote MergenDB server.
+    """
+    def __init__(self, client: "RemoteClient", name: str = "default"):
+        self.client = client
+        self.name = name
+
+    def table(self, table_name: str) -> RemoteTable:
+        return self.client.table(table_name, database=self.name)
+
+    def list_tables(self) -> List[Dict[str, Any]]:
+        return self.client.list_tables(database=self.name)
+
+    def query(self, sql_query: str) -> QueryResult:
+        return self.client.query(sql_query, database=self.name)
+
+    def drop(self) -> Dict[str, Any]:
+        return self.client.drop_database(self.name)
 
 
 class RemoteClient:
@@ -1540,7 +1620,7 @@ class RemoteClient:
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 8529,
+        port: int = 8765,
         url: Optional[str] = None,
         username: str = "root",
         password: str = "",
@@ -1578,7 +1658,7 @@ class RemoteClient:
     def _request(self, method: str, path: str, data: Optional[Any] = None, return_raw: bool = False) -> Any:
         url = f"{self.base_url}{path}"
         headers = self._get_auth_header()
-        headers["User-Agent"] = "MergenDB-Python/0.7.3"
+        headers["User-Agent"] = "MergenDB-Python/0.8.0"
 
         encoded_data = None
         if data is not None:
@@ -1658,6 +1738,13 @@ class RemoteClient:
         res = self._request("GET", f"/tables{query_params}")
         return res.get("tables", [])
 
+    def use(self, database_name: str) -> "RemoteClient":
+        self.active_database = database_name
+        return self
+
+    def database(self, database_name: str = "default") -> RemoteDatabase:
+        return RemoteDatabase(self, database_name)
+
     def table(self, name: str, database: Optional[str] = None) -> RemoteTable:
         return RemoteTable(self, name, database or self.active_database)
 
@@ -1719,7 +1806,7 @@ def connect(
     target_str = str(target).strip()
     if host is not None or port is not None or target_str.startswith("http://") or target_str.startswith("https://"):
         h = host or ("127.0.0.1" if not target_str.startswith("http") else None)
-        p = port or 8529
+        p = port or 8765
         u = target_str if target_str.startswith("http") else None
         return RemoteClient(host=h or "127.0.0.1", port=p, url=u, username=username, password=password, token=token)
 

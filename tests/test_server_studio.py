@@ -190,5 +190,28 @@ class TestServerStudio(unittest.TestCase):
         self.assertTrue(data["success"])
         conn.close()
 
+    def test_remote_client_table_data_and_database(self):
+        from mergendb.client import RemoteClient
+        client = RemoteClient(host=self.host, port=self.port, username="root", password="")
+        
+        # Test table.data()
+        tbl = client.table("studio_test.mgdb")
+        data = tbl.data(page=1, limit=10)
+        self.assertEqual(data["table"], "studio_test.mgdb")
+        self.assertEqual(len(data["rows"]), 3)
+        self.assertEqual(data["total_rows"], 3)
+        self.assertIn("score", data["columns"])
+
+        # Test scoped table resolution with 'default.studio_test'
+        tbl_scoped = client.table("default.studio_test")
+        scoped_data = tbl_scoped.data()
+        self.assertEqual(len(scoped_data["rows"]), 3)
+
+        # Test RemoteDatabase
+        db = client.database("default")
+        db_tbl = db.table("studio_test")
+        db_data = db_tbl.data()
+        self.assertEqual(len(db_data["rows"]), 3)
+
 if __name__ == "__main__":
     unittest.main()

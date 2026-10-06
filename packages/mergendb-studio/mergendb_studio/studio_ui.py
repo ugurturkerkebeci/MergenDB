@@ -2327,7 +2327,20 @@ curl -X POST http://localhost:8765/import \
         if (bNext) bNext.disabled = (currentPage >= totalPages);
         if (bLast) bLast.disabled = (currentPage >= totalPages);
 
-        renderGrid(container, data.columns, data.rows, true);
+        let cols = data.columns || [];
+        if (cols.length === 0) {
+          try {
+            let schemaUrl = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
+            if (activeTablePath) schemaUrl += `&path=${encodeURIComponent(activeTablePath)}`;
+            const sRes = await studioFetch(schemaUrl);
+            const sData = await sRes.json();
+            if (sData.columns && Array.isArray(sData.columns)) {
+              cols = sData.columns.map(c => typeof c === 'object' ? c.name : c);
+            }
+          } catch (_) {}
+        }
+
+        renderGrid(container, cols, data.rows || [], true);
       } catch (err) {
         console.error('Failed to load table data:', err);
       } finally {
@@ -2357,40 +2370,48 @@ curl -X POST http://localhost:8765/import \
     // High performance grid rendering: NEVER stores serialized data in DOM dataset!
     function renderGrid(container, columns, rows, enableRowActions = false) {
       if (!container) return;
-      if (!rows || rows.length === 0) {
+      const safeCols = Array.isArray(columns) ? columns : [];
+      const safeRows = Array.isArray(rows) ? rows : [];
+      currentGridRows = safeRows;
+      currentGridCols = safeCols;
+
+      if (safeCols.length === 0 && safeRows.length === 0) {
         container.innerHTML = `<div style="padding: 24px; text-align: center; color: #888;">(Empty table / Zero rows returned)</div>`;
-        currentGridRows = [];
-        currentGridCols = [];
         return;
       }
-
-      currentGridRows = rows;
-      currentGridCols = columns;
 
       let html = `<table class="pma-grid"><thead><tr>`;
       if (enableRowActions) {
         html += `<th style="width: 75px; text-align: center;">${t('action')}</th>`;
       }
-      columns.forEach(col => {
+      safeCols.forEach(col => {
         const sortIndicator = (sortColumn === col) ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : '';
-        html += `<th onclick="handleHeaderSort('${col}')">${escapeHtml(col)}${sortIndicator}</th>`;
+        const safeColEsc = String(col).replace(/'/g, "\\'");
+        html += `<th onclick="handleHeaderSort('${safeColEsc}')">${escapeHtml(col)}${sortIndicator}</th>`;
       });
       html += `</tr></thead><tbody>`;
 
-      rows.forEach((row, rIdx) => {
-        html += `<tr>`;
-        if (enableRowActions) {
-          const firstColVal = row[0] !== undefined ? row[0] : rIdx;
-          html += `<td style="text-align: center;">
-            <button class="btn-action" style="padding: 1px 5px; font-size: 11px;" onclick="copyRowJson(${rIdx})" title="${t('copy_json_btn')}">JSON</button>
-            <button class="btn-action" style="padding: 1px 5px; font-size: 11px; color: var(--pma-danger);" onclick="deleteRow('${columns[0]}', '${escapeHtml(String(firstColVal))}')" title="${t('delete_btn')}">X</button>
-          </td>`;
-        }
-        row.forEach(val => {
-          html += `<td>${escapeHtml(val)}</td>`;
+      if (safeRows.length === 0) {
+        const colSpan = safeCols.length + (enableRowActions ? 1 : 0);
+        html += `<tr><td colspan="${colSpan}" style="padding: 24px; text-align: center; color: #888; font-style: italic;">(Zero rows returned)</td></tr>`;
+      } else {
+        safeRows.forEach((row, rIdx) => {
+          html += `<tr>`;
+          if (enableRowActions) {
+            const firstColVal = row[0] !== undefined ? row[0] : rIdx;
+            const safeFirstCol = String(safeCols[0] || '').replace(/'/g, "\\'");
+            const safeFirstVal = String(firstColVal).replace(/'/g, "\\'");
+            html += `<td style="text-align: center;">
+              <button class="btn-action" style="padding: 1px 5px; font-size: 11px;" onclick="copyRowJson(${rIdx})" title="${t('copy_json_btn')}">JSON</button>
+              <button class="btn-action" style="padding: 1px 5px; font-size: 11px; color: var(--pma-danger);" onclick="deleteRow('${safeFirstCol}', '${safeFirstVal}')" title="${t('delete_btn')}">X</button>
+            </td>`;
+          }
+          row.forEach(val => {
+            html += `<td>${escapeHtml(val)}</td>`;
+          });
+          html += `</tr>`;
         });
-        html += `</tr>`;
-      });
+      }
 
       html += `</tbody></table>`;
       container.innerHTML = html;
