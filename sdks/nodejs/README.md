@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/logo.png" alt="MergenDB Logo" width="220" />
 </p>
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/badge/npm-v0.8.0-blue.svg)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/badge/npm-v0.8.1-blue.svg)](https://www.npmjs.com/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -13,8 +13,13 @@ The official **zero-dependency** Node.js and TypeScript client SDK for **MergenD
 
 ---
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+</p>
+
 ## Highlights
 
+- **Vectorized Predicate Pushdown (v0.8.0+):** Point lookups and scalar filters (`WHERE TOKEN = "12345678901"`) execute in **~1 second on 100M+ rows** without memory exhaustion or file size bloat.
 - **Zero External Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`, `fs`, `stream`). Zero third-party packages installed in your runtime.
 - **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces and dot-notation SQL queries.
 - **Zero-Memory Streaming File Engine:** Pipe multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or server in 64 KB blocks without memory exhaustion or process crashes.
@@ -34,7 +39,70 @@ npm install mergendb
 
 ---
 
-## Quick Start
+## Simple Database CRUD Quickstart
+
+Connecting to a database, inserting data, querying with SQL or document methods, updating, and deleting:
+
+```javascript
+const { connect } = require('mergendb');
+
+async function main() {
+  // 1. Connect to MergenDB (autoStart spawns local background server automatically)
+  const db = connect({
+    autoStart: true,
+    port: 8765,
+    user: 'root',
+    password: ''
+  });
+
+  const users = db.table('users.mgdb');
+
+  // 2. Insert Records (Create) - schema inferred and compressed automatically
+  await users.insert([
+    { id: 1, name: 'Alice', department: 'Engineering', salary: 95000, active: true },
+    { id: 2, name: 'Bob', department: 'Research', salary: 82000, active: true },
+    { id: 3, name: 'Charlie', department: 'Engineering', salary: 102000, active: false },
+    { id: 4, name: 'Diana', department: 'Design', salary: 88000, active: true }
+  ]);
+  console.log('Inserted rows into users.mgdb');
+
+  // 3. Query with Standard SQL (Read)
+  const result = await db.query(
+    "SELECT name, department, salary FROM users.mgdb WHERE salary >= 85000 ORDER BY salary DESC;"
+  );
+  console.table(result.rows);
+
+  // Safe tagged template literal with automatic escaping:
+  const dept = 'Engineering';
+  const eng = await db.sql`SELECT name, salary FROM users.mgdb WHERE department = ${dept} AND active = true`;
+  console.log('Active Engineers:', eng.rows);
+
+  // 4. Document-Style find() & findOne()
+  const alice = await users.findOne({ name: 'Alice' });
+  console.log('Found Alice:', alice);
+
+  const activeStaff = await users.find({ active: true });
+  console.log(`Found ${activeStaff.length} active staff members`);
+
+  // 5. Update Records (Update)
+  await users.update({ salary: 110000 }, "name = 'Alice'");
+  // Or via SQL:
+  await db.query("UPDATE users.mgdb SET salary = salary + 3000 WHERE department = 'Engineering';");
+
+  // 6. Delete Records (Delete)
+  await users.delete("active = false");
+  // Or via SQL:
+  await db.query("DELETE FROM users.mgdb WHERE name = 'Bob';");
+
+  // 7. Columnar Analytical Aggregations
+  const stats = await db.query(
+    "SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department;"
+  );
+  console.table(stats.rows);
+}
+
+main().catch(console.error);
+```
 
 ### 1. Zero-Setup Auto-Start Connection
 

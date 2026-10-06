@@ -68,6 +68,11 @@ class LazyColumnDict(dict):
             return None
         chunk_meta = self.block.columns[col_name]
         col_def = self.reader.schema.get_column(col_name)
+
+        # Immediate pruning check without touching chunk data
+        if chunk_meta.can_prune(op, target_val):
+            return [False] * self.row_count
+
         chunk_bytes = self.reader.read_chunk_bytes(chunk_meta.offset, chunk_meta.compressed_bytes)
         self.stats.bytes_read += len(chunk_bytes)
         return ColumnCompressor.evaluate_predicate(
@@ -259,7 +264,8 @@ class FileReader:
                 return self._scan_single_block(blk, target_columns, predicates, filter_cols_set, filter_fn)
 
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                for block, (batch, b_read, was_skipped) in zip(self.blocks, executor.map(worker_fn, self.blocks)):
+                chunk_sz = max(1, min(64, len(self.blocks) // (worker_count * 4)))
+                for block, (batch, b_read, was_skipped) in zip(self.blocks, executor.map(worker_fn, self.blocks, chunksize=chunk_sz)):
                     if was_skipped:
                         stats.blocks_skipped += 1
                         continue

@@ -11,6 +11,10 @@ from mergendb.compression.encodings import (
     encode_dict,
     decode_dict,
     dict_predicate_pushdown,
+    raw_predicate_pushdown,
+    delta_predicate_pushdown,
+    rle_predicate_pushdown,
+    bitpacked_bool_predicate_pushdown,
     encode_delta,
     decode_delta,
     encode_bitpacked_bool,
@@ -199,9 +203,19 @@ class ColumnCompressor:
         try:
             if is_zlib:
                 payload = zlib.decompress(payload)
+            elif isinstance(payload, memoryview):
+                payload = bytes(payload)
 
             if enc_type == EncodingType.DICTIONARY:
                 return dict_predicate_pushdown(payload, dtype, op, target_val)
+            elif enc_type == EncodingType.RAW:
+                return raw_predicate_pushdown(payload, dtype, op, target_val)
+            elif enc_type == EncodingType.DELTA:
+                return delta_predicate_pushdown(payload, dtype, op, target_val)
+            elif enc_type == EncodingType.RLE:
+                return rle_predicate_pushdown(payload, dtype, op, target_val)
+            elif enc_type == EncodingType.BIT_PACKED_BOOL:
+                return bitpacked_bool_predicate_pushdown(payload, dtype, op, target_val)
 
             return None
         finally:

@@ -169,7 +169,7 @@ class MergenDB {
    */
   async ping() {
     try {
-      const res = await this._request('GET', '/status');
+      const res = await this._rawRequest('GET', '/status');
       return !!(res && (res.status === 'healthy' || res.status === 'ok' || res.engine_version || res.server === 'MergenDB'));
     } catch (e) {
       return false;
@@ -715,7 +715,8 @@ class TableHandle {
    * @param {string} where WHERE condition clause
    */
   async update(updates, where) {
-    if (!where) throw new MergenError("A WHERE clause is required for update()");
+    const whereClause = (typeof where === 'object' && where !== null && where.where) ? where.where : where;
+    if (!whereClause) throw new MergenError("A WHERE clause is required for update()");
     const setClauses = [];
     for (const [key, val] of Object.entries(updates)) {
       if (val === null || val === undefined) {
@@ -726,7 +727,7 @@ class TableHandle {
         setClauses.push(`${key} = '${String(val).replace(/'/g, "''")}'`);
       }
     }
-    const sql = `UPDATE ${this.pureName} SET ${setClauses.join(', ')} WHERE ${where}`;
+    const sql = `UPDATE ${this.pureName} SET ${setClauses.join(', ')} WHERE ${whereClause}`;
     return await this.client.query(sql, { activeTable: this.name, database: this.database });
   }
 
@@ -823,7 +824,11 @@ function startServer(options = {}) {
     throw new MergenError("Python 3.8+ or 'mergen' CLI was not found in PATH to start server automatically.", 500);
   }
   const args = (found === 'mergen') ? ['serve', String(port)] : ['-m', 'mergendb.server.server', '--port', String(port)];
-  const proc = spawn(found, args, { stdio: 'ignore', detached: Boolean(options.detached) });
+  const proc = spawn(found, args, {
+    stdio: 'ignore',
+    detached: Boolean(options.detached),
+    shell: process.platform === 'win32'
+  });
   if (!options.detached) {
     process.on('exit', () => {
       try { proc.kill(); } catch (e) {}

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/logo.jpg" alt="MergenDB Banner" width="50%" />
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/logo.png" alt="MergenDB Logo" width="300" />
 </p>
 
 # MergenDB
 
-[![PyPI version](https://img.shields.io/badge/PyPI-v0.8.0-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
-[![npm version](https://img.shields.io/badge/npm-v0.8.0-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![PyPI version](https://img.shields.io/badge/PyPI-v0.8.1-blue?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb/)
+[![npm version](https://img.shields.io/badge/npm-v0.8.1-blue?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
 [![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-2600%2B%20Python%20%7C%202000%2B%20Node.js%20(100%25%20Pass)-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -13,18 +13,129 @@
 
 **MergenDB** is an ultra-compact, high-performance embedded columnar database engine designed to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
 
-Whether querying a 10-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
+Whether querying a 100-million row dataset on a 500 MB RAM VPS, analyzing telemetry streams on an edge Raspberry Pi, running real-time analytical reporting in Node.js/TypeScript, or managing hierarchical databases through the browser in **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees.
 
 ---
-<img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
+</p>
 
-## What Is New in v0.8.0
+## What Is New in v0.8.0+
 
-1. **Universal Table & Data Display Across SDKs and Mergen Studio:**
+1. **Vectorized Columnar Predicate Pushdown (100M+ Rows Accelerated to ~1s):**
+   - **Zero-Allocation Scalar & Point Lookups:** High-cardinality equality queries (e.g. `WHERE TOKEN = "12345678901"` or `WHERE id = 5821049`) execute in **~1 second on 100M+ row tables**, directly evaluating binary byte streams and needle presence at the C level (`bytes.__contains__` Boyer-Moore-Horspool) without decompressing or allocating millions of Python string objects.
+   - **Zero File-Size Bloat:** Accelerated purely by refining the in-memory query engine mechanics. Requires **zero disk overhead, zero auxiliary index files, and zero schema changes**, maintaining 100% full backward compatibility with all existing `.mgdb` files.
+   - **Full Encoding Pushdown Parity:** Fast predicate pushdown enabled across `RAW` (strings, numeric arrays), `DELTA` (FoR integers), `RLE` (run-length), `BIT_PACKED_BOOL`, and `DICTIONARY` encodings.
+
+2. **Refreshed Visual Identity (v0.8.0 through v9.0):**
+   - Signature cybernetic electric cyan, sapphire neon blue, and holographic violet faceted falcon emblem logo and 3D columnar matrix banner, active through the v0.8.x and v9.0 series.
+
+3. **Universal Table & Data Display Across SDKs and Mergen Studio:**
    - **Unified Path Resolution:** Enhanced `resolve_table_path()` to reliably resolve table files across all notation variants (`table`, `table.mgdb`, `default.table`, `db.table`, nested sub-tables) with global fallback resolution.
-   - **Persistent Column Schema in Mergen Studio Grid:** Browse and Query grids now reliably render `<thead>` column headers and column metadata even for empty tables with 0 rows, backed by schema fallback querying.
-   - **Python SDK RemoteTable & RemoteDatabase Parity:** Added `RemoteTable.data(page, limit)` and `RemoteClient.database(name)` container handles to match Node.js SDK capabilities.
-   - **Standardized Server Port:** Synchronized default connection port to 8765 in `mergendb.connect()` and `RemoteClient`.
+   - **Persistent Column Schema in Mergen Studio Grid:** Browse and Query grids reliably render column headers and schema metadata even for empty tables with 0 rows.
+   - **Full SDK Parity:** Added `RemoteTable.data(page, limit)` and `RemoteClient.database(name)` container handles in Python to match the Node.js SDK.
+
+---
+
+## Quickstart & Database Query Examples
+
+MergenDB is designed to be instantly accessible. Here is how to connect, create tables, query, update, and delete records in Python and JavaScript.
+
+### Python Quickstart
+
+```python
+import mergendb
+
+# 1. Connect or open a table (auto-created on insert if it doesn't exist)
+table = mergendb.connect("my_database.mgdb")
+
+# 2. Insert records (Create) - schema and data types are automatically inferred!
+table.insert([
+    {"id": 1, "name": "Alice", "role": "admin", "department": "Engineering", "salary": 95000},
+    {"id": 2, "name": "Bob", "role": "user", "department": "Design", "salary": 78000},
+    {"id": 3, "name": "Charlie", "role": "user", "department": "Engineering", "salary": 88000},
+    {"id": 4, "name": "Diana", "role": "manager", "department": "Product", "salary": 110000},
+])
+
+# 3. Query with Standard SQL (Read)
+result = table.sql("SELECT name, department, salary FROM my_database WHERE salary >= 85000 ORDER BY salary DESC;")
+result.show()                  # Displays clean ASCII table
+records = result.to_dicts()    # Converts to list of Python dicts: [{'name': 'Diana', ...}]
+
+# 4. Quick Document Lookups (Pythonic find & find_one)
+alice = table.find_one(name="Alice")
+print(f"Alice's Role: {alice['role']} | Salary: ${alice['salary']}")
+engineers = table.find(department="Engineering")
+
+# 5. Update Records (Update)
+table.update({"salary": 105000, "role": "lead_engineer"}, where="name = 'Alice'")
+# Or via SQL:
+table.sql("UPDATE my_database SET salary = salary + 5000 WHERE department = 'Engineering';")
+
+# 6. Delete Records (Delete)
+table.delete(where="role = 'user'")
+# Or via SQL:
+table.sql("DELETE FROM my_database WHERE name = 'Bob';")
+
+# 7. Analytical Aggregations (Columnar GROUP BY)
+summary = table.sql("SELECT department, COUNT(*), AVG(salary) FROM my_database GROUP BY department;")
+summary.show()
+```
+
+*(See complete runnable code in [examples/python_quickstart.py](examples/python_quickstart.py))*
+
+---
+
+### JavaScript & Node.js Quickstart
+
+```javascript
+const { connect } = require('mergendb');
+
+async function main() {
+  // 1. Connect to MergenDB (autoStart: true spawns local background server automatically)
+  const client = connect({ autoStart: true, port: 8765 });
+  const users = client.table('users.mgdb');
+
+  // 2. Insert records (Create)
+  await users.insert([
+    { id: 1, name: "Alice", role: "admin", department: "Engineering", salary: 95000 },
+    { id: 2, name: "Bob", role: "user", department: "Design", salary: 78000 },
+    { id: 3, name: "Charlie", role: "user", department: "Engineering", salary: 88000 },
+    { id: 4, name: "Diana", role: "manager", department: "Product", salary: 110000 },
+  ]);
+
+  // 3. Query with SQL (Read)
+  const res = await client.query(
+    "SELECT name, department, salary FROM users.mgdb WHERE salary >= 85000 ORDER BY salary DESC;"
+  );
+  console.table(res.rows);
+
+  // Or safe tagged template literal with auto-escaping:
+  const dept = "Engineering";
+  const eng = await client.sql`SELECT name, salary FROM users.mgdb WHERE department = ${dept}`;
+  console.log('Engineers:', eng.rows);
+
+  // 4. Document-style find() and findOne()
+  const alice = await users.findOne({ name: "Alice" });
+  console.log('Alice:', alice);
+
+  // 5. Update Records (Update)
+  await users.update({ salary: 105000, role: "lead_engineer" }, "name = 'Alice'");
+  // Or via SQL:
+  await client.query("UPDATE users.mgdb SET salary = salary + 5000 WHERE department = 'Engineering';");
+
+  // 6. Delete Records (Delete)
+  await users.delete("role = 'user'");
+
+  // 7. Columnar Aggregations
+  const stats = await client.query("SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department;");
+  console.table(stats.rows);
+}
+
+main().catch(console.error);
+```
+
+*(See complete runnable code in [examples/javascript_quickstart.js](examples/javascript_quickstart.js))*
 
 ---
 
