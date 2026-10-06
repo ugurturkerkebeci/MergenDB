@@ -4,12 +4,23 @@ import json
 import mmap
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple, Iterator, Union, Set
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from mergendb.core.schema import Schema
 from mergendb.core.types import DataType
 from mergendb.core.block import BlockMeta, ZoneMap
 from mergendb.compression.encodings import EncodingType
 from mergendb.compression.compressor import ColumnCompressor
 from mergendb.storage.format import MAGIC_HEADER, MAGIC_FOOTER, FORMAT_VERSION, HEADER_FIXED_SIZE
+
+_SHARED_EXECUTORS: Dict[int, ThreadPoolExecutor] = {}
+_EXECUTOR_LOCK = threading.Lock()
+
+def _get_shared_executor(max_workers: int) -> ThreadPoolExecutor:
+    with _EXECUTOR_LOCK:
+        if max_workers not in _SHARED_EXECUTORS:
+            _SHARED_EXECUTORS[max_workers] = ThreadPoolExecutor(max_workers=max_workers)
+        return _SHARED_EXECUTORS[max_workers]
 
 @dataclass
 class ScanStats:
@@ -257,23 +268,22 @@ class FileReader:
         use_parallel = parallel and len(self.blocks) > 2 and self._mmap is not None
 
         if use_parallel:
-            from concurrent.futures import ThreadPoolExecutor
-            worker_count = max_workers or min(os.cpu_count() or 4, 8)
+            worker_count = max_workers or min(os.cpu_count() or 4, 16)
 
             def worker_fn(blk):
                 return self._scan_single_block(blk, target_columns, predicates, filter_cols_set, filter_fn)
 
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                chunk_sz = max(1, min(64, len(self.blocks) // (worker_count * 4)))
-                for block, (batch, b_read, was_skipped) in zip(self.blocks, executor.map(worker_fn, self.blocks, chunksize=chunk_sz)):
-                    if was_skipped:
-                        stats.blocks_skipped += 1
-                        continue
-                    stats.blocks_scanned += 1
-                    stats.bytes_read += b_read
-                    stats.rows_scanned += block.row_count
-                    if batch is not None and batch.row_count > 0:
-                        yield batch, stats
+            executor = _get_shared_executor(worker_count)
+            chunk_sz = max(1, min(64, len(self.blocks) // (worker_count * 4)))
+            for block, (batch, b_read, was_skipped) in zip(self.blocks, executor.map(worker_fn, self.blocks, chunksize=chunk_sz)):
+                if was_skipped:
+                    stats.blocks_skipped += 1
+                    continue
+                stats.blocks_scanned += 1
+                stats.bytes_read += b_read
+                stats.rows_scanned += block.row_count
+                if batch is not None and batch.row_count > 0:
+                    yield batch, stats
 
         else:
             for block in self.blocks:

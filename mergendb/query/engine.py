@@ -192,6 +192,20 @@ class ExpressionEvaluator:
             elif isinstance(expr.left, LiteralNode) and isinstance(expr.right, ColumnRefNode):
                 flipped_ops = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!=", "=": "="}
                 flipped_op = flipped_ops.get(op, op)
+                col_name = expr.right.name
+                if col_name not in cols:
+                    bare = col_name.split(".")[-1]
+                    if bare in cols:
+                        col_name = bare
+                    else:
+                        for k in cols:
+                            if k.split(".")[-1] == bare:
+                                col_name = k
+                                break
+                if col_name in cols and hasattr(cols, "evaluate_predicate"):
+                    fast_mask = cols.evaluate_predicate(col_name, flipped_op, expr.left.value)
+                    if fast_mask is not None:
+                        return fast_mask
                 return cls.evaluate(BinaryOpNode(flipped_op, expr.right, expr.left), cols, row_count)
 
             if op == "AND":

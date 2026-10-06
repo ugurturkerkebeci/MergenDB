@@ -293,21 +293,42 @@ def raw_predicate_pushdown(
         if is_eq or is_neq:
             needle = struct.pack("<i", target_len) + target_bytes
             # Fast C-level presence check in raw bytes payload
-            if needle not in data[4:]:
+            pos = data.find(needle, 4)
+            if pos == -1:
                 # 100% mathematically guaranteed: no row in this chunk matches!
                 return [False] * total_items if is_eq else [True] * total_items
 
-            # Needle present somewhere: verify exact string boundaries without UTF-8 decode
-            offset = 4
-            mask = [False] * total_items
-            for i in range(total_items):
-                str_len = struct.unpack_from("<i", data, offset)[0]
-                offset += 4
-                if str_len == target_len and data[offset : offset + str_len] == target_bytes:
-                    mask[i] = True
-                if str_len > 0:
-                    offset += str_len
-            return mask if is_eq else [not m for m in mask]
+            if is_eq:
+                # Needle is present: collect all candidate occurrences using fast C-level .find()
+                needle_offsets = set()
+                while pos != -1:
+                    needle_offsets.add(pos)
+                    pos = data.find(needle, pos + len(needle))
+
+                # Walk record offsets until all occurrences are resolved
+                mask = [False] * total_items
+                offset = 4
+                for i in range(total_items):
+                    if offset in needle_offsets:
+                        mask[i] = True
+                        needle_offsets.remove(offset)
+                        if not needle_offsets:
+                            break
+                    str_len = struct.unpack_from("<i", data, offset)[0]
+                    offset += 4 + (str_len if str_len > 0 else 0)
+                return mask
+            else:
+                # is_neq: verify exact string boundaries without UTF-8 decode
+                offset = 4
+                mask = [False] * total_items
+                for i in range(total_items):
+                    str_len = struct.unpack_from("<i", data, offset)[0]
+                    offset += 4
+                    if str_len == target_len and data[offset : offset + str_len] == target_bytes:
+                        mask[i] = True
+                    if str_len > 0:
+                        offset += str_len
+                return [not m for m in mask]
 
         elif op == "LIKE":
             pat = str(target_val) if target_val is not None else ""
