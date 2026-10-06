@@ -12,6 +12,9 @@ jobs:
   pypi-publish:
     name: Upload package to PyPI
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mergendb
     permissions:
       id-token: write  # Zorunlu: PyPI Trusted Publisher (OIDC) için gereklidir
     steps:
