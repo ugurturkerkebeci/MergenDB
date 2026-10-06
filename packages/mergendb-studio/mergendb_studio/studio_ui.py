@@ -627,6 +627,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
         <option value="de">Deutsch</option>
         <option value="tr">Türkçe</option>
       </select>
+      <button class="btn-icon" onclick="openAuthModal()" title="Authentication & Credentials">User: <b id="hdrAuthUser">root</b></button>
       <button class="btn-icon" onclick="switchTab('status')" data-i18n="nav_server">Server</button>
       <button class="btn-icon" onclick="switchTab('docs')" data-i18n="nav_docs">Docs</button>
     </div>
@@ -1293,10 +1294,111 @@ curl -X POST http://localhost:8765/import \
     </div>
   </div>
 
+  <!-- Auth / Credentials Modal -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3>MergenDB Authentication</h3>
+        <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+          Enter server credentials to authenticate Mergen Studio requests (default user: <code>root</code>, default password: empty).
+        </p>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="authUsernameInput" class="form-control" placeholder="root" value="root">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="authPasswordInput" class="form-control" placeholder="Leave empty if none">
+        </div>
+        <div id="authErrorMsg" style="display: none; color: #dc3545; font-size: 12px; margin-top: 6px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action" onclick="closeAuthModal()">Close</button>
+        <button class="btn-primary" onclick="saveAuthCredentials()">Save & Connect</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Element -->
   <div id="toastNotification">Action completed</div>
 
   <script>
+    // Authentication State & Headers
+    let authUser = localStorage.getItem('mergendb_user') || 'root';
+    let authPass = localStorage.getItem('mergendb_pass') || '';
+
+    function getAuthHeader() {
+      return 'Basic ' + btoa(unescape(encodeURIComponent(authUser + ':' + authPass)));
+    }
+
+    function updateHdrAuthDisplay() {
+      const el = document.getElementById('hdrAuthUser');
+      if (el) el.textContent = authUser || 'root';
+    }
+
+    function openAuthModal(errMsg = '') {
+      const uEl = document.getElementById('authUsernameInput');
+      const pEl = document.getElementById('authPasswordInput');
+      const errEl = document.getElementById('authErrorMsg');
+      if (uEl) uEl.value = authUser;
+      if (pEl) pEl.value = authPass;
+      if (errEl) {
+        if (errMsg) {
+          errEl.textContent = errMsg;
+          errEl.style.display = 'block';
+        } else {
+          errEl.style.display = 'none';
+        }
+      }
+      const modal = document.getElementById('authModal');
+      if (modal) modal.classList.add('active');
+    }
+
+    function closeAuthModal() {
+      const modal = document.getElementById('authModal');
+      if (modal) modal.classList.remove('active');
+    }
+
+    async function saveAuthCredentials() {
+      const uEl = document.getElementById('authUsernameInput');
+      const pEl = document.getElementById('authPasswordInput');
+      authUser = uEl ? uEl.value.trim() : 'root';
+      authPass = pEl ? pEl.value : '';
+      localStorage.setItem('mergendb_user', authUser);
+      localStorage.setItem('mergendb_pass', authPass);
+      updateHdrAuthDisplay();
+      closeAuthModal();
+      showToast('Credentials updated. Reloading...');
+      await loadTables();
+      await loadServerStatus();
+    }
+
+    async function studioFetch(url, options = {}) {
+      const opts = Object.assign({}, options);
+      opts.headers = Object.assign({}, opts.headers || {});
+      if (!opts.headers['Authorization'] && !opts.headers['authorization']) {
+        opts.headers['Authorization'] = getAuthHeader();
+      }
+      try {
+        const resp = await fetch(url, opts);
+        if (resp.status === 401) {
+          let errDetail = 'Authentication required. Please verify credentials.';
+          try {
+            const clone = resp.clone();
+            const errJson = await clone.json();
+            if (errJson && errJson.error) errDetail = errJson.error;
+          } catch (e) {}
+          openAuthModal(errDetail);
+        }
+        return resp;
+      } catch (err) {
+        throw err;
+      }
+    }
+
     // State
     let activeDatabase = 'default';
     let activeTable = '';
@@ -1708,6 +1810,7 @@ curl -X POST http://localhost:8765/import \
 
     // App Initialization
     window.addEventListener('DOMContentLoaded', async () => {
+      updateHdrAuthDisplay();
       setLanguage(currentLang);
       await loadTables();
       await loadServerStatus();
@@ -1770,7 +1873,7 @@ curl -X POST http://localhost:8765/import \
       startProgress();
       try {
         // 1. Fetch Databases
-        const dbRes = await fetch('/databases');
+        const dbRes = await studioFetch('/databases');
         const dbData = await dbRes.json();
         databasesCache = dbData.databases || [{ name: 'default', tables_count: 0, total_bytes: 0 }];
         if (dbData.active_database && !activeDatabase) {
@@ -1788,7 +1891,7 @@ curl -X POST http://localhost:8765/import \
         }
 
         // 2. Fetch Tables
-        const res = await fetch('/tables');
+        const res = await studioFetch('/tables');
         const data = await res.json();
         tablesCache = data.tables || [];
 
@@ -2019,7 +2122,7 @@ curl -X POST http://localhost:8765/import \
       if (!name) return alert('Please enter database name');
       startProgress();
       try {
-        const res = await fetch('/database', {
+        const res = await studioFetch('/database', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'create', name: name })
@@ -2070,7 +2173,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2148,7 +2251,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2196,7 +2299,7 @@ curl -X POST http://localhost:8765/import \
           url += `&sort_col=${encodeURIComponent(sortColumn)}&sort_dir=${sortDirection}`;
         }
 
-        const res = await fetch(url);
+        const res = await studioFetch(url);
         const data = await res.json();
 
         if (data.error) {
@@ -2308,7 +2411,7 @@ curl -X POST http://localhost:8765/import \
       startProgress();
       try {
         const whereClause = isNaN(colVal) ? `${colName} = '${colVal}'` : `${colName} = ${colVal}`;
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ op: 'delete', table: activeTable, path: activeTablePath, database: activeDatabase, where: whereClause })
@@ -2335,7 +2438,7 @@ curl -X POST http://localhost:8765/import \
       try {
         let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
         if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
-        const res = await fetch(url);
+        const res = await studioFetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
 
@@ -2374,7 +2477,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2410,7 +2513,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2442,7 +2545,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2517,7 +2620,7 @@ curl -X POST http://localhost:8765/import \
       if (gridBox) gridBox.innerHTML = '';
 
       try {
-        const res = await fetch('/query', {
+        const res = await studioFetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: query, active_table: activeTable, database: activeDatabase })
@@ -2564,7 +2667,7 @@ curl -X POST http://localhost:8765/import \
       if (currentSchema.length === 0) {
         let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
         if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
-        const res = await fetch(url);
+        const res = await studioFetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
@@ -2590,7 +2693,7 @@ curl -X POST http://localhost:8765/import \
       startProgress();
       try {
         const sql = `SELECT * FROM "${activeTable}" WHERE search = '${term}' LIMIT 100;`;
-        const res = await fetch('/query', {
+        const res = await studioFetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: sql, active_table: activeTable, database: activeDatabase })
@@ -2621,7 +2724,7 @@ curl -X POST http://localhost:8765/import \
       startProgress();
       try {
         const sql = `SELECT * FROM "${activeTable}" WHERE ${conditions.join(' AND ')} LIMIT 100;`;
-        const res = await fetch('/query', {
+        const res = await studioFetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: sql, active_table: activeTable, database: activeDatabase })
@@ -2641,7 +2744,7 @@ curl -X POST http://localhost:8765/import \
       if (currentSchema.length === 0) {
         let url = `/table_schema?table=${encodeURIComponent(activeTable)}&database=${encodeURIComponent(activeDatabase)}`;
         if (activeTablePath) url += `&path=${encodeURIComponent(activeTablePath)}`;
-        const res = await fetch(url);
+        const res = await studioFetch(url);
         const data = await res.json();
         currentSchema = data.columns || [];
       }
@@ -2676,7 +2779,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2794,7 +2897,7 @@ curl -X POST http://localhost:8765/import \
         startProgress();
         if (btnImport) btnImport.disabled = true;
         try {
-          const res = await fetch('/import', {
+          const res = await studioFetch('/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -2833,7 +2936,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ op: 'rename', old_name: activeTable, table: activeTable, path: activeTablePath, new_name: newName, database: activeDatabase })
@@ -2859,7 +2962,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ op: 'truncate', table: activeTable, path: activeTablePath, database: activeDatabase })
@@ -2884,7 +2987,7 @@ curl -X POST http://localhost:8765/import \
 
       startProgress();
       try {
-        const res = await fetch('/operation', {
+        const res = await studioFetch('/operation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ op: 'drop', table: activeTable, path: activeTablePath, database: activeDatabase })
@@ -2908,7 +3011,7 @@ curl -X POST http://localhost:8765/import \
     // 9. Server Status & Benchmark
     async function loadServerStatus() {
       try {
-        const res = await fetch('/status');
+        const res = await studioFetch('/status');
         const st = await res.json();
         document.getElementById('statCpu').textContent = st.cpu || 'Not detected';
         document.getElementById('statRam').textContent = st.ram_gb ? `${st.ram_gb} GB` : 'Unknown';
@@ -2925,7 +3028,7 @@ curl -X POST http://localhost:8765/import \
       showToast('Running live speed benchmark...');
 
       try {
-        const res = await fetch('/status?benchmark=1');
+        const res = await studioFetch('/status?benchmark=1');
         const data = await res.json();
         const b = data.benchmark;
 

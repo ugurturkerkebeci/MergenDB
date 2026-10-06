@@ -12,18 +12,7 @@ def is_studio_installed() -> bool:
         import mergendb_studio
         return True
     except ImportError:
-        pass
-
-    if os.path.exists(STUDIO_CACHE_FILE) and os.path.getsize(STUDIO_CACHE_FILE) > 1000:
-        return True
-
-    try:
-        from mergendb.server.studio_ui import STUDIO_HTML
-        return True
-    except ImportError:
-        pass
-
-    return False
+        return False
 
 def get_studio_status() -> dict:
     installed = is_studio_installed()
@@ -33,15 +22,11 @@ def get_studio_status() -> dict:
             import mergendb_studio
             source = f"package: mergendb_studio (v{getattr(mergendb_studio, '__version__', 'unknown')})"
         except ImportError:
-            if os.path.exists(STUDIO_CACHE_FILE):
-                source = f"cached file: {STUDIO_CACHE_FILE}"
-            else:
-                source = "bundled fallback"
+            pass
 
     return {
         "installed": installed,
-        "source": source,
-        "cache_path": STUDIO_CACHE_FILE
+        "source": source
     }
 
 def install_studio():
@@ -50,7 +35,7 @@ def install_studio():
     print("   [+] MERGEN STUDIO INSTALLER")
     print("=" * 70)
 
-    # 1. Try pip install mergendb-studio or mergendb[studio]
+    # Try pip install mergendb-studio
     print("[*] Attempting to install 'mergendb-studio' via pip...")
     python_exe = sys.executable or "python"
     try:
@@ -59,23 +44,13 @@ def install_studio():
             print("[+] Successfully installed 'mergendb-studio' package!")
             print("[+] Mergen Studio is now active and ready on http://localhost:8765/studio")
             return True
+        else:
+            print(f"[-] pip install failed: {res.stderr.strip() if res.stderr else res.stdout.strip()}")
     except Exception as e:
-        print(f"[-] pip installation note: {e}")
-
-    # 2. Local fallback caching if server source has studio_ui
-    try:
-        from mergendb.server.studio_ui import STUDIO_HTML
-        os.makedirs(STUDIO_CACHE_DIR, exist_ok=True)
-        with open(STUDIO_CACHE_FILE, "w", encoding="utf-8") as f:
-            f.write(STUDIO_HTML)
-        print(f"[+] Cached Mergen Studio standalone UI template to '{STUDIO_CACHE_FILE}'.")
-        print("[+] Mergen Studio is now enabled and available on http://localhost:8765/studio")
-        return True
-    except ImportError:
-        pass
+        print(f"[-] pip installation error: {e}")
 
     print("[-] Could not install automatically. Please run:")
-    print("    pip install \"mergendb[studio]\"")
+    print("    pip install mergendb-studio")
     return False
 
 def handle_studio_cli(action: str = "status"):
@@ -89,7 +64,6 @@ def handle_studio_cli(action: str = "status"):
         print("=" * 60)
         print(f"  * Installed : {st['installed']}")
         print(f"  * Source    : {st['source']}")
-        print(f"  * Cache Path: {st['cache_path']}")
         print("=" * 60)
         if not st['installed']:
             print("\nTo install Mergen Studio, run: mergen studio install\n")

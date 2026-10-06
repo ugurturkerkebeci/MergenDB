@@ -42,7 +42,7 @@ _STUDIO_UPGRADE_NOTICE_HTML = """<!DOCTYPE html>
     <h1>Mergen Studio Web Dashboard</h1>
     <p>The core MergenDB database engine is running in ultra-lean headless mode with strictly bounded memory footprint for low-spec systems.</p>
     <p>To enable the full-featured Mergen Studio Web UI, install the official studio upgrade package:</p>
-    <div class="command-box">pip install "mergendb[studio]"</div>
+    <div class="command-box">pip install mergendb-studio</div>
     <p style="margin: 8px 0; font-size: 14px; color: #cbd5e1;">or using the CLI:</p>
     <div class="command-box">mergen studio install</div>
     <div class="note">Once installed, refresh this page to access Mergen Studio.</div>
@@ -53,7 +53,8 @@ _STUDIO_UPGRADE_NOTICE_HTML = """<!DOCTYPE html>
 def _get_studio_html() -> str:
     """
     Decoupled loader for Mergen Studio Web UI.
-    Allows Mergen Studio to be completely optional or dynamically installed.
+    MergenDB core is headless by default. Mergen Studio requires the optional
+    'mergendb-studio' package to be installed.
     """
     try:
         import mergendb_studio
@@ -64,21 +65,8 @@ def _get_studio_html() -> str:
     except ImportError:
         pass
 
-    cache_path = os.path.expanduser(os.path.join("~", ".mergendb", "studio", "index.html"))
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception:
-            pass
-
-    try:
-        from mergendb.server.studio_ui import STUDIO_HTML
-        return STUDIO_HTML
-    except ImportError:
-        pass
-
     return _STUDIO_UPGRADE_NOTICE_HTML
+
 
 
 class MergenRequestHandler(http.server.BaseHTTPRequestHandler):

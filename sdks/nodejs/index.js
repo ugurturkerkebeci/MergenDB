@@ -40,7 +40,7 @@ class MergenDB {
     this.activeTable = options.activeTable || null;
     this.timeout = options.timeout || 30000;
     this.autoStart = Boolean(options.autoStart);
-    this.username = options.username !== undefined ? options.username : (parsed.username ? decodeURIComponent(parsed.username) : 'root');
+    this.username = options.username !== undefined ? options.username : (options.user !== undefined ? options.user : (parsed.username ? decodeURIComponent(parsed.username) : 'root'));
     this.password = options.password !== undefined ? options.password : (parsed.password ? decodeURIComponent(parsed.password) : '');
     this.token = options.token || null;
     this._serverProcess = null;
