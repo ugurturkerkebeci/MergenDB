@@ -45,19 +45,23 @@ class DataExporter:
 
             if fmt == "csv":
                 # Header
-                buf = io.StringIO()
-                writer = csv.writer(buf)
-                writer.writerow(cols)
-                yield buf.getvalue().encode("utf-8")
+                header_line = ",".join(f'"{c}"' if ("," in c or '"' in c) else c for c in cols) + "\n"
+                yield header_line.encode("utf-8")
+
+                csv_formatters = []
+                for c in reader.schema.columns:
+                    dt = c.data_type
+                    if dt in (DataType.INT64, DataType.INT32, DataType.FLOAT64):
+                        csv_formatters.append(lambda vals: [str(v) if v is not None else "" for v in vals])
+                    elif dt == DataType.BOOL:
+                        csv_formatters.append(lambda vals: ["1" if v else ("0" if v is not None else "") for v in vals])
+                    else:
+                        csv_formatters.append(lambda vals: ['"' + str(v).replace('"', '""') + '"' if (v is not None and ("," in str(v) or '"' in str(v) or "\n" in str(v))) else (str(v) if v is not None else "") for v in vals])
 
                 for batch, _ in reader.scan():
-                    buf = io.StringIO()
-                    writer = csv.writer(buf)
-                    rows = zip(*(batch.columns[c] for c in cols))
-                    writer.writerows(rows)
-                    data = buf.getvalue().encode("utf-8")
-                    if data:
-                        yield data
+                    formatted_cols = [csv_formatters[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
+                    csv_block = "\n".join(",".join(r) for r in zip(*formatted_cols)) + "\n"
+                    yield csv_block.encode("utf-8")
 
             elif fmt == "json":
                 yield b"[\n"
@@ -109,33 +113,25 @@ class DataExporter:
                 header_lines.append(f"CREATE TABLE IF NOT EXISTS `{clean_tbl}` (\n" + ",\n".join(col_defs) + "\n);\n\n")
                 yield "".join(header_lines).encode("utf-8")
 
-                chunk = []
-                for batch, _ in reader.scan():
-                    buf = io.StringIO()
-                    rows = zip(*(batch.columns[c] for c in cols))
-                    for row in rows:
-                        formatted = []
-                        for val in row:
-                            if val is None:
-                                formatted.append("NULL")
-                            elif isinstance(val, (int, float)):
-                                formatted.append(str(val))
-                            elif isinstance(val, bool):
-                                formatted.append("1" if val else "0")
-                            else:
-                                esc = str(val).replace("\\", "\\\\").replace("'", "''")
-                                formatted.append(f"'{esc}'")
-                        chunk.append("(" + ", ".join(formatted) + ")")
-                        if len(chunk) >= chunk_size:
-                            buf.write(f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n")
-                            chunk = []
-                    data = buf.getvalue().encode("utf-8")
-                    if data:
-                        yield data
+                sql_formatters = []
+                for c in reader.schema.columns:
+                    dt = c.data_type
+                    if dt in (DataType.INT64, DataType.INT32):
+                        sql_formatters.append(lambda vals: [str(v) if v is not None else "NULL" for v in vals])
+                    elif dt == DataType.FLOAT64:
+                        sql_formatters.append(lambda vals: [str(v) if v is not None else "NULL" for v in vals])
+                    elif dt == DataType.BOOL:
+                        sql_formatters.append(lambda vals: ["1" if v else ("0" if v is not None else "NULL") for v in vals])
+                    else:
+                        sql_formatters.append(lambda vals: [f"'{str(v).replace(chr(92), chr(92)+chr(92)).replace(chr(39), chr(39)+chr(39))}'" if v is not None else "NULL" for v in vals])
 
-                if chunk:
-                    rem_sql = f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(chunk) + ";\n"
-                    yield rem_sql.encode("utf-8")
+                for batch, _ in reader.scan():
+                    formatted_cols = [sql_formatters[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
+                    row_strs = ["(" + ", ".join(r) + ")" for r in zip(*formatted_cols)]
+                    for i in range(0, len(row_strs), chunk_size):
+                        sub_chunk = row_strs[i : i + chunk_size]
+                        sql_stmt = f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(sub_chunk) + ";\n"
+                        yield sql_stmt.encode("utf-8")
 
             else:
                 raise ValueError(f"Unsupported export format: {fmt}")

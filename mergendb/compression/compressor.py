@@ -57,38 +57,33 @@ class ColumnCompressor:
     @classmethod
     def compress(cls, values: List[Any], dtype: DataType, apply_zlib: bool = True) -> Tuple[bytes, EncodingType, ZoneMap, int]:
         zone_map = compute_zone_map(values)
+        n_vals = len(values)
 
-        # Baseline uncompressed raw representation
-        raw_bytes = encode_raw(values, dtype)
-        uncompressed_size = len(raw_bytes)
-
-        if len(values) == 0:
+        if n_vals == 0:
+            raw_bytes = encode_raw(values, dtype)
             return raw_bytes, EncodingType.RAW, zone_map, 0
 
-        best_bytes = raw_bytes
-        best_enc = EncodingType.RAW
-        n_vals = len(values)
+        best_bytes = None
+        best_enc = None
 
         if dtype == DataType.BOOL:
             packed_bytes = encode_bitpacked_bool(values)
-            if len(packed_bytes) < len(best_bytes):
-                best_bytes = packed_bytes
-                best_enc = EncodingType.BIT_PACKED_BOOL
+            best_bytes = packed_bytes
+            best_enc = EncodingType.BIT_PACKED_BOOL
 
         elif dtype in (DataType.INT32, DataType.INT64, DataType.TIMESTAMP):
             # Check Delta / FoR
             try:
                 delta_bytes = encode_delta(values, dtype)
-                if len(delta_bytes) < len(best_bytes):
-                    best_bytes = delta_bytes
-                    best_enc = EncodingType.DELTA
+                best_bytes = delta_bytes
+                best_enc = EncodingType.DELTA
             except Exception:
                 pass
 
             # Check RLE
             try:
                 rle_bytes = encode_rle(values, dtype)
-                if rle_bytes and len(rle_bytes) < len(best_bytes):
+                if rle_bytes and (best_bytes is None or len(rle_bytes) < len(best_bytes)):
                     best_bytes = rle_bytes
                     best_enc = EncodingType.RLE
             except Exception:
@@ -103,20 +98,34 @@ class ColumnCompressor:
                     unique_ratio = len(set(values)) / n_vals
                     if unique_ratio < 0.6:
                         dict_bytes = encode_dict(values, dtype)
-                        if len(dict_bytes) < len(best_bytes):
-                            best_bytes = dict_bytes
-                            best_enc = EncodingType.DICTIONARY
+                        best_bytes = dict_bytes
+                        best_enc = EncodingType.DICTIONARY
             except Exception:
                 pass
 
             # Check RLE (encode_rle returns b"" immediately if runs > 60%)
-            try:
-                rle_bytes = encode_rle(values, dtype)
-                if rle_bytes and len(rle_bytes) < len(best_bytes):
-                    best_bytes = rle_bytes
-                    best_enc = EncodingType.RLE
-            except Exception:
-                pass
+            if best_bytes is None:
+                try:
+                    rle_bytes = encode_rle(values, dtype)
+                    if rle_bytes:
+                        best_bytes = rle_bytes
+                        best_enc = EncodingType.RLE
+                except Exception:
+                    pass
+
+        # Fallback to RAW only if no compact encoding was selected
+        if best_bytes is None:
+            raw_bytes = encode_raw(values, dtype)
+            best_bytes = raw_bytes
+            best_enc = EncodingType.RAW
+            uncompressed_size = len(raw_bytes)
+        else:
+            if dtype in (DataType.INT64, DataType.INT32, DataType.TIMESTAMP):
+                uncompressed_size = 4 + 8 * n_vals
+            elif dtype == DataType.BOOL:
+                uncompressed_size = 4 + n_vals
+            else:
+                uncompressed_size = len(best_bytes) * 2
 
         # Optional lightweight secondary compression with zlib (level 1 for maximum throughput)
         if apply_zlib and len(best_bytes) > 64:

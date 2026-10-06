@@ -311,7 +311,7 @@ class DataImporter:
         sql_dump_path: str,
         output_mgdb_path: str,
         table_name: Optional[str] = None,
-        block_size: int = 8192
+        block_size: int = 16384
     ) -> int:
         """
         Pure streaming importer for SQL dumps of any size (1 GB, 50 GB, 500 GB).
@@ -542,11 +542,19 @@ class DataImporter:
                         if not raw_row:
                             continue
 
-                        # When table schema is known, pad or slice to guarantee zero dropped rows
+                        # When table schema is known, eliminate duplicate progressive sub-tuples
+                        # (from interrupted/staged exports where (c1), (c1, c2) precede (c1, c2, c3))
                         if schema is not None:
                             if len(raw_row) == 1 and len(schema.columns) > 3:
                                 # Skip single-value interrupted fragments from interrupted exports
                                 continue
+                            if batch and len(raw_row) > 1 and len(batch[-1]) >= len(raw_row):
+                                prev = batch[-1]
+                                # Check if previous row in batch was a partial prefix of current row
+                                prev_non_null = [x for x in prev if x is not None]
+                                if len(prev_non_null) < len(raw_row) and raw_row[:len(prev_non_null)] == prev_non_null:
+                                    batch.pop()
+                                    total_imported -= 1
                             if len(raw_row) < len(schema.columns):
                                 raw_row.extend([None] * (len(schema.columns) - len(raw_row)))
                             elif len(raw_row) > len(schema.columns):

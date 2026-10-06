@@ -45,6 +45,12 @@ class BlockBloomFilter:
         bitmask = 0
         bits = cls.BITS
         crc = zlib.crc32
+        # Fast path: check for low cardinality to avoid hashing millions of duplicates
+        if isinstance(values, (list, tuple)) and len(values) > 64:
+            sample = values[:64]
+            if len(set(sample)) < 40:
+                values = set(values)
+
         for v in values:
             if v is not None:
                 s = str(v).encode("utf-8")
