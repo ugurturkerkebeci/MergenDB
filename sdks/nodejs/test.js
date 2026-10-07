@@ -219,7 +219,52 @@ async function run() {
     console.log('    [+] Zero-Memory Streaming importFile(): PASS');
     await streamImportTable.drop();
 
-    // 16c. Database & Sub-table Hierarchy Tests
+    // 17. Advanced Table & QueryBuilder Operations
+    console.log('[*] Testing Advanced Table & QueryBuilder methods in Node.js...');
+    const firstSensor = await sensorTable.first();
+    const lastSensor = await sensorTable.last();
+    const takeTwo = await sensorTable.take(2);
+    const existsTemp1 = await sensorTable.exists({ sensor: 'TEMP-01' });
+    const existsBogus = await sensorTable.exists({ sensor: 'NON_EXISTENT' });
+    const distinctSensors = await sensorTable.distinct('sensor');
+    const pluckedTemps = await sensorTable.pluck('temperature');
+    const tempSum = await sensorTable.sum('temperature');
+    const tempAvg = await sensorTable.avg('temperature');
+    const tempMin = await sensorTable.min('temperature');
+    const tempMax = await sensorTable.max('temperature');
+
+    if (!firstSensor || !lastSensor || takeTwo.length !== 2 || !existsTemp1 || existsBogus) {
+      throw new Error('first/last/take/exists assertions failed');
+    }
+    if (distinctSensors.length < 2 || pluckedTemps.length !== 4) {
+      throw new Error('distinct/pluck assertions failed');
+    }
+    if (typeof tempSum !== 'number' || tempSum <= 0 || typeof tempAvg !== 'number') {
+      throw new Error('numeric aggregations (sum/avg) failed');
+    }
+
+    // Upsert testing
+    const upRes = await sensorTable.upsert([
+      { id: 1, sensor: 'TEMP-01-CALIBRATED', temperature: 24.5, active: true },
+      { id: 99, sensor: 'TEMP-99', temperature: 19.0, active: false }
+    ], 'id');
+    if (upRes.inserted !== 1 || upRes.updated !== 1) {
+      throw new Error(`upsert() expected 1 inserted and 1 updated, got ${JSON.stringify(upRes)}`);
+    }
+
+    // QueryBuilder chaining
+    const qbRes = await sensorTable.builder()
+      .select('id', 'sensor', 'temperature')
+      .where('temperature >= 20')
+      .orderBy('temperature DESC')
+      .limit(3)
+      .toObjects();
+    if (!Array.isArray(qbRes) || qbRes.length === 0) {
+      throw new Error('TableQueryBuilder chaining failed');
+    }
+    console.log('    [+] Advanced APIs (first, last, take, exists, distinct, pluck, upsert, stats, QueryBuilder): PASS');
+
+    // 18. Database & Sub-table Hierarchy Tests
     console.log('[*] Testing Database container and sub-table hierarchy in Node.js...');
     await client.createDatabase('okul_node');
     const dbsList = await client.listDatabases();

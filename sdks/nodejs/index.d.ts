@@ -95,16 +95,50 @@ export class DatabaseHandle {
 
 export type Database = DatabaseHandle;
 
+export class TableQueryBuilder<T = Record<string, any>> {
+  select(...cols: string[]): this;
+  where(condition: string): this;
+  filter(filters?: Record<string, any>): this;
+  orderBy(orderExpr: string): this;
+  sort(orderExpr: string): this;
+  limit(count: number): this;
+  offset(count: number): this;
+  buildSql(): string;
+  execute(): Promise<QueryResult<T>>;
+  toObjects(): Promise<T[]>;
+  first(): Promise<T | null>;
+  count(): Promise<number>;
+  exists(): Promise<boolean>;
+  pluck<K = any>(...columns: string[]): Promise<K[]>;
+}
+
 export class TableHandle {
   readonly client: MergenDB;
   readonly name: string;
   readonly pureName: string;
   readonly database: string;
 
+  builder(): TableQueryBuilder;
+  queryBuilder(): TableQueryBuilder;
   schema(): Promise<SchemaInfo>;
   data(page?: number, limit?: number): Promise<PageResult>;
   find<T = Record<string, any>>(filters?: Record<string, any>, options?: { limit?: number; columns?: string[] }): Promise<T[]>;
   findOne<T = Record<string, any>>(filters?: Record<string, any>): Promise<T | null>;
+  first<T = Record<string, any>>(filters?: Record<string, any>): Promise<T | null>;
+  last<T = Record<string, any>>(where?: string): Promise<T | null>;
+  take<T = Record<string, any>>(count?: number): Promise<T[]>;
+  all<T = Record<string, any>>(limit?: number): Promise<T[]>;
+  where<T = Record<string, any>>(condition: string, options?: { limit?: number; columns?: string[] }): Promise<T[]>;
+  select(...cols: string[]): TableQueryBuilder;
+  exists(filters?: Record<string, any>): Promise<boolean>;
+  distinct<V = any>(column: string, where?: string): Promise<V[]>;
+  pluck<V = any>(...columns: string[]): Promise<V[]>;
+  upsert(records: Record<string, any> | Record<string, any>[], keyColumn?: string): Promise<{ inserted: number; updated: number }>;
+  batchInsert(records: Record<string, any>[], batchSize?: number): Promise<number>;
+  sum(column: string, where?: string): Promise<number>;
+  avg(column: string, where?: string): Promise<number | null>;
+  min<V = any>(column: string, where?: string): Promise<V | null>;
+  max<V = any>(column: string, where?: string): Promise<V | null>;
   search<T = Record<string, any>>(term: string): Promise<T[]>;
   count(filters?: Record<string, any>): Promise<number>;
   insert(records: Record<string, any> | Record<string, any>[]): Promise<{ status: string; message: string }>;

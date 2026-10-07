@@ -100,6 +100,28 @@ async function main() {
     "SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department;"
   );
   console.table(stats.rows);
+
+  // 8. Advanced Helpers (pluck, distinct, exists, take, first, last, upsert)
+  const isAliceThere = await users.exists({ name: 'Alice' });
+  const allDepts = await users.distinct('department');
+  const salaries = await users.pluck('salary');
+  const avgSalary = await users.avg('salary');
+  console.log({ isAliceThere, allDepts, avgSalary });
+
+  // Atomic Upsert (Insert or Update if ID exists)
+  await users.upsert([
+    { id: 1, name: 'Alice', department: 'Engineering', salary: 120000, active: true },
+    { id: 5, name: 'Eve', department: 'SecOps', salary: 115000, active: true }
+  ], 'id');
+
+  // 9. Fluent Query Builder Chaining
+  const topPaid = await users.builder()
+    .select('name', 'department', 'salary')
+    .where('salary >= 90000')
+    .orderBy('salary DESC')
+    .limit(5)
+    .toObjects();
+  console.table(topPaid);
 }
 
 main().catch(console.error);

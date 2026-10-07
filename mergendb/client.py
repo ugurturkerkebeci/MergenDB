@@ -396,6 +396,132 @@ def list_databases(base_dir: str = ".") -> List[Dict[str, Any]]:
     return databases
 
 
+class TableQuery:
+    """
+    Fluent, chainable query builder for MergenDB Table.
+    Example:
+        table.builder() \\
+             .select("name", "salary") \\
+             .where("salary > 50000") \\
+             .order_by("salary DESC") \\
+             .limit(10) \\
+             .to_dicts()
+    """
+    def __init__(self, table: 'Table'):
+        self.table = table
+        self._columns: List[str] = []
+        self._where: List[str] = []
+        self._order_by: Optional[str] = None
+        self._limit: Optional[int] = None
+        self._offset: Optional[int] = None
+
+    def select(self, *columns: str) -> 'TableQuery':
+        for col in columns:
+            if isinstance(col, (list, tuple)):
+                self._columns.extend(str(c) for c in col)
+            else:
+                self._columns.append(str(col))
+        return self
+
+    def where(self, condition: str) -> 'TableQuery':
+        if condition and condition.strip():
+            self._where.append(condition.strip())
+        return self
+
+    def filter(self, **kwargs) -> 'TableQuery':
+        for k, v in kwargs.items():
+            if v is None:
+                self._where.append(f"{k} IS NULL")
+            elif isinstance(v, bool):
+                self._where.append(f"{k} = {'true' if v else 'false'}")
+            elif isinstance(v, (int, float)):
+                self._where.append(f"{k} = {v}")
+            else:
+                esc = str(v).replace("'", "''")
+                self._where.append(f"{k} = '{esc}'")
+        return self
+
+    def order_by(self, order_expr: str) -> 'TableQuery':
+        self._order_by = order_expr
+        return self
+
+    def sort(self, order_expr: str) -> 'TableQuery':
+        return self.order_by(order_expr)
+
+    def limit(self, count: int) -> 'TableQuery':
+        self._limit = count
+        return self
+
+    def offset(self, count: int) -> 'TableQuery':
+        self._offset = count
+        return self
+
+    def build_sql(self) -> str:
+        cols = ", ".join(self._columns) if self._columns else "*"
+        tbl_path = self.table.filepath.replace("\\", "/")
+        sql = f'SELECT {cols} FROM "{tbl_path}"'
+        if self._where:
+            sql += f" WHERE {' AND '.join(self._where)}"
+        if self._order_by:
+            sql += f" ORDER BY {self._order_by}"
+        if self._limit is not None:
+            sql += f" LIMIT {self._limit}"
+        if self._offset is not None:
+            sql += f" OFFSET {self._offset}"
+        return sql
+
+    def execute(self) -> QueryResult:
+        return MergenDB.query(self.build_sql())
+
+    def to_dicts(self) -> List[Dict[str, Any]]:
+        return self.execute().to_dicts()
+
+    def to_list(self) -> List[List[Any]]:
+        return self.execute().to_list()
+
+    def to_df(self):
+        return self.execute().to_df()
+
+    def first(self) -> Optional[Dict[str, Any]]:
+        old_limit = self._limit
+        self._limit = 1
+        res = self.to_dicts()
+        self._limit = old_limit
+        return res[0] if res else None
+
+    def count(self) -> int:
+        tbl_path = self.table.filepath.replace("\\", "/")
+        sql = f'SELECT COUNT(*) FROM "{tbl_path}"'
+        if self._where:
+            sql += f" WHERE {' AND '.join(self._where)}"
+        res = MergenDB.query(sql)
+        if res.rows and res.rows[0]:
+            return res.rows[0][0]
+        return 0
+
+    def exists(self) -> bool:
+        return self.first() is not None
+
+    def pluck(self, *columns: str) -> Any:
+        cols = columns if columns else tuple(self._columns)
+        if not cols:
+            raise ValueError("pluck requires at least one column name")
+        old_cols = self._columns
+        self._columns = list(cols)
+        dicts = self.to_dicts()
+        self._columns = old_cols
+        if len(cols) == 1:
+            c = cols[0]
+            return [d.get(c) for d in dicts]
+        return [tuple(d.get(c) for c in cols) for d in dicts]
+
+    def show(self):
+        self.execute().show()
+
+    def __iter__(self):
+        return iter(self.to_dicts())
+
+
 class Table:
     """
     Represents a MergenDB columnar table file.
@@ -972,6 +1098,149 @@ class Table:
         where_expr = " OR ".join(f"{c} LIKE '%{esc}%'" for c in str_cols)
         return self.where(where_expr, limit=limit, show_progress=show_progress)
 
+    def builder(self) -> 'TableQuery':
+        """Starts a fluent, chainable query builder for this table."""
+        return TableQuery(self)
+
+    def query_builder(self) -> 'TableQuery':
+        """Alias for builder()."""
+        return TableQuery(self)
+
+    def take(self, count: int) -> List[Dict[str, Any]]:
+        """Returns the first `count` rows as a list of dictionaries."""
+        return self.all(limit=count)
+
+    def last(self, where: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Returns the last row in the table, optionally matching a filter."""
+        rows = self.where(where).to_dicts() if where else self.all()
+        return rows[-1] if rows else None
+
+    def exists(self, where: Optional[str] = None, **kwargs) -> bool:
+        """
+        Fast existence check. Returns True if any matching row exists, False otherwise.
+        Stops scanning immediately upon first match.
+        """
+        if kwargs:
+            res = self.find(limit=1, **kwargs)
+            return len(res.rows) > 0
+        if where:
+            res = self.where(where, limit=1)
+            return len(res.rows) > 0
+        return self.row_count > 0
+
+    def distinct(self, column: str, where: Optional[str] = None) -> List[Any]:
+        """
+        Returns a list of distinct (unique) values for the given column.
+        Example: table.distinct("department") -> ["Engineering", "Design", "Sales"]
+        """
+        vals = self.pluck(column, where=where)
+        return list(dict.fromkeys(v for v in vals if v is not None))
+
+    def pluck(self, *columns: str, where: Optional[str] = None, limit: Optional[int] = None) -> Any:
+        """
+        Extracts a list of values for given column(s).
+        - If a single column is passed: returns a flat list of values [val1, val2, ...].
+        - If multiple columns are passed: returns a list of tuples [(val1, val2), ...].
+        Example:
+            table.pluck("email") -> ["alice@test.com", "bob@test.com"]
+            table.pluck("id", "email") -> [(1, "alice@test.com"), (2, "bob@test.com")]
+        """
+        if not columns:
+            raise ValueError("pluck() requires at least one column name.")
+        
+        pipe = []
+        if where:
+            pipe.append(f"| WHERE {where}")
+        pipe.append(f"| SELECT {', '.join(columns)}")
+        if limit is not None:
+            pipe.append(f"| LIMIT {limit}")
+        
+        res = self.query("\n".join(pipe))
+        if len(columns) == 1:
+            col_name = columns[0].strip().strip("'\"`")
+            idx = res.columns.index(col_name) if col_name in res.columns else 0
+            return [row[idx] for row in res.rows]
+        else:
+            return [tuple(row) for row in res.rows]
+
+    def upsert(self, records: Union[Dict[str, Any], List[Dict[str, Any]]], key_column: str = "id") -> Dict[str, int]:
+        """
+        Inserts new records or updates existing records based on a matching key_column.
+        Example:
+            table.upsert({"id": 1, "name": "Alice", "score": 95}, key_column="id")
+        Returns:
+            {"inserted": N, "updated": M}
+        """
+        if isinstance(records, dict):
+            records = [records]
+        if not records:
+            return {"inserted": 0, "updated": 0}
+
+        if not os.path.exists(self.filepath):
+            self.insert(records)
+            return {"inserted": len(records), "updated": 0}
+
+        existing_keys = set(self.pluck(key_column))
+        to_insert = []
+        updated_count = 0
+
+        for r in records:
+            kv = r.get(key_column)
+            if kv is not None and kv in existing_keys:
+                esc_kv = f"'{kv}'" if isinstance(kv, str) else str(kv)
+                update_payload = {k: v for k, v in r.items() if k != key_column}
+                if update_payload:
+                    updated_count += self.update(update_payload, where=f"{key_column} = {esc_kv}")
+            else:
+                to_insert.append(r)
+                if kv is not None:
+                    existing_keys.add(kv)
+
+        if to_insert:
+            self.insert(to_insert)
+
+        return {"inserted": len(to_insert), "updated": updated_count}
+
+    def batch_insert(self, records: List[Dict[str, Any]], batch_size: int = 5000, block_size: int = 1024) -> int:
+        """
+        Inserts large collections of records in controlled batches, preventing memory spikes.
+        Returns total rows inserted.
+        """
+        if not records:
+            return 0
+        total = 0
+        for i in range(0, len(records), batch_size):
+            chunk = records[i:i + batch_size]
+            self.insert(chunk, block_size=block_size)
+            total += len(chunk)
+        return total
+
+    def sum(self, column: str, where: Optional[str] = None) -> Union[int, float]:
+        """Calculates SUM of a numeric column."""
+        return self._scalar_agg(f"SUM({column})", where) or 0
+
+    def avg(self, column: str, where: Optional[str] = None) -> Optional[float]:
+        """Calculates AVG of a numeric column."""
+        return self._scalar_agg(f"AVG({column})", where)
+
+    def min(self, column: str, where: Optional[str] = None) -> Any:
+        """Calculates MIN of a column."""
+        return self._scalar_agg(f"MIN({column})", where)
+
+    def max(self, column: str, where: Optional[str] = None) -> Any:
+        """Calculates MAX of a column."""
+        return self._scalar_agg(f"MAX({column})", where)
+
+    def _scalar_agg(self, agg_func: str, where: Optional[str] = None) -> Any:
+        tbl_path = self.filepath.replace("\\", "/")
+        sql = f'SELECT {agg_func} FROM "{tbl_path}"'
+        if where and where.strip():
+            sql += f" WHERE {where.strip()}"
+        res = MergenDB.query(sql)
+        if res.rows and res.rows[0] and res.rows[0][0] is not None:
+            return res.rows[0][0]
+        return None
+
     def to_dicts(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Returns table rows as a list of Python dictionaries."""
         return self.all(limit=limit)
@@ -1544,9 +1813,163 @@ class RemoteTable:
         self.name = name
         self.database = database
 
-    def query(self, pipeline: str) -> QueryResult:
-        full_query = f"{self.name} | {pipeline}"
-        return self.client.query(full_query, database=self.database)
+    def sql(self, query_str: str) -> QueryResult:
+        return self.client.query(query_str, database=self.database)
+
+    def find(self, limit: Optional[int] = None, **kwargs) -> QueryResult:
+        conditions = []
+        for k, v in kwargs.items():
+            if v is None:
+                conditions.append(f"{k} IS NULL")
+            elif isinstance(v, (int, float)):
+                conditions.append(f"{k} = {v}")
+            elif isinstance(v, bool):
+                conditions.append(f"{k} = {'true' if v else 'false'}")
+            else:
+                esc = str(v).replace("'", "''")
+                conditions.append(f"{k} = '{esc}'")
+        where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        limit_clause = f" LIMIT {limit}" if limit is not None else ""
+        return self.sql(f"SELECT * FROM {self.name}{where_clause}{limit_clause};")
+
+    def find_one(self, **kwargs) -> Optional[Dict[str, Any]]:
+        res = self.find(limit=1, **kwargs)
+        dicts = res.to_dicts()
+        return dicts[0] if dicts else None
+
+    def first(self, where: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT * FROM {self.name}{where_clause} LIMIT 1;")
+        dicts = res.to_dicts()
+        return dicts[0] if dicts else None
+
+    def take(self, count: int) -> List[Dict[str, Any]]:
+        res = self.sql(f"SELECT * FROM {self.name} LIMIT {count};")
+        return res.to_dicts()
+
+    def all(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        limit_clause = f" LIMIT {limit}" if limit is not None else ""
+        res = self.sql(f"SELECT * FROM {self.name}{limit_clause};")
+        return res.to_dicts()
+
+    def where(self, condition: str, limit: Optional[int] = None) -> QueryResult:
+        limit_clause = f" LIMIT {limit}" if limit is not None else ""
+        return self.sql(f"SELECT * FROM {self.name} WHERE {condition}{limit_clause};")
+
+    def select(self, *columns: str, where: Optional[str] = None, order_by: Optional[str] = None, limit: Optional[int] = None) -> QueryResult:
+        cols = ", ".join(columns) if columns else "*"
+        where_clause = f" WHERE {where}" if where else ""
+        order_clause = f" ORDER BY {order_by}" if order_by else ""
+        limit_clause = f" LIMIT {limit}" if limit is not None else ""
+        return self.sql(f"SELECT {cols} FROM {self.name}{where_clause}{order_clause}{limit_clause};")
+
+    def count(self, where: Optional[str] = None) -> int:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT COUNT(*) FROM {self.name}{where_clause};")
+        if res.rows and res.rows[0]:
+            return res.rows[0][0]
+        return 0
+
+    def exists(self, where: Optional[str] = None, **kwargs) -> bool:
+        if kwargs:
+            return self.find_one(**kwargs) is not None
+        if where:
+            return self.first(where=where) is not None
+        return self.count() > 0
+
+    def pluck(self, *columns: str, where: Optional[str] = None, limit: Optional[int] = None) -> Any:
+        if not columns:
+            raise ValueError("pluck() requires at least one column name.")
+        res = self.select(*columns, where=where, limit=limit)
+        if len(columns) == 1:
+            col_name = columns[0].strip().strip("'\"`")
+            idx = res.columns.index(col_name) if col_name in res.columns else 0
+            return [row[idx] for row in res.rows]
+        return [tuple(row) for row in res.rows]
+
+    def distinct(self, column: str, where: Optional[str] = None) -> List[Any]:
+        vals = self.pluck(column, where=where)
+        return list(dict.fromkeys(v for v in vals if v is not None))
+
+    def update(self, set_values: Dict[str, Any], where: str) -> int:
+        if not where:
+            raise ValueError("A WHERE clause is required for update().")
+        sets = []
+        for k, v in set_values.items():
+            if v is None:
+                sets.append(f"{k} = NULL")
+            elif isinstance(v, (int, float)):
+                sets.append(f"{k} = {v}")
+            elif isinstance(v, bool):
+                sets.append(f"{k} = {'true' if v else 'false'}")
+            else:
+                esc_str = str(v).replace("'", "''")
+                sets.append(f"{k} = '{esc_str}'")
+        res = self.sql(f"UPDATE {self.name} SET {', '.join(sets)} WHERE {where};")
+        if res.rows and res.rows[0]:
+            return res.rows[0][0]
+        return 0
+
+    def delete(self, where: str) -> int:
+        if not where:
+            raise ValueError("A WHERE clause is required for delete().")
+        res = self.sql(f"DELETE FROM {self.name} WHERE {where};")
+        if res.rows and res.rows[0]:
+            return res.rows[0][0]
+        return 0
+
+    def upsert(self, records: Union[Dict[str, Any], List[Dict[str, Any]]], key_column: str = "id") -> Dict[str, int]:
+        if isinstance(records, dict):
+            records = [records]
+        if not records:
+            return {"inserted": 0, "updated": 0}
+        existing_keys = set(self.pluck(key_column))
+        to_insert = []
+        updated_count = 0
+        for r in records:
+            kv = r.get(key_column)
+            if kv is not None and kv in existing_keys:
+                esc_kv = f"'{kv}'" if isinstance(kv, str) else str(kv)
+                payload = {k: v for k, v in r.items() if k != key_column}
+                if payload:
+                    updated_count += self.update(payload, where=f"{key_column} = {esc_kv}")
+            else:
+                to_insert.append(r)
+                if kv is not None:
+                    existing_keys.add(kv)
+        if to_insert:
+            self.insert(to_insert)
+        return {"inserted": len(to_insert), "updated": updated_count}
+
+    def batch_insert(self, records: List[Dict[str, Any]], batch_size: int = 5000) -> int:
+        if not records:
+            return 0
+        total = 0
+        for i in range(0, len(records), batch_size):
+            chunk = records[i:i + batch_size]
+            self.insert(chunk)
+            total += len(chunk)
+        return total
+
+    def sum(self, column: str, where: Optional[str] = None) -> Union[int, float]:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT SUM({column}) FROM {self.name}{where_clause};")
+        return res.rows[0][0] if (res.rows and res.rows[0] and res.rows[0][0] is not None) else 0
+
+    def avg(self, column: str, where: Optional[str] = None) -> Optional[float]:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT AVG({column}) FROM {self.name}{where_clause};")
+        return res.rows[0][0] if (res.rows and res.rows[0]) else None
+
+    def min(self, column: str, where: Optional[str] = None) -> Any:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT MIN({column}) FROM {self.name}{where_clause};")
+        return res.rows[0][0] if (res.rows and res.rows[0]) else None
+
+    def max(self, column: str, where: Optional[str] = None) -> Any:
+        where_clause = f" WHERE {where}" if where else ""
+        res = self.sql(f"SELECT MAX({column}) FROM {self.name}{where_clause};")
+        return res.rows[0][0] if (res.rows and res.rows[0]) else None
 
     def insert(self, data: Union[Dict[str, Any], List[Dict[str, Any]], List[List[Any]]]):
         if isinstance(data, dict):

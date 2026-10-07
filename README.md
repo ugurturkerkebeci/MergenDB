@@ -176,6 +176,147 @@ main().catch(console.error);
 
 ---
 
+## Complete Command & API Reference (Python vs JavaScript / TypeScript)
+
+MergenDB provides full 100% semantic parity between Python and Node.js/TypeScript. Below is the comprehensive command reference organized by domain:
+
+### 1. Connection & Session Management
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Embedded Connect** | `mergendb.connect("app.mgdb")` | *(Runs via HTTP server / REST)* | Connects or auto-creates a local embedded database table. |
+| **Remote Connect** | `mergendb.connect(host="127.0.0.1", port=8765, username="root", password="")` | `connect({ host: "127.0.0.1", port: 8765, user: "root", password: "" })` | Connects to a running MergenDB instance over HTTP/REST. |
+| **Instance Status** | `client.status()` | `await client.status()` | Retrieves hardware diagnostics, CPU info, and database metrics. |
+| **Benchmark** | `client.benchmark()` | `await client.benchmark()` | Measures device columnar scan throughput (rows/sec). |
+
+---
+
+### 2. Database Container Operations
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **List Databases** | `mergendb.list_databases()` / `client.list_databases()` | `await client.listDatabases()` | Returns metadata of all database folders. |
+| **Create Database** | `mergendb.create_database("finance")` | `await client.createDatabase("finance")` | Creates an isolated database container directory. |
+| **Drop Database** | `mergendb.drop_database("finance")` | `await client.dropDatabase("finance")` | Permanently drops a database container and its tables. |
+| **Scoped Database Handle** | `db = mergendb.database("finance")` | `const db = client.database("finance")` | Obtains a scoped container handle for tables and queries. |
+
+---
+
+### 3. Table Schema & DDL Operations
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Get Table Schema** | `table.schema` | `await table.schema()` | Returns column names, data types, and block count. |
+| **Get Column Names** | `table.columns` | `(await table.schema()).columns.map(c => c.name)` | Returns list of column names. |
+| **Add Column** | `table.add_column("bonus", "FLOAT64", default=0.0)` | `await table.addColumn("bonus", "FLOAT64", 0.0)` | Adds a new column with optional default value. |
+| **Rename Column** | `table.rename_column("bonus", "incentive")` | `await table.renameColumn("bonus", "incentive")` | Renames an existing column in schema and blocks. |
+| **Drop Column** | `table.drop_column("incentive")` | `await table.dropColumn("incentive")` | Removes a column from schema and data blocks. |
+| **Truncate Table** | `table.truncate()` | `await table.truncate()` | Clears all rows while preserving schema definitions. |
+| **Drop Table** | `table.drop()` | `await table.drop()` | Permanently deletes the `.mgdb` table from disk. |
+
+---
+
+### 4. Data Ingestion & Mutation (CRUD)
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Insert Records** | `table.insert([{"id": 1, "name": "Alice"}])` | `await table.insert([{ id: 1, name: "Alice" }])` | Inserts one or multiple records (schema auto-inferred). |
+| **Batch Insert** | `table.batch_insert(records, batch_size=5000)` | `await table.batchInsert(records, 5000)` | Streams large arrays into table in bounded memory blocks. |
+| **Upsert** | `table.upsert(records, key_column="id")` | `await table.upsert(records, "id")` | Inserts new records or updates existing rows if key matches. |
+| **Update Records** | `table.update({"salary": 95000}, where="id = 1")` | `await table.update({ salary: 95000 }, "id = 1")` | Updates matching records by WHERE filter. |
+| **Delete Records** | `table.delete(where="active = False")` | `await table.delete("active = false")` | Deletes matching records from table. |
+
+---
+
+### 5. High-Level Querying & Lookups
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Standard SQL** | `table.sql("SELECT * FROM app WHERE id = 1")` | `await client.query("SELECT * FROM app WHERE id = 1")` | Runs standard ANSI SQL query. |
+| **Tagged SQL Template** | *(Via string formatting)* | `await client.sql\`SELECT * FROM app WHERE id = ${id}\`` | Safe parameterized query with automatic escaping. |
+| **Find Multiple** | `table.find(role="Engineer", limit=10)` | `await table.find({ role: "Engineer" }, { limit: 10 })` | Pythonic / JS object keyword filtering. |
+| **Find One** | `table.find_one(email="alice@work.com")` | `await table.findOne({ email: "alice@work.com" })` | Fast-path lookup for a single record. |
+| **First Record** | `table.first(where="role = 'Engineer'")` | `await table.first({ role: "Engineer" })` | Retrieves first matching row or `None` / `null`. |
+| **Last Record** | `table.last(where="active = True")` | `await table.last("active = true")` | Retrieves the last recorded row in the table. |
+| **Take N Rows** | `table.take(5)` | `await table.take(5)` | Retrieves the first N rows as dictionary/object list. |
+| **All Rows** | `table.all(limit=100)` | `await table.all(100)` | Retrieves all rows as dictionary/object list. |
+| **Raw WHERE Filter** | `table.where("salary >= 80000 AND age < 40")` | `await table.where("salary >= 80000 AND age < 40")` | Executes raw SQL condition on table. |
+| **Check Exists** | `table.exists(username="alice")` | `await table.exists({ username: "alice" })` | Fast boolean check if any matching row exists. |
+| **Full-Text Search** | `table.search("Berlin")` | `await table.search("Berlin")` | Substring search across all `STRING` columns. |
+
+---
+
+### 6. Columnar Analytics & Aggregations
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Row Count** | `table.count()` | `await table.count()` | Returns total rows in table. |
+| **Distinct Values** | `table.distinct("department")` | `await table.distinct("department")` | Returns unique values for a column as a clean list/array. |
+| **Pluck Columns** | `table.pluck("email")` / `table.pluck("id", "email")` | `await table.pluck("email")` / `await table.pluck("id", "email")` | Extracts flat value arrays without reading unused columns. |
+| **Sum** | `table.sum("revenue", where="active = True")` | `await table.sum("revenue", "active = true")` | Sums a numeric column with optional filter. |
+| **Average (Avg)** | `table.avg("latency")` | `await table.avg("latency")` | Computes arithmetic mean of a column. |
+| **Min / Max** | `table.min("price")` / `table.max("price")` | `await table.min("price")` / `await table.max("price")` | Finds minimum or maximum value in a column. |
+
+---
+
+### 7. Fluent Query Builder (`builder()`)
+
+Chained builder syntax for clean, expressive queries without writing raw SQL strings:
+
+#### Python Query Builder:
+```python
+results = (
+    table.builder()
+         .select("id", "name", "salary")
+         .where("salary > 75000")
+         .filter(active=True)
+         .order_by("salary DESC")
+         .limit(10)
+         .to_dicts()
+)
+
+# Extract plucked values directly from builder:
+names = table.builder().where("salary > 90000").pluck("name")
+```
+
+#### JavaScript / TypeScript Query Builder:
+```javascript
+const results = await table.builder()
+  .select('id', 'name', 'salary')
+  .where('salary > 75000')
+  .filter({ active: true })
+  .orderBy('salary DESC')
+  .limit(10)
+  .toObjects();
+
+// Extract plucked values directly from builder:
+const names = await table.builder().where('salary > 90000').pluck('name');
+```
+
+---
+
+### 8. Zero-Memory Streaming Import & Export
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Export to CSV** | `table.export_csv("data.csv")` | `await table.exportToFile("data.csv", "csv")` | Streams table directly to disk as CSV. |
+| **Export to JSON** | `table.export_json("data.json")` | `await table.exportToFile("data.json", "json")` | Streams table directly to disk as JSON array. |
+| **Export to SQL** | `table.export_sql("data.sql")` | `await table.exportToFile("data.sql", "sql")` | Generates streaming `INSERT INTO` dump file. |
+| **Import from CSV** | `mergendb.from_csv("data.csv", "out.mgdb")` | `await table.importFile("data.csv", "csv")` | Streams external CSV into columnar table. |
+| **Import from SQL Dump**| `mergendb.from_sql_dump("dump.sql", "out.mgdb")` | `await table.importFile("dump.sql", "sql")` | Parses massive multi-gigabyte SQL dump. |
+
+---
+
+### 9. Hierarchical Nested Sub-tables
+
+| Feature / Command | Python | JavaScript / TypeScript (Node.js) | Description |
+| :--- | :--- | :--- | :--- |
+| **Create Sub-table** | `table.create_subtable("nested", schema)` | `await table.createSubtable("nested", columns)` | Creates nested table under parent hierarchy. |
+| **Get Sub-table Handle**| `sub = table.subtable("nested")` / `table["nested"]`| `const sub = table.subtable("nested")` | Scopes handle to `parent.nested`. |
+| **List Sub-tables** | `table.list_subtables()` | `await table.listSubtables()` | Lists all nested children under parent table. |
+
+---
+
 ## Hierarchical Database Containers & Nested Sub-tables
 
 MergenDB supports relational database hierarchy while retaining columnar performance:

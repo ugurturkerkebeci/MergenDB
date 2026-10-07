@@ -415,6 +415,137 @@ class DatabaseHandle {
 }
 
 /**
+ * Fluent query builder for Node.js / TypeScript SDK
+ */
+class TableQueryBuilder {
+  constructor(tableHandle) {
+    this.table = tableHandle;
+    this._columns = [];
+    this._where = [];
+    this._orderBy = null;
+    this._limit = null;
+    this._offset = null;
+  }
+
+  select(...cols) {
+    cols.flat().forEach(c => {
+      if (c) this._columns.push(String(c));
+    });
+    return this;
+  }
+
+  where(condition) {
+    if (condition && String(condition).trim()) {
+      this._where.push(String(condition).trim());
+    }
+    return this;
+  }
+
+  filter(filters = {}) {
+    for (const [key, val] of Object.entries(filters)) {
+      if (val === null || val === undefined) {
+        this._where.push(`${key} IS NULL`);
+      } else if (typeof val === 'number' || typeof val === 'boolean') {
+        this._where.push(`${key} = ${val}`);
+      } else {
+        const escaped = String(val).replace(/'/g, "''");
+        this._where.push(`${key} = '${escaped}'`);
+      }
+    }
+    return this;
+  }
+
+  orderBy(orderExpr) {
+    this._orderBy = orderExpr;
+    return this;
+  }
+
+  sort(orderExpr) {
+    return this.orderBy(orderExpr);
+  }
+
+  limit(count) {
+    this._limit = count;
+    return this;
+  }
+
+  offset(count) {
+    this._offset = count;
+    return this;
+  }
+
+  buildSql() {
+    const cols = this._columns.length > 0 ? this._columns.join(', ') : '*';
+    let sql = `SELECT ${cols} FROM ${this.table.pureName}`;
+    if (this._where.length > 0) {
+      sql += ` WHERE ${this._where.join(' AND ')}`;
+    }
+    if (this._orderBy) {
+      sql += ` ORDER BY ${this._orderBy}`;
+    }
+    if (this._limit !== null && this._limit !== undefined) {
+      sql += ` LIMIT ${this._limit}`;
+    }
+    if (this._offset !== null && this._offset !== undefined) {
+      sql += ` OFFSET ${this._offset}`;
+    }
+    return sql;
+  }
+
+  async execute() {
+    return await this.table.client.query(this.buildSql(), { activeTable: this.table.name, database: this.table.database });
+  }
+
+  async toObjects() {
+    const res = await this.execute();
+    if (!res || !res.columns || !res.rows) return [];
+    return res.rows.map(row => {
+      const obj = {};
+      res.columns.forEach((c, idx) => { obj[c] = row[idx]; });
+      return obj;
+    });
+  }
+
+  async first() {
+    const oldLimit = this._limit;
+    this._limit = 1;
+    const objs = await this.toObjects();
+    this._limit = oldLimit;
+    return objs.length > 0 ? objs[0] : null;
+  }
+
+  async count() {
+    let sql = `SELECT COUNT(*) FROM ${this.table.pureName}`;
+    if (this._where.length > 0) {
+      sql += ` WHERE ${this._where.join(' AND ')}`;
+    }
+    const res = await this.table.client.query(sql, { activeTable: this.table.name, database: this.table.database });
+    if (res && res.rows && res.rows.length > 0) {
+      return res.rows[0][0];
+    }
+    return 0;
+  }
+
+  async exists() {
+    return (await this.first()) !== null;
+  }
+
+  async pluck(...columns) {
+    const cols = columns.flat();
+    if (cols.length === 0) throw new MergenError("pluck() requires at least one column name");
+    const oldCols = this._columns;
+    this._columns = cols;
+    const objs = await this.toObjects();
+    this._columns = oldCols;
+    if (cols.length === 1) {
+      const c = cols[0];
+      return objs.map(o => o[c]);
+    }
+    return objs.map(o => cols.map(c => o[c]));
+  }
+}
+
+/**
  * Fluent table handle for document-like querying & schema manipulation
  */
 class TableHandle {
@@ -489,11 +620,189 @@ class TableHandle {
   }
 
   /**
+   * Start a fluent, chainable query builder
+   * @returns {TableQueryBuilder}
+   */
+  builder() {
+    return new TableQueryBuilder(this);
+  }
+
+  queryBuilder() {
+    return new TableQueryBuilder(this);
+  }
+
+  /**
    * Find first row matching filter
    */
   async findOne(filters = {}) {
     const results = await this.find(filters, { limit: 1 });
     return results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * Alias for findOne()
+   */
+  async first(filters = {}) {
+    return await this.findOne(filters);
+  }
+
+  /**
+   * Find the last row in the table, optionally filtered
+   */
+  async last(where = null) {
+    const objs = where ? await this.where(where) : await this.all();
+    return objs.length > 0 ? objs[objs.length - 1] : null;
+  }
+
+  /**
+   * Fetch the first `count` rows
+   */
+  async take(count = 10) {
+    return await this.find({}, { limit: count });
+  }
+
+  /**
+   * Fetch all rows
+   */
+  async all(limit = null) {
+    return await this.find({}, limit ? { limit } : {});
+  }
+
+  /**
+   * Filter rows by raw SQL WHERE condition
+   */
+  async where(condition, options = {}) {
+    let sql = `SELECT ${(options.columns && options.columns.length) ? options.columns.join(', ') : '*'} FROM ${this.pureName} WHERE ${condition}`;
+    if (options.limit) sql += ` LIMIT ${options.limit}`;
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    if (!res || !res.columns || !res.rows) return [];
+    return res.rows.map(row => {
+      const obj = {};
+      res.columns.forEach((c, idx) => { obj[c] = row[idx]; });
+      return obj;
+    });
+  }
+
+  /**
+   * Fluent select helper starting a TableQueryBuilder
+   */
+  select(...cols) {
+    return this.builder().select(...cols);
+  }
+
+  /**
+   * Check if any matching row exists (fast-path boolean)
+   */
+  async exists(filters = {}) {
+    return (await this.findOne(filters)) !== null;
+  }
+
+  /**
+   * Returns distinct unique values for a column
+   */
+  async distinct(column, where = null) {
+    const vals = await this.pluck(column);
+    return Array.from(new Set(vals.filter(v => v !== undefined && v !== null)));
+  }
+
+  /**
+   * Extract array of values for given column(s)
+   */
+  async pluck(...columns) {
+    return await this.builder().pluck(...columns);
+  }
+
+  /**
+   * Insert new records or update existing records based on matching keyColumn
+   */
+  async upsert(records, keyColumn = 'id') {
+    const list = Array.isArray(records) ? records : [records];
+    if (list.length === 0) return { inserted: 0, updated: 0 };
+
+    let existingKeys = [];
+    try {
+      existingKeys = await this.pluck(keyColumn);
+    } catch (e) {
+      existingKeys = [];
+    }
+    const keySet = new Set(existingKeys);
+    const toInsert = [];
+    let updatedCount = 0;
+
+    for (const r of list) {
+      const kv = r[keyColumn];
+      if (kv !== undefined && kv !== null && keySet.has(kv)) {
+        const updates = { ...r };
+        delete updates[keyColumn];
+        if (Object.keys(updates).length > 0) {
+          const escKv = typeof kv === 'string' ? `'${kv.replace(/'/g, "''")}'` : kv;
+          await this.update(updates, `${keyColumn} = ${escKv}`);
+          updatedCount++;
+        }
+      } else {
+        toInsert.push(r);
+        if (kv !== undefined && kv !== null) keySet.add(kv);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await this.insert(toInsert);
+    }
+    return { inserted: toInsert.length, updated: updatedCount };
+  }
+
+  /**
+   * Insert array of records in batches to conserve memory
+   */
+  async batchInsert(records, batchSize = 5000) {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+    let total = 0;
+    for (let i = 0; i < records.length; i += batchSize) {
+      const chunk = records.slice(i, i + batchSize);
+      await this.insert(chunk);
+      total += chunk.length;
+    }
+    return total;
+  }
+
+  /**
+   * Compute SUM of numeric column
+   */
+  async sum(column, where = null) {
+    let sql = `SELECT SUM(${column}) FROM ${this.pureName}`;
+    if (where) sql += ` WHERE ${where}`;
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    return (res && res.rows && res.rows.length > 0 && res.rows[0][0] !== null) ? res.rows[0][0] : 0;
+  }
+
+  /**
+   * Compute AVG of numeric column
+   */
+  async avg(column, where = null) {
+    let sql = `SELECT AVG(${column}) FROM ${this.pureName}`;
+    if (where) sql += ` WHERE ${where}`;
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    return (res && res.rows && res.rows.length > 0 && res.rows[0][0] !== null) ? res.rows[0][0] : null;
+  }
+
+  /**
+   * Compute MIN of column
+   */
+  async min(column, where = null) {
+    let sql = `SELECT MIN(${column}) FROM ${this.pureName}`;
+    if (where) sql += ` WHERE ${where}`;
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    return (res && res.rows && res.rows.length > 0 && res.rows[0][0] !== null) ? res.rows[0][0] : null;
+  }
+
+  /**
+   * Compute MAX of column
+   */
+  async max(column, where = null) {
+    let sql = `SELECT MAX(${column}) FROM ${this.pureName}`;
+    if (where) sql += ` WHERE ${where}`;
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    return (res && res.rows && res.rows.length > 0 && res.rows[0][0] !== null) ? res.rows[0][0] : null;
   }
 
   /**

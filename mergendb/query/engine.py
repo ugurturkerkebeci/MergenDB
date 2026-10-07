@@ -29,6 +29,11 @@ class QueryResult:
         self.rows = rows
         self.stats = stats
 
+    @property
+    def columns(self) -> List[str]:
+        """Alias for column_names."""
+        return self.column_names
+
     def __len__(self) -> int:
         return len(self.rows)
 
