@@ -12,7 +12,6 @@ const https = require('https');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
 
 class MergenError extends Error {
   constructor(message, status = 500, details = null) {
@@ -132,35 +131,23 @@ class MergenDB {
   }
 
   async _request(method, path, body = null, headers = {}) {
-    try {
-      return await this._rawRequest(method, path, body, headers);
-    } catch (err) {
-      if (this.autoStart && err.status === 503 && (this.host === '127.0.0.1' || this.host === 'localhost')) {
-        await this.ensureServer();
-        return await this._rawRequest(method, path, body, headers);
-      }
-      throw err;
-    }
+    return await this._rawRequest(method, path, body, headers);
   }
 
   /**
-   * Ensures the MergenDB server is running. Spawns it if not already online.
+   * Waits for the MergenDB server to become available and healthy.
    * @param {number} maxWaitMs Maximum wait time in milliseconds
    * @returns {Promise<boolean>}
    */
   async ensureServer(maxWaitMs = 5000) {
-    if (await this.ping()) {
-      return true;
-    }
-    this._serverProcess = startServer({ port: this.port, host: this.host });
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      await new Promise(r => setTimeout(r, 150));
       if (await this.ping()) {
         return true;
       }
+      await new Promise(r => setTimeout(r, 150));
     }
-    throw new MergenError(`Could not auto-start or connect to MergenDB server on port ${this.port}`, 503);
+    throw new MergenError(`Could not connect to MergenDB server on port ${this.port}`, 503);
   }
 
   /**
@@ -804,39 +791,6 @@ function connect(options) {
   return new MergenDB(options);
 }
 
-/**
- * Programmatically starts the local MergenDB server using native child_process.
- * @param {Object} options Server options (port, host, detached)
- * @returns {import('child_process').ChildProcess}
- */
-function startServer(options = {}) {
-  const port = options.port || 8765;
-  const candidates = ['mergen', 'python', 'python3', 'py'];
-  let found = null;
-  for (const c of candidates) {
-    try {
-      execSync(`${c} --version`, { stdio: 'ignore' });
-      found = c;
-      break;
-    } catch (e) {}
-  }
-  if (!found) {
-    throw new MergenError("Python 3.8+ or 'mergen' CLI was not found in PATH to start server automatically.", 500);
-  }
-  const args = (found === 'mergen') ? ['serve', String(port)] : ['-m', 'mergendb.server.server', '--port', String(port)];
-  const proc = spawn(found, args, {
-    stdio: 'ignore',
-    detached: Boolean(options.detached),
-    shell: process.platform === 'win32'
-  });
-  if (!options.detached) {
-    process.on('exit', () => {
-      try { proc.kill(); } catch (e) {}
-    });
-  }
-  return proc;
-}
-
 module.exports = {
   MergenDB,
   Database: DatabaseHandle,
@@ -846,7 +800,6 @@ module.exports = {
   MergenError,
   connect,
   open: connect,
-  startServer,
   default: connect
 };
 

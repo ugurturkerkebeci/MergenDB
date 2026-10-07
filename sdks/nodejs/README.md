@@ -5,6 +5,7 @@
 # MergenDB Node.js & TypeScript SDK
 
 [![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![Socket Badge](https://badge.socket.dev/npm/package/mergendb/0.8.4)](https://badge.socket.dev/npm/package/mergendb/0.8.4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
@@ -20,10 +21,10 @@ The official **zero-dependency** Node.js and TypeScript client SDK for **MergenD
 ## Highlights
 
 - **Vectorized Predicate Pushdown (v0.8.0+):** Point lookups and scalar filters (`WHERE TOKEN = "12345678901"`) execute in **~1 second on 100M+ rows** without memory exhaustion or file size bloat.
-- **Zero External Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `child_process`, `fs`, `stream`). Zero third-party packages installed in your runtime.
+- **Zero External Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `fs`, `stream`). Zero third-party packages installed in your runtime.
 - **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces and dot-notation SQL queries.
 - **Zero-Memory Streaming File Engine:** Pipe multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or server in 64 KB blocks without memory exhaustion or process crashes.
-- **Auto-Start Server (`autoStart: true`):** Spawns and manages the local background MergenDB server transparently if it is not already running.
+- **Pure Secure Driver:** Operates strictly over HTTP/HTTPS with zero shell execution and zero system subprocess vulnerabilities.
 - **TypeScript First:** Complete typings, interfaces, and code completions included out of the box.
 - **Dual Query Paradigm:** Execute full analytical SQL or use fluent document-style APIs (`find`, `findOne`, `search`, `insert`, `update`, `delete`).
 - **Safe Parameterized SQL:** Tagged template literal `db.sql` prevents SQL injection with automatic escaping.

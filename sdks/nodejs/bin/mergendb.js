@@ -7,7 +7,7 @@
 
 'use strict';
 
-const { spawn, execSync } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const http = require('http');
 
 const args = process.argv.slice(2);
@@ -32,7 +32,7 @@ function findPythonCommand() {
   const candidates = ['mergen', 'python', 'python3', 'py'];
   for (const c of candidates) {
     try {
-      execSync(`${c} --version`, { stdio: 'ignore' });
+      execFileSync(c, ['--version'], { stdio: 'ignore', shell: false });
       return c;
     } catch (e) {
       // Continue searching
@@ -42,10 +42,10 @@ function findPythonCommand() {
 }
 
 function openBrowser(url) {
-  const start = (process.platform === 'darwin' ? 'open' :
-                 process.platform === 'win32' ? 'start' : 'xdg-open');
+  const startCmd = (process.platform === 'darwin' ? 'open' :
+                    process.platform === 'win32' ? 'explorer' : 'xdg-open');
   try {
-    execSync(`${start} ${url}`);
+    execFileSync(startCmd, [url], { stdio: 'ignore', shell: false });
   } catch (e) {
     console.log(`Open in browser: ${url}`);
   }
@@ -137,7 +137,7 @@ function main() {
     }
   }
 
-  const child = spawn(py, spawnArgs, { stdio: 'inherit' });
+  const child = spawn(py, spawnArgs, { stdio: 'inherit', shell: false });
   child.on('exit', (code) => {
     process.exit(code || 0);
   });

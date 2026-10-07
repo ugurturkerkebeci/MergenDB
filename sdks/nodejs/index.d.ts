@@ -161,6 +161,5 @@ export class MergenDB {
 
 export function connect(options?: MergenOptions | string): MergenDB;
 export const open: typeof connect;
-export function startServer(options?: { port?: number; host?: string; detached?: boolean }): any;
 export default connect;
 

@@ -1,5 +1,7 @@
 # Mergen Studio
 
+[![Socket Badge](https://badge.socket.dev/npm/package/mergendb/0.8.4)](https://badge.socket.dev/npm/package/mergendb/0.8.4)
+
 Official Web Management Dashboard extension for **MergenDB**.
 
 ## Installation

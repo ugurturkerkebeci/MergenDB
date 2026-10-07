@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mergendb-studio"
-version = "0.8.3"
+version = "0.8.4"
 description = "Official Web Management Dashboard extension for MergenDB"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -13,7 +13,7 @@ authors = [
     { name = "Ugur Turker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
 ]
 dependencies = [
-    "mergendb>=0.8.3"
+    "mergendb>=0.8.4"
 ]
 
 [tool.setuptools.packages.find]
