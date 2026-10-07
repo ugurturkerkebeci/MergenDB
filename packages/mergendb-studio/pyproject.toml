@@ -4,17 +4,48 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mergendb-studio"
-version = "0.8.4"
+version = "0.8.5"
 description = "Official Web Management Dashboard extension for MergenDB"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "Ugur Turker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+]
+maintainers = [
+    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+]
+keywords = [
+    "database",
+    "dashboard",
+    "studio",
+    "mergendb",
+    "web-ui",
+    "analytics"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Database :: Front-Ends"
 ]
 dependencies = [
-    "mergendb>=0.8.4"
+    "mergendb>=0.8.5"
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/ugurturkerkebeci/MergenDB"
+"Repository" = "https://github.com/ugurturkerkebeci/MergenDB.git"
+"Bug Tracker" = "https://github.com/ugurturkerkebeci/MergenDB/issues"
+"Documentation" = "https://github.com/ugurturkerkebeci/MergenDB#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]

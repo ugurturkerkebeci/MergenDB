@@ -5,10 +5,10 @@
 # MergenDB Node.js & TypeScript SDK
 
 [![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
-[![Socket Badge](https://badge.socket.dev/npm/package/mergendb/0.8.4)](https://badge.socket.dev/npm/package/mergendb/0.8.4)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)](https://github.com/ugurturkerkebeci/MergenDB)
-[![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Socket npm Security Badge](https://badge.socket.dev/npm/package/mergendb)](https://socket.dev/npm/package/mergendb)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
+[![Dependencies](https://img.shields.io/badge/dependencies-0%20(Zero)-success.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
+[![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 
 The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytical SQL, and memory-constrained workloads.
 
@@ -48,9 +48,9 @@ Connecting to a database, inserting data, querying with SQL or document methods,
 const { connect } = require('mergendb');
 
 async function main() {
-  // 1. Connect to MergenDB (autoStart spawns local background server automatically)
+  // 1. Connect to MergenDB instance
   const db = connect({
-    autoStart: true,
+    host: '127.0.0.1',
     port: 8765,
     user: 'root',
     password: ''
