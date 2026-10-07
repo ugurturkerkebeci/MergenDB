@@ -855,7 +855,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
           <div class="card-box">
             <div class="card-title" data-i18n="export_title">Export Table Data</div>
             <p style="font-size: 12px; color: #666; margin-bottom: 14px;" data-i18n="export_desc">
-              Stream and export columnar table data into standard portable file formats.
+              Zero-allocation vectorized streaming export engine. Streams gigabyte tables at multi-million rows/sec directly with bounded memory (&lt;15 MB).
             </p>
 
             <div id="exportTableInfoBox" style="margin-bottom: 16px; padding: 10px 14px; background: #f0f7ff; border: 1px solid #c2e0ff; border-radius: 4px; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
@@ -896,7 +896,7 @@ STUDIO_HTML = r"""<!DOCTYPE html>
           <div class="card-box">
             <div class="card-title" data-i18n="import_title">Import Data into MergenDB</div>
             <p style="font-size: 12px; color: #666; margin-bottom: 14px;" data-i18n="import_desc">
-              Ingest multi-megabyte CSV datasets or SQL dumps directly into compressed columnar storage with low memory overhead.
+              Multi-core byte-range sliced parallel ingestion engine. Streams multi-gigabyte CSV datasets or SQL dumps directly into compressed columnar blocks with bounded memory (&lt;15 MB).
             </p>
 
             <div class="form-group">

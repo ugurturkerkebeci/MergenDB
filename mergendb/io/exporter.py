@@ -45,23 +45,38 @@ class DataExporter:
 
             if fmt == "csv":
                 # Header
-                header_line = ",".join(f'"{c}"' if ("," in c or '"' in c) else c for c in cols) + "\n"
+                header_line = ",".join(f'"{c}"' if ("," in c or '"' in c or "\n" in c) else c for c in cols) + "\n"
                 yield header_line.encode("utf-8")
 
-                csv_formatters = []
-                for c in reader.schema.columns:
-                    dt = c.data_type
-                    if dt in (DataType.INT64, DataType.INT32, DataType.FLOAT64):
-                        csv_formatters.append(lambda vals: [str(v) if v is not None else "" for v in vals])
-                    elif dt == DataType.BOOL:
-                        csv_formatters.append(lambda vals: ["1" if v else ("0" if v is not None else "") for v in vals])
-                    else:
-                        csv_formatters.append(lambda vals: ['"' + str(v).replace('"', '""') + '"' if (v is not None and ("," in str(v) or '"' in str(v) or "\n" in str(v))) else (str(v) if v is not None else "") for v in vals])
+                num_cols = len(cols)
+                # Check column types to use fastest format pipeline
+                col_defs = reader.schema.columns
+                all_simple = all(c.data_type in (DataType.INT64, DataType.INT32, DataType.FLOAT64, DataType.BOOL) for c in col_defs)
+                row_fmt = ",".join(["{}"] * num_cols) + "\n"
+                format_row = row_fmt.format
 
-                for batch, _ in reader.scan():
-                    formatted_cols = [csv_formatters[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
-                    csv_block = "\n".join(",".join(r) for r in zip(*formatted_cols)) + "\n"
-                    yield csv_block.encode("utf-8")
+                if all_simple:
+                    # Pure numeric/bool: zero quote-escaping needed, fastest vectorization
+                    for batch, _ in reader.scan():
+                        col_arrays = [batch.columns[c.name] for c in col_defs]
+                        lines = [format_row(*(c[i] if c[i] is not None else "" for c in col_arrays)) for i in range(batch.row_count)]
+                        yield "".join(lines).encode("utf-8")
+                else:
+                    # General types: per-column vectorized transformers
+                    transformers = []
+                    for c in col_defs:
+                        dt = c.data_type
+                        if dt in (DataType.INT64, DataType.INT32, DataType.FLOAT64):
+                            transformers.append(lambda vals: [str(v) if v is not None else "" for v in vals])
+                        elif dt == DataType.BOOL:
+                            transformers.append(lambda vals: ["1" if v else ("0" if v is not None else "") for v in vals])
+                        else:
+                            transformers.append(lambda vals: ['"' + str(v).replace('"', '""') + '"' if (v is not None and ("," in str(v) or '"' in str(v) or "\n" in str(v))) else (str(v) if v is not None else "") for v in vals])
+
+                    for batch, _ in reader.scan():
+                        transformed = [transformers[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
+                        lines = [format_row(*r) for r in zip(*transformed)]
+                        yield "".join(lines).encode("utf-8")
 
             elif fmt == "json":
                 yield b"[\n"
@@ -125,11 +140,12 @@ class DataExporter:
                     else:
                         sql_formatters.append(lambda vals: [f"'{str(v).replace(chr(92), chr(92)+chr(92)).replace(chr(39), chr(39)+chr(39))}'" if v is not None else "NULL" for v in vals])
 
+                insert_chunk_size = max(chunk_size, 5000)
                 for batch, _ in reader.scan():
                     formatted_cols = [sql_formatters[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
                     row_strs = ["(" + ", ".join(r) + ")" for r in zip(*formatted_cols)]
-                    for i in range(0, len(row_strs), chunk_size):
-                        sub_chunk = row_strs[i : i + chunk_size]
+                    for i in range(0, len(row_strs), insert_chunk_size):
+                        sub_chunk = row_strs[i : i + insert_chunk_size]
                         sql_stmt = f"INSERT INTO `{clean_tbl}` VALUES\n" + ",\n".join(sub_chunk) + ";\n"
                         yield sql_stmt.encode("utf-8")
 
@@ -156,7 +172,7 @@ class DataExporter:
             fmt = ext if ext in ("csv", "json", "jsonl", "sql") else "csv"
 
         bytes_written = 0
-        with open(output_file_path, "wb", buffering=256 * 1024) as out_f:
+        with open(output_file_path, "wb", buffering=1024 * 1024) as out_f:
             for chunk in cls.stream_chunks(table_path, fmt=fmt):
                 out_f.write(chunk)
                 bytes_written += len(chunk)
