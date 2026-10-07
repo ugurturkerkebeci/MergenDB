@@ -33,7 +33,7 @@ def diagnose(verbose: bool = True):
     from mergendb.testing.suite import run_diagnostics
     return run_diagnostics(verbose=verbose)
 
-__version__ = "0.8.6"
+__version__ = "0.8.7"
 __author__ = "Uğur Türker Kebeci (ugurturkerkebeci)"
 __all__ = [
     "__version__",

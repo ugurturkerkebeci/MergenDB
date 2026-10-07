@@ -1761,6 +1761,9 @@ class MergenDB:
         ast = Parser(tokens).parse()
 
         if isinstance(ast, QueryPlan):
+            ast.table_source = resolve_table_path(ast.table_source, active_db=act_db)
+            if ast.join and ast.join.right_table:
+                ast.join.right_table = resolve_table_path(ast.join.right_table, active_db=act_db)
             return QueryEngine.execute(ast, show_progress=show_progress)
         elif isinstance(ast, CreateTableNode):
             schema = Schema(ast.columns)

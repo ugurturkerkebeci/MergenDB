@@ -384,13 +384,14 @@ mergen
 ```
 
 ```sql
-mergen> SHOW DATABASES;
-mergen> CREATE DATABASE analytics;
-mergen> USE analytics;
-mergen> CREATE TABLE metrics (id BIGINT, host TEXT, latency DOUBLE);
-mergen> INSERT INTO metrics VALUES (1, 'prod-srv-01', 14.2), (2, 'prod-srv-02', 8.7);
-mergen> SELECT host, AVG(latency) FROM metrics GROUP BY host;
-mergen> EXPORT metrics TO CSV;
+mergen> SHOW TABLES;
+mergen> USE 101m;                     -- Smart context: auto-selects table '101m.mgdb'
+mergen[101m.mgdb]> WHERE id = 1234;   -- Fast shortcut query on active table (pruned by ZoneMap)
+mergen[101m.mgdb]> USE DATABASE analytics; -- Explicitly switch database context
+mergen(analytics)> SHOW TABLES;
+mergen(analytics)> USE TABLE metrics; -- Explicitly switch table context
+mergen(analytics)[metrics.mgdb]> SELECT host, AVG(latency) FROM metrics GROUP BY host;
+mergen(analytics)[metrics.mgdb]> EXPORT metrics TO CSV;
 ```
 
 ---

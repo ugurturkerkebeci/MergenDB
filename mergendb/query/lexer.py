@@ -1,3 +1,4 @@
+import re
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import List, Optional, Any
@@ -221,19 +222,20 @@ class Lexer:
                     self._advance()
                 tokens.append(Token(TokenType.STRING_LITERAL, "".join(str_val), start_line, start_col))
             elif ch.isdigit():
-                num_str = []
-                is_float = False
-                while self._peek() is not None and (self._peek().isdigit() or self._peek() == '.'):
-                    if self._peek() == '.':
-                        if is_float:
-                            break
-                        is_float = True
-                    num_str.append(self._advance())
-                val_str = "".join(num_str)
-                if is_float:
+                chars = []
+                while self._peek() is not None and (
+                    self._peek().isalnum()
+                    or self._peek() in ('.', '_')
+                    or (chars and chars[-1] in ('e', 'E') and self._peek() in ('+', '-'))
+                ):
+                    chars.append(self._advance())
+                val_str = "".join(chars)
+                if re.match(r"^\d+$", val_str):
+                    tokens.append(Token(TokenType.INT_LITERAL, int(val_str), start_line, start_col))
+                elif re.match(r"^\d+\.\d+$", val_str) or re.match(r"^\d+(\.\d+)?[eE][+-]?\d+$", val_str):
                     tokens.append(Token(TokenType.FLOAT_LITERAL, float(val_str), start_line, start_col))
                 else:
-                    tokens.append(Token(TokenType.INT_LITERAL, int(val_str), start_line, start_col))
+                    tokens.append(Token(TokenType.IDENTIFIER, val_str, start_line, start_col))
             elif ch.isalpha() or ch == '_':
                 ident = []
                 while self._peek() is not None and (self._peek().isalnum() or self._peek() in ('_', '.')):

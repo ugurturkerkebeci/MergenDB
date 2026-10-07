@@ -47,7 +47,9 @@ Database & Table Management:
   SHOW TABLES;                                      - List all .mgdb tables with rows, size, blocks
   SHOW DATABASES;                                   - List databases / directories
   SHOW COLUMNS FROM <table>; (or DESC)              - Inspect columns, data types, nullability
-  USE <table_name>;                                 - Set active table context
+  USE <table_or_database>;                          - Set active table or database context
+  USE TABLE <table_name>;                           - Explicitly select active table
+  USE DATABASE <db_name>;                           - Explicitly select active database
   CREATE TABLE <name> (col TYPE, ...);              - Create a new columnar table
   RENAME TABLE <old> TO <new>;                      - Rename a table
   TRUNCATE TABLE <table>; (or TRUNCATE;)            - Clear all rows in a table keeping schema
@@ -483,24 +485,95 @@ class MergenCLI:
                 print("Error: Specify a table name or use 'USE <table_name>;'.\n")
 
         elif keyword == "USE" and len(parts) > 1:
-            target = parts[1].strip().strip("'\"`;")
-            if target.endswith(".mgdb") or os.path.isfile(target):
-                self.active_table = target
-                print(f"Database/Table context set to: {target}\n")
-            elif os.path.isdir(target) or any(d["name"] == target for d in list_databases()):
-                self.active_database = target
-                self.active_table = None
-                print(f"Database changed to '{target}'.\n")
-            else:
+            first_tok = parts[1].upper().rstrip(";")
+            if first_tok == "TABLE" and len(parts) > 2:
+                target = " ".join(parts[2:]).strip().strip("'\"`;")
                 tbl = self._resolve_table_path(target)
+                if not os.path.exists(tbl) and not tbl.endswith(".mgdb"):
+                    tbl = self._resolve_table_path(target + ".mgdb")
                 if os.path.exists(tbl):
                     self.active_table = tbl
-                    print(f"Database/Table context set to: {tbl}\n")
+                    print(f"Active table set to: '{os.path.basename(tbl)}'\n")
                 else:
-                    self.active_database = target
-                    self.active_table = None
+                    print(f"Error: Table '{target}' not found.\n")
+                return
+
+            if first_tok == "DATABASE" and len(parts) > 2:
+                target = " ".join(parts[2:]).strip().strip("'\"`;")
+                self.active_database = target
+                self.active_table = None
+                if not os.path.isdir(target):
                     Database.create(target)
-                    print(f"Database changed to '{target}'.\n")
+                    print(f"Database '{target}' created and selected.\n")
+                else:
+                    tbls = Database(target).list_tables()
+                    print(f"Database changed to '{target}' ({len(tbls)} tables available).\n")
+                return
+
+            target = parts[1].strip().strip("'\"`;")
+
+            # 1. High priority: Check if target is an existing table
+            resolved_tbl = self._resolve_table_path(target)
+            cand_paths = [
+                resolved_tbl,
+                target if target.endswith(".mgdb") else target + ".mgdb",
+                target,
+                os.path.join(".", target if target.endswith(".mgdb") else target + ".mgdb"),
+            ]
+            if self.active_database and self.active_database != "default":
+                cand_paths.append(os.path.join(self.active_database, target if target.endswith(".mgdb") else target + ".mgdb"))
+
+            found_tbl = None
+            for cp in cand_paths:
+                if cp and os.path.isfile(cp):
+                    found_tbl = os.path.normpath(cp)
+                    break
+
+            if found_tbl:
+                self.active_table = found_tbl
+                print(f"Active table set to: '{os.path.basename(found_tbl)}'\n")
+                return
+
+            # 2. Check if target is a database directory or registered database
+            if target == "default" or os.path.isdir(target) or any(d["name"] == target for d in list_databases()):
+                self.active_database = target
+                self.active_table = None
+                db_obj = Database(target)
+                tbls = db_obj.list_tables()
+                match_tbl = None
+                for t in tbls:
+                    if t["name"] == target or t["full_name"] == target:
+                        match_tbl = t["path"]
+                        break
+                if not match_tbl and len(tbls) == 1:
+                    match_tbl = tbls[0]["path"]
+
+                if match_tbl:
+                    self.active_table = match_tbl
+                    print(f"Database changed to '{target}' (active table: '{os.path.basename(match_tbl)}').\n")
+                else:
+                    print(f"Database changed to '{target}' ({len(tbls)} tables available).\n")
+                return
+
+            # 3. Check case-insensitive table file match in current dir or active db
+            search_dir = self.active_database if (self.active_database and self.active_database != "default") else "."
+            ci_match = None
+            try:
+                for f in os.listdir(search_dir):
+                    if f.lower() in (target.lower(), f"{target.lower()}.mgdb"):
+                        ci_match = os.path.normpath(os.path.join(search_dir, f))
+                        break
+            except Exception:
+                pass
+
+            if ci_match and os.path.isfile(ci_match):
+                self.active_table = ci_match
+                print(f"Active table set to: '{os.path.basename(ci_match)}'.\n")
+                return
+
+            # 4. Neither table nor database exists
+            print(f"Error: Table or database '{target}' not found.")
+            print("Tip: Run 'SHOW TABLES;' or 'SHOW DATABASES;' to list available assets, or 'CREATE DATABASE <name>;' to create a new database.\n")
 
         elif keyword == "UPDATE":
             query_str = cmd
@@ -711,25 +784,35 @@ class MergenCLI:
         else:
             # Query Execution (MergenQL or SQL)
             query_str = cmd
-            if query_str.upper().startswith("SELECT ") and "FROM " not in query_str.upper() and self.active_table:
-                sel_m = re.match(r"^SELECT\s+(.+?)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", query_str, re.IGNORECASE)
-                if sel_m:
-                    cols, where_clause, order_by, limit_val = sel_m.groups()
-                    sql_synth = f"SELECT {cols} FROM {self.active_table}"
-                    if where_clause: sql_synth += f" WHERE {where_clause}"
-                    if order_by: sql_synth += f" ORDER BY {order_by}"
-                    if limit_val: sql_synth += f" LIMIT {limit_val}"
-                    query_str = self._convert_sql_to_pipeline(sql_synth)
-
-            elif (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
+            if (query_str.startswith("|") or query_str.upper().startswith("WHERE ") or query_str.upper().startswith("SELECT ")) and "FROM" not in query_str.upper():
                 if not self.active_table:
-                    print("Error: No active table selected. Use 'USE <table_name>;' or specify 'FROM \"table.mgdb\"'.")
-                    return
-                if not query_str.startswith("|"):
-                    query_str = "| " + query_str
-                query_str = f'FROM "{self.active_table}"\n' + query_str
+                    search_dir = self.active_database if (self.active_database and self.active_database != "default") else "."
+                    available = scan_tables_in_dir(search_dir)
+                    if len(available) == 1:
+                        self.active_table = available[0]["path"]
+                        print(f"[*] Auto-selected active table: '{os.path.basename(self.active_table)}'\n")
+                    else:
+                        tbl_names = [os.path.basename(t["path"]) for t in available[:6]]
+                        hints = f" (Available tables: {', '.join(tbl_names)})" if tbl_names else ""
+                        print(f"Error: No active table selected. Use 'USE <table_name>;'{hints} or specify 'FROM \"table.mgdb\"'.\n")
+                        return
 
-            if query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
+                clean_tbl = self.active_table.replace("\\", "/")
+                if query_str.upper().startswith("SELECT "):
+                    sel_m = re.match(r"^SELECT\s+(.+?)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?$", query_str, re.IGNORECASE)
+                    if sel_m:
+                        cols, where_clause, order_by, limit_val = sel_m.groups()
+                        sql_synth = f"SELECT {cols} FROM \"{clean_tbl}\""
+                        if where_clause: sql_synth += f" WHERE {where_clause}"
+                        if order_by: sql_synth += f" ORDER BY {order_by}"
+                        if limit_val: sql_synth += f" LIMIT {limit_val}"
+                        query_str = self._convert_sql_to_pipeline(sql_synth)
+                else:
+                    if not query_str.startswith("|"):
+                        query_str = "| " + query_str
+                    query_str = f'FROM "{clean_tbl}"\n' + query_str
+
+            elif query_str.upper().startswith("SELECT ") and "FROM " in query_str.upper():
                 query_str = self._convert_sql_to_pipeline(query_str)
 
             try:
@@ -745,7 +828,7 @@ class MergenCLI:
             return sql
 
         cols, tbl, where_clause, order_by, limit_val = m.groups()
-        tbl = self._resolve_table_path(tbl)
+        tbl = self._resolve_table_path(tbl).replace("\\", "/")
         pipe = [f'FROM "{tbl}"']
 
         if where_clause:
@@ -779,7 +862,8 @@ class MergenCLI:
         while True:
             try:
                 table_prompt = f"[{os.path.basename(self.active_table)}]" if self.active_table else ""
-                prompt = f"mergen{table_prompt}> " if not buffer else "      ...> "
+                db_prompt = f"({self.active_database})" if self.active_database and self.active_database != "default" else ""
+                prompt = f"mergen{db_prompt}{table_prompt}> " if not buffer else "      ...> "
                 line = input(prompt)
 
                 stripped = line.strip()

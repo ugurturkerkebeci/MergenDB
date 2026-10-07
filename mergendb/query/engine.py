@@ -386,6 +386,13 @@ class QueryEngine:
     def execute(cls, plan: QueryPlan, show_progress: bool = False) -> QueryResult:
         start_time = time.perf_counter()
 
+        # Ensure valid table path (resolve .mgdb if omitted)
+        if not os.path.isfile(plan.table_source) and os.path.isfile(plan.table_source + ".mgdb"):
+            plan.table_source = plan.table_source + ".mgdb"
+        if plan.join and plan.join.right_table:
+            if not os.path.isfile(plan.join.right_table) and os.path.isfile(plan.join.right_table + ".mgdb"):
+                plan.join.right_table = plan.join.right_table + ".mgdb"
+
         # Open storage reader with concurrent read lock
         lock_ctx = TableLockManager.get_lock(plan.table_source).read()
         lock_ctx.__enter__()
