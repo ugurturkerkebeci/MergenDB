@@ -12,13 +12,13 @@ def get_version():
             for line in f:
                 if line.startswith("__version__"):
                     return line.split("=")[1].strip().strip('"').strip("'")
-    return "0.8.7"
+    return "0.8.8"
 
 setup(
     name="mergendb",
     version=get_version(),
-    author="Uğur Türker Kebeci",
-    author_email="ugurturkerkebeci@users.noreply.github.com",
+    author="The MergenDB Authors",
+    author_email="dev@mergendb.io",
     description="Ultra-compact, columnar, embedded database engine designed to run large workloads on small hardware.",
     long_description=long_description,
     long_description_content_type="text/markdown",

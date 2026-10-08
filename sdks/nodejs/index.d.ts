@@ -120,6 +120,8 @@ export class TableHandle {
 
   builder(): TableQueryBuilder;
   queryBuilder(): TableQueryBuilder;
+  query(): TableQueryBuilder;
+  query<T = any>(sqlQuery: string): Promise<QueryResult<T>>;
   schema(): Promise<SchemaInfo>;
   data(page?: number, limit?: number): Promise<PageResult>;
   find<T = Record<string, any>>(filters?: Record<string, any>, options?: { limit?: number; columns?: string[] }): Promise<T[]>;

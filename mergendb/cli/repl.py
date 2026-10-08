@@ -35,7 +35,7 @@ BANNER = r"""
               \ | /            + -- --=[ ZoneMap Zero-I/O Indexing (100M+ Rows Safe) ]
                \|/             + -- --=[ Network SQL/MergenQL Server on Port 8765    ]
                 |              + -- --=[ Zero External Dependencies | Pure Speed     ]
-                '              + -- --=[ Author: Ugur Turker Kebeci (@ugurturkerkebeci)
+                '              + -- --=[ Open Source High-Speed Columnar Engine   ]
 
                    "Target Acquired. Zero Waste. Pure Speed."
     Type SQL or MergenQL commands ending with ';'. Type 'HELP;' for command list.
@@ -391,7 +391,7 @@ class MergenCLI:
         keyword = parts[0].upper()
 
         if keyword in ("EXIT", "QUIT", "\\Q"):
-            print("Görüşmek üzere!")
+            print("Goodbye! Exiting MergenDB.")
             sys.exit(0)
 
         elif keyword == "HELP":

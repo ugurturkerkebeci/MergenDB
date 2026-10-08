@@ -1,6 +1,6 @@
 {
   "name": "mergendb",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Official zero-dependency Node.js and TypeScript client SDK for MergenDB - the ultra-compact, columnar embedded database engine.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -31,7 +31,7 @@
     "typescript",
     "zero-dependency"
   ],
-  "author": "Uğur Türker Kebeci <ugurturkerkebeci@users.noreply.github.com>",
+  "author": "The MergenDB Authors <dev@mergendb.io>",
   "license": "MIT",
   "engines": {
     "node": ">=16.0.0"

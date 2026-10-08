@@ -977,8 +977,10 @@ class Table:
         self.filepath = new_filepath
         return self
 
-    def query(self, pipeline: str, show_progress: bool = False) -> QueryResult:
-        """Runs a MergenQL pipeline query against this table with non-blocking read lock."""
+    def query(self, pipeline: Optional[str] = None, show_progress: bool = False) -> Union[QueryResult, 'TableQuery']:
+        """Runs a MergenQL pipeline query against this table, or returns a fluent TableQuery builder if pipeline is omitted."""
+        if pipeline is None:
+            return self.builder()
         p_strip = pipeline.strip()
         p_upper = p_strip.upper()
         if any(p_upper.startswith(kw) for kw in ("SELECT ", "UPDATE ", "DELETE ", "ALTER ", "DROP ", "TRUNCATE ", "RENAME ")):
@@ -1818,6 +1820,17 @@ class RemoteTable:
 
     def sql(self, query_str: str) -> QueryResult:
         return self.client.query(query_str, database=self.database)
+
+    def builder(self) -> 'TableQuery':
+        return TableQuery(self)
+
+    def query_builder(self) -> 'TableQuery':
+        return TableQuery(self)
+
+    def query(self, sql_or_pipeline: Optional[str] = None) -> Union[QueryResult, 'TableQuery']:
+        if not sql_or_pipeline:
+            return self.builder()
+        return self.sql(sql_or_pipeline)
 
     def find(self, limit: Optional[int] = None, **kwargs) -> QueryResult:
         conditions = []

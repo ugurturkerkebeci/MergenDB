@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mergendb-studio"
-version = "0.8.7"
+version = "0.8.8"
 description = "Official Web Management Dashboard extension for MergenDB"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+    { name = "The MergenDB Authors" }
 ]
 maintainers = [
-    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+    { name = "The MergenDB Authors" }
 ]
 keywords = [
     "database",

@@ -5,12 +5,12 @@
 # MergenDB Node.js & TypeScript SDK
 
 [![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
-[![Socket npm Security Badge](https://badge.socket.dev/npm/package/mergendb)](https://socket.dev/npm/package/mergendb)
+[![Socket npm Security Badge](https://badge.socket.dev/npm/package/mergendb)](https://badge.socket.dev/npm/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-0%20(Zero)-success.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 [![Node.js Tests](https://img.shields.io/badge/tests-2000%2B%20passed-brightgreen.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)
 
-The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine built for edge computing, local analytical SQL, and memory-constrained workloads.
+The official **zero-dependency** Node.js and TypeScript client SDK for **MergenDB** — the ultra-compact, columnar embedded database engine engineered for high-throughput analytical SQL, edge computing, and strictly bounded memory environments.
 
 ---
 
@@ -20,363 +20,312 @@ The official **zero-dependency** Node.js and TypeScript client SDK for **MergenD
 
 ## Highlights
 
-- **Vectorized Predicate Pushdown (v0.8.0+):** Point lookups and scalar filters (`WHERE TOKEN = "12345678901"`) execute in **~1 second on 100M+ rows** without memory exhaustion or file size bloat.
-- **Zero External Dependencies:** Built purely on native Node.js standard library (`http`, `https`, `url`, `fs`, `stream`). Zero third-party packages installed in your runtime.
-- **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces and dot-notation SQL queries.
-- **Zero-Memory Streaming File Engine:** Pipe multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or server in 64 KB blocks without memory exhaustion or process crashes.
+- **Vectorized Predicate Pushdown:** Point lookups and scalar filters execute in **~1 second on 100M+ rows** without memory exhaustion or process crashes.
+- **Zero External Dependencies:** Built strictly on the native Node.js runtime standard library (`http`, `https`, `url`, `fs`, `stream`). Zero third-party packages installed in your `node_modules`.
 - **Pure Secure Driver:** Operates strictly over HTTP/HTTPS with zero shell execution and zero system subprocess vulnerabilities.
-- **TypeScript First:** Complete typings, interfaces, and code completions included out of the box.
-- **Dual Query Paradigm:** Execute full analytical SQL or use fluent document-style APIs (`find`, `findOne`, `search`, `insert`, `update`, `delete`).
+- **TypeScript First:** Complete typings, interfaces, and code completions included out of the box (`index.d.ts`).
+- **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces and dot-notation SQL queries.
+- **Zero-Memory Streaming Engine:** Stream multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or network sockets in 64 KB blocks without memory exhaustion or heap crashes.
+- **Dual Query Paradigm:** Execute full analytical SQL queries or use fluent document-style APIs (`find`, `findOne`, `search`, `insert`, `update`, `delete`, `upsert`).
 - **Safe Parameterized SQL:** Tagged template literal `db.sql` prevents SQL injection with automatic escaping.
-- **Live Hardware Telemetry:** Access CPU model, thread topology, and columnar scan benchmarks exceeding 1,000,000 rows/second.
+- **Strict Zero-Emoji Policy:** Clean, deterministic console logs and status indicators (`[+]`, `[-]`, `[*]`).
 
 ---
 
 ## Installation
 
+Install via npm, yarn, or pnpm:
+
 ```bash
 npm install mergendb
 ```
 
----
-
-## Simple Database CRUD Quickstart
-
-Connecting to a database, inserting data, querying with SQL or document methods, updating, and deleting:
-
-```javascript
-const { connect } = require('mergendb');
-
-async function main() {
-  // 1. Connect to MergenDB instance
-  const db = connect({
-    host: '127.0.0.1',
-    port: 8765,
-    user: 'root',
-    password: ''
-  });
-
-  const users = db.table('users.mgdb');
-
-  // 2. Insert Records (Create) - schema inferred and compressed automatically
-  await users.insert([
-    { id: 1, name: 'Alice', department: 'Engineering', salary: 95000, active: true },
-    { id: 2, name: 'Bob', department: 'Research', salary: 82000, active: true },
-    { id: 3, name: 'Charlie', department: 'Engineering', salary: 102000, active: false },
-    { id: 4, name: 'Diana', department: 'Design', salary: 88000, active: true }
-  ]);
-  console.log('Inserted rows into users.mgdb');
-
-  // 3. Query with Standard SQL (Read)
-  const result = await db.query(
-    "SELECT name, department, salary FROM users.mgdb WHERE salary >= 85000 ORDER BY salary DESC;"
-  );
-  console.table(result.rows);
-
-  // Safe tagged template literal with automatic escaping:
-  const dept = 'Engineering';
-  const eng = await db.sql`SELECT name, salary FROM users.mgdb WHERE department = ${dept} AND active = true`;
-  console.log('Active Engineers:', eng.rows);
-
-  // 4. Document-Style find() & findOne()
-  const alice = await users.findOne({ name: 'Alice' });
-  console.log('Found Alice:', alice);
-
-  const activeStaff = await users.find({ active: true });
-  console.log(`Found ${activeStaff.length} active staff members`);
-
-  // 5. Update Records (Update)
-  await users.update({ salary: 110000 }, "name = 'Alice'");
-  // Or via SQL:
-  await db.query("UPDATE users.mgdb SET salary = salary + 3000 WHERE department = 'Engineering';");
-
-  // 6. Delete Records (Delete)
-  await users.delete("active = false");
-  // Or via SQL:
-  await db.query("DELETE FROM users.mgdb WHERE name = 'Bob';");
-
-  // 7. Columnar Analytical Aggregations
-  const stats = await db.query(
-    "SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department;"
-  );
-  console.table(stats.rows);
-
-  // 8. Advanced Helpers (pluck, distinct, exists, take, first, last, upsert)
-  const isAliceThere = await users.exists({ name: 'Alice' });
-  const allDepts = await users.distinct('department');
-  const salaries = await users.pluck('salary');
-  const avgSalary = await users.avg('salary');
-  console.log({ isAliceThere, allDepts, avgSalary });
-
-  // Atomic Upsert (Insert or Update if ID exists)
-  await users.upsert([
-    { id: 1, name: 'Alice', department: 'Engineering', salary: 120000, active: true },
-    { id: 5, name: 'Eve', department: 'SecOps', salary: 115000, active: true }
-  ], 'id');
-
-  // 9. Fluent Query Builder Chaining
-  const topPaid = await users.builder()
-    .select('name', 'department', 'salary')
-    .where('salary >= 90000')
-    .orderBy('salary DESC')
-    .limit(5)
-    .toObjects();
-  console.table(topPaid);
-}
-
-main().catch(console.error);
+```bash
+yarn add mergendb
 ```
 
-### 1. Zero-Setup Auto-Start Connection
-
-```javascript
-const { connect } = require('mergendb');
-
-async function main() {
-  // Spawns and connects to the background MergenDB engine automatically
-  // Default authentication: user 'root' with empty password
-  const db = connect({ 
-    autoStart: true, 
-    port: 8765,
-    user: 'root',
-    password: ''
-  });
-
-  // Verify server health and hardware specifications
-  const status = await db.status();
-  console.log(`Connected to MergenDB v${status.version} (${status.cpu_threads} CPU threads)`);
-
-  // Insert records into a table (auto-infers schema)
-  const users = db.table('users.mgdb');
-  await users.insert([
-    { id: 1, name: 'Alice', department: 'Engineering', salary: 95000 },
-    { id: 2, name: 'Bob', department: 'Research', salary: 88000 },
-    { id: 3, name: 'Charlie', department: 'Engineering', salary: 102000 }
-  ]);
-
-  // Execute analytical SQL with columnar filtering and aggregation
-  const queryResult = await db.query(
-    "SELECT department, COUNT(*), AVG(salary) FROM users.mgdb GROUP BY department"
-  );
-  console.log(`Query completed in ${queryResult.stats.execution_time_ms} ms`);
-  console.table(queryResult.rows);
-
-  // Tagged template literal with automatic SQL escaping
-  const targetName = 'Alice';
-  const match = await db.sql`SELECT * FROM users.mgdb WHERE name = ${targetName}`;
-  console.log('User found:', match.rows[0]);
-}
-
-main().catch(console.error);
+```bash
+pnpm add mergendb
 ```
 
 ---
 
-## Hierarchical Database Containers & Nested Sub-tables
+## Quickstart
 
-MergenDB provides structured hierarchy: **Databases -> Tables -> Nested Sub-tables**.
+### 1. Connecting to MergenDB
+
+Connect to a local or remote MergenDB instance:
 
 ```javascript
-const { connect } = require('mergendb');
+import { MergenDB, connect } from 'mergendb';
 
-async function hierarchicalExample() {
-  const client = connect({ host: '127.0.0.1', port: 8765 });
+// Connect with default host (127.0.0.1:8765) and root credentials
+const db = connect({
+  host: '127.0.0.1',
+  port: 8765,
+  user: 'root',
+  password: ''
+});
+```
 
-  // 1. Create and manage databases
-  await client.createDatabase('enterprise');
-  const dbs = await client.listDatabases();
-  console.log('Databases:', dbs);
+### 2. Creating Tables & Ingesting Universal Data
 
-  const enterpriseDb = client.database('enterprise');
+```javascript
+// Create a table for global IoT telemetry
+const telemetry = await db.createTable('iot_telemetry', [
+  { name: 'device_id', type: 'INT64' },
+  { name: 'station_code', type: 'STRING' },
+  { name: 'temperature', type: 'DOUBLE' },
+  { name: 'humidity', type: 'DOUBLE' },
+  { name: 'is_active', type: 'BOOLEAN' }
+]);
 
-  // 2. Create tables inside the database
-  await enterpriseDb.createTable('employees', [
-    { name: 'employee_id', type: 'INT' },
-    { name: 'full_name', type: 'TEXT' },
-    { name: 'department', type: 'TEXT' }
-  ]);
+// Insert universal records
+await telemetry.insert([
+  { device_id: 101, station_code: 'US-EAST-01', temperature: 21.4, humidity: 48.2, is_active: true },
+  { device_id: 102, station_code: 'EU-WEST-02', temperature: 18.9, humidity: 55.0, is_active: true },
+  { device_id: 103, station_code: 'AP-SOUTH-01', temperature: 31.2, humidity: 72.1, is_active: false }
+]);
+```
 
-  const employeesTable = enterpriseDb.table('employees');
-  await employeesTable.insert([
-    { employee_id: 101, full_name: 'Alice Johnson', department: 'Engineering' },
-    { employee_id: 102, full_name: 'Bob Smith', department: 'Research' }
-  ]);
+### 3. Analytical SQL & Tagged Template Queries
 
-  // 3. Create nested sub-tables (e.g. division-specific teams under employees)
-  await employeesTable.createSubtable('engineering', [
-    { name: 'employee_id', type: 'INT' },
-    { name: 'team', type: 'TEXT' },
-    { name: 'code_score', type: 'FLOAT' }
-  ]);
+```javascript
+// Safe parameterized SQL query using tagged template literal
+const minTemp = 20.0;
+const results = await db.sql`
+  SELECT station_code, AVG(temperature) AS avg_temp
+  FROM iot_telemetry
+  WHERE temperature >= ${minTemp} AND is_active = true
+  GROUP BY station_code
+  ORDER BY avg_temp DESC;
+`;
 
-  const engineeringTable = employeesTable.subtable('engineering');
-  await engineeringTable.insert([
-    { employee_id: 101, team: 'Infrastructure', code_score: 98.5 }
-  ]);
-
-  // List all sub-tables under employees
-  const subtables = await employeesTable.listSubtables();
-  console.log('Sub-tables under employees:', subtables);
-
-  // 4. Query nested sub-tables using dot notation
-  const res = await client.query('SELECT * FROM enterprise.employees.engineering');
-  console.table(res.rows);
-}
-
-hierarchicalExample().catch(console.error);
+console.log(results.toObjects());
 ```
 
 ---
 
-## Zero-Memory Streaming File Import & Export
+## Fluent Query Builder (`builder()` / `query()`)
 
-Large dataset exports and imports operate via pure Node.js streams. Data is processed in 64 KB chunks without buffering entire tables into V8 heap memory, completely preventing out-of-memory errors and browser crashes.
+Chain filter conditions, projections, sorting, and limits cleanly:
 
 ```javascript
-const { connect } = require('mergendb');
-const path = require('path');
+const table = db.table('orders');
 
-async function streamingExample() {
-  const db = connect('http://localhost:8765');
-  const table = db.table('analytics_events.mgdb');
+const highValueOrders = await table.query()
+  .select('order_id', 'customer_id', 'total_amount', 'status')
+  .where('total_amount >= 500.00')
+  .filter({ status: 'completed' })
+  .orderBy('total_amount DESC')
+  .limit(25)
+  .offset(0)
+  .toObjects();
 
-  const exportPath = path.join(__dirname, 'events_dump.csv');
-  const importPath = path.join(__dirname, 'new_records.csv');
+console.log(highValueOrders);
+```
 
-  // Export table directly to disk via HTTP chunked stream
-  console.log('Starting stream export...');
-  await table.exportToFile(exportPath, 'csv');
-  console.log('Export written successfully to', exportPath);
+### Builder Shortcut Helpers
 
-  // Import file directly via raw socket streaming (64 KB chunks)
-  console.log('Starting stream import...');
-  const importResult = await table.importFile(importPath, 'csv');
-  console.log(`Imported ${importResult.rows_imported} rows in ${importResult.execution_time_ms} ms`);
-}
+```javascript
+// Extract a single column as a flat array without reading unused columns:
+const customerIds = await table.query()
+  .where("status = 'completed'")
+  .pluck('customer_id');
 
-streamingExample().catch(console.error);
+// Retrieve first matching record:
+const firstOrder = await table.query()
+  .where("status = 'pending'")
+  .first();
+
+// Fast boolean existence check:
+const hasOverdue = await table.query()
+  .where("status = 'overdue'")
+  .exists();
+```
+
+---
+
+## Advanced Table Operations
+
+### Upsert (Atomic Insert or Update)
+
+Inserts new records or updates existing matching rows based on a unique primary key column:
+
+```javascript
+const inventory = db.table('inventory');
+
+const result = await inventory.upsert([
+  { sku: 'SKU-001', name: 'Standard Sensor Hub', stock: 150, price: 89.99 },
+  { sku: 'SKU-002', name: 'Compact Gateway', stock: 45, price: 129.50 }
+], 'sku');
+
+console.log(`Inserted: ${result.inserted}, Updated: ${result.updated}`);
+```
+
+### Chunked Batch Insertion
+
+Inserts massive row arrays in memory-safe chunks:
+
+```javascript
+const rows = Array.from({ length: 50000 }, (_, i) => ({
+  id: i + 1,
+  metric_name: 'cpu_usage',
+  value: Math.random() * 100
+}));
+
+// Chunk into batches of 5,000 rows
+const insertedCount = await table.batchInsert(rows, 5000);
+```
+
+### Column Plucking & Unique Values
+
+```javascript
+// Pluck single column as flat array:
+const emails = await users.pluck('email');
+
+// Pluck multiple columns as tuples:
+const credentials = await users.pluck('id', 'email');
+
+// Unique column values:
+const regions = await users.distinct('region');
+```
+
+### Scalar Statistical Helpers
+
+```javascript
+const totalRevenue = await orders.sum('total_amount', "status = 'completed'");
+const averageLatency = await telemetry.avg('temperature');
+const minPrice = await products.min('price');
+const maxPrice = await products.max('price');
+```
+
+---
+
+## Hierarchical Databases & Sub-tables
+
+Organize datasets into isolated containers and sub-tables:
+
+```javascript
+// 1. Create database container
+const logistics = await db.createDatabase('logistics');
+
+// 2. Create tables inside container
+const shipments = await logistics.createTable('shipments', [
+  { name: 'shipment_id', type: 'INT64' },
+  { name: 'origin', type: 'STRING' },
+  { name: 'destination', type: 'STRING' }
+]);
+
+// 3. Create nested sub-tables
+const tracking = await shipments.createSubtable('tracking_events', [
+  { name: 'event_id', type: 'INT64' },
+  { name: 'checkpoint', type: 'STRING' },
+  { name: 'timestamp', type: 'INT64' }
+]);
+
+// 4. Dot-notation SQL access
+const res = await db.sql`
+  SELECT * FROM "logistics.shipments.tracking_events"
+  WHERE checkpoint = 'DEPARTED_FACILITY';
+`;
+```
+
+---
+
+## Zero-Memory Streaming Import & Export
+
+Stream multi-gigabyte files directly to disk or network without memory exhaustion:
+
+```javascript
+const table = db.table('transactions');
+
+// Export table to CSV
+await table.exportToFile('transactions_backup.csv', 'csv');
+
+// Export table to JSON Lines
+await table.exportToFile('transactions_backup.jsonl', 'jsonl');
+
+// Import CSV file into table
+await table.importFile('new_transactions.csv', 'csv');
+```
+
+---
+
+## Node.js CLI Runner
+
+The `mergendb` package includes a zero-dependency CLI executable:
+
+```bash
+# Display help and usage
+npx mergendb --help
+
+# Start local server and open Mergen Studio in browser
+npx mergendb studio 8765
+
+# Execute SQL query against running server
+npx mergendb query "SELECT COUNT(*) FROM iot_telemetry"
+
+# Run system diagnostic benchmark
+npx mergendb benchmark
 ```
 
 ---
 
 ## Complete API Reference
 
-### Connection & Client
+### `MergenDB` / `MergenClient`
 
-```typescript
-import { connect, MergenDB } from 'mergendb';
+| Method | Returns | Description |
+| :--- | :--- | :--- |
+| `sql\`query\`` | `Promise<QueryResult>` | Tagged template literal for SQL execution with automatic escaping. |
+| `query(sqlQuery, options)` | `Promise<QueryResult>` | Executes raw SQL or pipeline query string. |
+| `table(name, database?)` | `TableHandle` | Returns a table reference handle. |
+| `createTable(name, cols, blockSize?)` | `Promise<TableHandle>` | Creates a new columnar table. |
+| `listTables(database?)` | `Promise<TableInfo[]>` | Lists all tables in workspace or database. |
+| `dropTable(name, database?)` | `Promise<Object>` | Permanently drops a table. |
+| `database(name)` | `DatabaseHandle` | Returns a database container handle. |
+| `createDatabase(name)` | `Promise<DatabaseHandle>` | Creates an isolated database container. |
+| `listDatabases()` | `Promise<DatabaseInfo[]>` | Lists all discovered database containers. |
+| `dropDatabase(name)` | `Promise<Object>` | Permanently drops a database container. |
+| `status()` | `Promise<ServerStatus>` | Retrieves server diagnostics and hardware metrics. |
+| `benchmark()` | `Promise<BenchmarkStats>` | Runs live columnar scan benchmark (rows/sec). |
 
-const client = connect({
-  host: '127.0.0.1',
-  port: 8765,
-  activeTable: 'users.mgdb',
-  timeout: 30000,
-  autoStart: true
-});
+### `TableHandle`
 
-// Ping server
-const isAlive: boolean = await client.ping();
-
-// Hardware and runtime metrics
-const sys = await client.status();
-
-// Columnar benchmark
-const bench = await client.benchmark();
-```
-
-### Database Management
-
-```typescript
-// Create database
-await client.createDatabase('analytics');
-
-// List databases with sizes and table counts
-const dbList = await client.listDatabases();
-
-// Get database handle
-const analytics = client.database('analytics');
-
-// List tables in database
-const tables = await analytics.listTables();
-
-// Drop database
-await client.dropDatabase('analytics');
-```
-
-### Table Operations
-
-```typescript
-const table = client.table('sensor_data.mgdb');
-
-// Schema inspection
-const schema = await table.schema();
-
-// Paginated data retrieval
-const page1 = await table.data(1, 50);
-
-// Key-value search
-const results = await table.find({ status: 'active' }, { limit: 100 });
-
-// Full-text substring search across all columns
-const matched = await table.search('temperature_alert');
-
-// Record count with optional filter
-const count = await table.count({ status: 'active' });
-
-// Insert single or batch records
-await table.insert([{ timestamp: 1710000000, reading: 42.1 }]);
-
-// Column schema alterations
-await table.addColumn('location', 'TEXT', 'Room 1');
-await table.renameColumn('reading', 'sensor_value');
-await table.dropColumn('location');
-
-// In-place updates and deletions
-await table.update({ sensor_value: 45.0 }, "timestamp = 1710000000");
-await table.delete("sensor_value < 10.0");
-
-// Truncate and drop
-await table.truncate();
-await table.drop();
-```
-
-### Analytical SQL Queries
-
-```typescript
-const result = await client.query(
-  "SELECT region, COUNT(*), SUM(sales) FROM transactions GROUP BY region HAVING SUM(sales) > 50000 ORDER BY SUM(sales) DESC"
-);
-
-console.log(result.columns);                // Column headers
-console.log(result.rows);                   // Matrix rows
-console.log(result.stats.execution_time_ms); // Query execution duration
-console.log(result.stats.blocks_pruned);     // Blocks skipped via ZoneMaps & Bloom filters
-console.log(result.stats.bytes_read);        // Total raw bytes scanned
-```
-
----
-
-## Web Studio & CLI Runner
- 
-MergenDB core is headless and lightweight. MergenDB Studio is available as an optional extension package:
-
-```bash
-# Launch headless server
-npx mergendb serve 8765
-
-# Launch Web Studio (auto-installs mergendb-studio if not present)
-npx mergendb studio 8765
-```
-
-The Web Studio provides:
-- Hierarchical database, table, and sub-table navigation tree with expand/collapse states.
-- Zero-memory streaming file import and export dialogs with live byte-level progress bars.
-- Interactive SQL console with syntax feedback and query timer.
-- Dynamic pagination and in-place row editing.
-- Full multi-language support (English, German, Turkish).
+| Method | Returns | Description |
+| :--- | :--- | :--- |
+| `query()` / `builder()` | `TableQueryBuilder` | Starts fluent query builder. |
+| `find(filters?, options?)` | `Promise<Object[]>` | Document-style search matching key-value criteria. |
+| `findOne(filters?)` | `Promise<Object\|null>` | Returns first record matching criteria. |
+| `first(where?)` | `Promise<Object\|null>` | Returns first record matching optional WHERE clause. |
+| `last(where?)` | `Promise<Object\|null>` | Returns last record matching optional WHERE clause. |
+| `take(count)` | `Promise<Object[]>` | Takes the first N records as objects. |
+| `all(limit?)` | `Promise<Object[]>` | Retrieves all table records up to limit. |
+| `where(condition, options?)` | `Promise<Object[]>` | Queries table using a raw SQL WHERE condition. |
+| `select(...cols)` | `TableQueryBuilder` | Starts query builder with specified column projection. |
+| `insert(data)` | `Promise<Object>` | Inserts single record or array of records. |
+| `upsert(records, keyColumn?)` | `Promise<Object>` | Atomic upsert based on primary key column (default: `id`). |
+| `batchInsert(records, batchSize?)` | `Promise<number>` | Inserts records in chunked batches. |
+| `update(values, where)` | `Promise<number>` | Updates matching rows. |
+| `delete(where)` | `Promise<number>` | Deletes matching rows. |
+| `truncate()` | `Promise<number>` | Clears all rows while preserving schema. |
+| `drop()` | `Promise<Object>` | Permanently deletes table. |
+| `count(where?)` | `Promise<number>` | Returns total row count. |
+| `exists(filters?)` | `Promise<boolean>` | O(1) early-exit check if matching record exists. |
+| `pluck(...columns)` | `Promise<Array>` | Extracts column values as flat array or tuples. |
+| `distinct(column, where?)` | `Promise<Array>` | Returns unique values for a column. |
+| `sum(col, where?)` | `Promise<number>` | Sums numeric column. |
+| `avg(col, where?)` | `Promise<number\|null>` | Calculates column average. |
+| `min(col, where?)` | `Promise<any>` | Finds minimum column value. |
+| `max(col, where?)` | `Promise<any>` | Finds maximum column value. |
+| `exportToFile(file, format)` | `Promise<Object>` | Zero-memory streaming file export (`csv`, `json`, `jsonl`, `sql`). |
+| `importFile(file, format)` | `Promise<Object>` | Zero-memory streaming file import (`csv`, `json`, `jsonl`, `sql`). |
+| `subtable(name)` | `TableHandle` | Returns handle to nested sub-table. |
+| `createSubtable(name, cols)` | `Promise<TableHandle>` | Creates nested sub-table. |
 
 ---
 
 ## License
 
-MIT License. Copyright (c) 2026 Uğur Türker Kebeci.
+Distributed under the **MIT License**. See [LICENSE](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE) for details.

@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mergendb"
-version = "0.8.7"
+version = "0.8.8"
 description = "Ultra-compact, columnar, embedded database engine and custom query language (MergenQL) designed to run large workloads on small hardware."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+    { name = "The MergenDB Authors" }
 ]
 maintainers = [
-    { name = "Uğur Türker Kebeci", email = "ugurturkerkebeci@users.noreply.github.com" }
+    { name = "The MergenDB Authors" }
 ]
 keywords = [
     "database",

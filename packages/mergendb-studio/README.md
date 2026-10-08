@@ -4,7 +4,7 @@
 
 # Mergen Studio
 
-> **Official Interactive Web Management Dashboard Extension for MergenDB Columnar Database**
+> **Official Interactive Web Management Dashboard Extension for the MergenDB Columnar Database**
 
 [![PyPI version](https://img.shields.io/pypi/v/mergendb-studio.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb-studio/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/mergendb-studio.svg?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb-studio/)
@@ -17,9 +17,9 @@
   <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="Mergen Studio Banner" width="100%" />
 </p>
 
-**Mergen Studio** is the official web-based management dashboard extension for [MergenDB](https://pypi.org/project/mergendb/). It provides an interactive browser GUI to inspect hierarchical databases, run analytical SQL queries, visualize columnar schemas, and perform streaming zero-memory imports and exports.
+**Mergen Studio** is the official graphical web administration dashboard for [MergenDB](https://pypi.org/project/mergendb/). It provides an interactive browser GUI to inspect hierarchical database containers, execute analytical SQL queries, visualize columnar table schemas, and perform streaming zero-memory imports and exports.
 
-Decoupled from the headless core engine, Mergen Studio can be installed on demand when visual management is required, keeping the base `mergendb` package ultra-lightweight (< 150 KB).
+Decoupled from the headless core engine, Mergen Studio can be installed on demand when visual management is required, keeping the core `mergendb` package ultra-compact (< 150 KB).
 
 ---
 
@@ -30,8 +30,8 @@ Decoupled from the headless core engine, Mergen Studio can be installed on deman
 - **Dynamic Data Grid & Schema Inspector:** Inspect table structures and browse records with persistent column definitions even on empty tables.
 - **Zero-Memory Streaming Engine:** Stream multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or network sockets with real-time transfer progress tracking (0% to 100%) and zero browser heap crashes.
 - **Authentication & Security:** Built-in Basic Auth and session token verification (default credentials: `root:`), with an interactive credentials modal for custom logins.
-- **Full Localization:** Native support for English, German (Deutsch), and Turkish (Türkçe).
-- **Strict Zero-Emoji Policy:** Clean, professional interface built with text status tags.
+- **Full Localization:** Native support for English, German (Deutsch), and Turkish (Turkce).
+- **Strict Zero-Emoji Policy:** Clean, professional interface built with text status tags (`[+]`, `[-]`, `[*]`).
 
 ---
 
@@ -80,12 +80,10 @@ Log in with default credentials (`root` with an empty password), or authenticate
 ## Requirements
 
 - Python 3.8+
-- [mergendb](https://pypi.org/project/mergendb/) >= 0.8.6
+- [mergendb](https://pypi.org/project/mergendb/) >= 0.8.8
 
 ---
 
 ## License
 
 Distributed under the **MIT License**. See [LICENSE](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE) for details.
-
-Developed by **[Uğur Türker Kebeci](https://github.com/ugurturkerkebeci)**.

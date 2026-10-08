@@ -2,7 +2,7 @@
  * MergenDB Node.js & TypeScript Client SDK
  * Ultra-compact, columnar database client with Zero external dependencies.
  *
- * (c) 2026 Uğur Türker Kebeci - MIT License
+ * (c) 2026 The MergenDB Authors - MIT License
  */
 
 'use strict';
@@ -629,6 +629,13 @@ class TableHandle {
 
   queryBuilder() {
     return new TableQueryBuilder(this);
+  }
+
+  query(sqlOrPipeline = null) {
+    if (!sqlOrPipeline) {
+      return new TableQueryBuilder(this);
+    }
+    return this.client.query(sqlOrPipeline, { activeTable: this.name, database: this.database });
   }
 
   /**
