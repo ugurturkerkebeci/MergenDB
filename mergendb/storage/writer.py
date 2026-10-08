@@ -4,7 +4,7 @@ import struct
 import json
 from typing import List, Dict, Any, Union, Optional, Tuple
 from mergendb.core.schema import Schema, ColumnDef
-from mergendb.core.types import cast_value
+from mergendb.core.types import DataType, cast_value
 from mergendb.core.block import ZoneMap, ColumnChunkMeta, BlockMeta
 from mergendb.core.bloom import BlockBloomFilter
 from mergendb.compression.compressor import ColumnCompressor
@@ -155,7 +155,7 @@ class FileWriter:
             offset = self._file.tell()
             self._file.write(compressed_bytes)
 
-            bloom = BlockBloomFilter.build_from_values(values)
+            bloom = BlockBloomFilter.build_from_values(values) if col.data_type == DataType.STRING else None
 
             chunk_meta = ColumnChunkMeta(
                 column_name=col.name,

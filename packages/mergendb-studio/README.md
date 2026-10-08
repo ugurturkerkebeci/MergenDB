@@ -80,7 +80,7 @@ Log in with default credentials (`root` with an empty password), or authenticate
 ## Requirements
 
 - Python 3.8+
-- [mergendb](https://pypi.org/project/mergendb/) >= 0.8.8
+- [mergendb](https://pypi.org/project/mergendb/) >= 0.8.9
 
 ---
 

@@ -84,23 +84,25 @@ class ColumnCompressor:
             except Exception:
                 pass
 
-            # Check RLE
+            # Check RLE only if data shows repeated runs in initial sample
             try:
-                rle_bytes = encode_rle(values, dtype)
-                if rle_bytes and (best_bytes is None or len(rle_bytes) < len(best_bytes)):
-                    best_bytes = rle_bytes
-                    best_enc = EncodingType.RLE
+                has_runs = (n_vals < 32) or any(values[i] == values[i+1] for i in range(min(31, n_vals - 1)))
+                if has_runs:
+                    rle_bytes = encode_rle(values, dtype)
+                    if rle_bytes and (best_bytes is None or len(rle_bytes) < len(best_bytes)):
+                        best_bytes = rle_bytes
+                        best_enc = EncodingType.RLE
             except Exception:
                 pass
 
         elif dtype == DataType.STRING:
-            # Check Dictionary encoding: sample first 64 to avoid expensive set() on full column
+            # Check Dictionary encoding: sample with stride up to 512 items
             try:
-                sample_sz = min(64, n_vals)
-                sample = values[:sample_sz]
-                if len(set(sample)) < sample_sz * 0.8:
+                sample_sz = min(512, n_vals)
+                sample = values[::max(1, n_vals // sample_sz)]
+                if len(set(sample)) < len(sample) * 0.85:
                     unique_ratio = len(set(values)) / n_vals
-                    if unique_ratio < 0.6:
+                    if unique_ratio < 0.7:
                         dict_bytes = encode_dict(values, dtype)
                         best_bytes = dict_bytes
                         best_enc = EncodingType.DICTIONARY

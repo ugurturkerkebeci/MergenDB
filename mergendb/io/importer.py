@@ -911,7 +911,7 @@ class DataImporter:
 
         # Step 2: High-Speed Multi-Core Parallel Path (files >= 2 MB and parallel enabled)
         cpu_count = os.cpu_count() or 4
-        if parallel and file_size >= 2 * 1024 * 1024 and cpu_count > 1 and has_header:
+        if parallel and file_size >= 64 * 1024 * 1024 and cpu_count > 1 and has_header:
             num_workers = min(cpu_count, 8)
             chunk_size = file_size // num_workers
             slices = []

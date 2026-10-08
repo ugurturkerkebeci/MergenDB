@@ -456,10 +456,17 @@ def dict_predicate_pushdown(
 
     if is_eq or is_neq:
         if target not in unique_vals:
-            return [False] * total_items if is_eq else [True] * total_items
+            return b"\x00" * total_items if is_eq else b"\x01" * total_items
 
         target_code = unique_vals.index(target)
-        if is_eq:
+        if code_size == 1:
+            trans = bytearray(256)
+            if is_eq:
+                trans[target_code] = 1
+            else:
+                trans = bytearray([0 if c == target_code else 1 for c in range(256)])
+            return bytes(raw_codes).translate(trans)
+        elif is_eq:
             return [c == target_code for c in raw_codes]
         else:
             return [c != target_code for c in raw_codes]
@@ -482,9 +489,13 @@ def dict_predicate_pushdown(
             pass
 
     if not valid_codes:
-        return [False] * total_items
+        return b"\x00" * total_items
     if len(valid_codes) == len(unique_vals):
-        return [True] * total_items
+        return b"\x01" * total_items
+
+    if code_size == 1:
+        trans = bytearray([1 if c in valid_codes else 0 for c in range(256)])
+        return bytes(raw_codes).translate(trans)
 
     return [c in valid_codes for c in raw_codes]
 
@@ -617,43 +628,45 @@ def delta_predicate_pushdown(
 
     if target_delta < 0:
         if is_eq:
-            return [False] * total_items
+            return b"\x00" * total_items
         elif is_neq or op in (">", ">="):
-            return [True] * total_items
+            return b"\x01" * total_items
         elif op in ("<", "<="):
-            return [False] * total_items
+            return b"\x00" * total_items
 
     max_representable = {1: 255, 2: 65535, 4: 4294967295}.get(byte_width, float("inf"))
     if target_delta > max_representable:
         if is_eq:
-            return [False] * total_items
+            return b"\x00" * total_items
         elif is_neq or op in ("<", "<="):
-            return [True] * total_items
+            return b"\x01" * total_items
         elif op in (">", ">="):
-            return [False] * total_items
+            return b"\x00" * total_items
 
     if byte_width == 1:
+        deltas = bytes(data[offset : offset + total_items])
         if is_eq:
             needle = struct.pack("<B", target_delta)
-            if needle not in data[offset : offset + total_items]:
-                return [False] * total_items
-            deltas = data[offset : offset + total_items]
-            return [d == target_delta for d in deltas]
+            if needle not in deltas:
+                return b"\x00" * total_items
+            trans = bytearray(256)
+            trans[target_delta] = 1
+            return deltas.translate(trans)
         elif is_neq:
-            deltas = data[offset : offset + total_items]
-            return [d != target_delta for d in deltas]
+            trans = bytearray([0 if c == target_delta else 1 for c in range(256)])
+            return deltas.translate(trans)
         elif op == ">":
-            deltas = data[offset : offset + total_items]
-            return [d > target_delta for d in deltas]
+            trans = bytearray([1 if c > target_delta else 0 for c in range(256)])
+            return deltas.translate(trans)
         elif op == ">=":
-            deltas = data[offset : offset + total_items]
-            return [d >= target_delta for d in deltas]
+            trans = bytearray([1 if c >= target_delta else 0 for c in range(256)])
+            return deltas.translate(trans)
         elif op == "<":
-            deltas = data[offset : offset + total_items]
-            return [d < target_delta for d in deltas]
+            trans = bytearray([1 if c < target_delta else 0 for c in range(256)])
+            return deltas.translate(trans)
         elif op == "<=":
-            deltas = data[offset : offset + total_items]
-            return [d <= target_delta for d in deltas]
+            trans = bytearray([1 if c <= target_delta else 0 for c in range(256)])
+            return deltas.translate(trans)
     elif byte_width in (2, 4, 8):
         tc_map = {2: ("H", "<H"), 4: ("I", "<I"), 8: ("Q", "<Q")}
         tc, fmt = tc_map[byte_width]

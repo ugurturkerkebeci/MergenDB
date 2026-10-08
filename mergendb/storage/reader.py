@@ -265,7 +265,7 @@ class FileReader:
         self.last_scan_stats = stats
         filter_cols_set = set(filter_columns) if filter_columns else set()
 
-        use_parallel = parallel and len(self.blocks) > 2 and self._mmap is not None
+        use_parallel = parallel and len(self.blocks) >= 24 and self._mmap is not None
 
         if use_parallel:
             worker_count = max_workers or min(os.cpu_count() or 4, 16)

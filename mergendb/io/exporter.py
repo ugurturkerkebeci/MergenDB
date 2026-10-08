@@ -48,35 +48,27 @@ class DataExporter:
                 header_line = ",".join(f'"{c}"' if ("," in c or '"' in c or "\n" in c) else c for c in cols) + "\n"
                 yield header_line.encode("utf-8")
 
-                num_cols = len(cols)
-                # Check column types to use fastest format pipeline
                 col_defs = reader.schema.columns
-                all_simple = all(c.data_type in (DataType.INT64, DataType.INT32, DataType.FLOAT64, DataType.BOOL) for c in col_defs)
-                row_fmt = ",".join(["{}"] * num_cols) + "\n"
-                format_row = row_fmt.format
+                transformers = []
+                for c in col_defs:
+                    dt = c.data_type
+                    if dt in (DataType.INT64, DataType.INT32, DataType.FLOAT64):
+                        transformers.append(lambda vals: [str(v) if v is not None else "" for v in vals])
+                    elif dt == DataType.BOOL:
+                        transformers.append(lambda vals: ["1" if v else ("0" if v is not None else "") for v in vals])
+                    else:
+                        transformers.append(lambda vals: [
+                            ('"' + str(v).replace('"', '""') + '"' if ("," in str(v) or '"' in str(v) or "\n" in str(v)) else str(v))
+                            if v is not None else ""
+                            for v in vals
+                        ])
 
-                if all_simple:
-                    # Pure numeric/bool: zero quote-escaping needed, fastest vectorization
-                    for batch, _ in reader.scan():
-                        col_arrays = [batch.columns[c.name] for c in col_defs]
-                        lines = [format_row(*(c[i] if c[i] is not None else "" for c in col_arrays)) for i in range(batch.row_count)]
-                        yield "".join(lines).encode("utf-8")
-                else:
-                    # General types: per-column vectorized transformers
-                    transformers = []
-                    for c in col_defs:
-                        dt = c.data_type
-                        if dt in (DataType.INT64, DataType.INT32, DataType.FLOAT64):
-                            transformers.append(lambda vals: [str(v) if v is not None else "" for v in vals])
-                        elif dt == DataType.BOOL:
-                            transformers.append(lambda vals: ["1" if v else ("0" if v is not None else "") for v in vals])
-                        else:
-                            transformers.append(lambda vals: ['"' + str(v).replace('"', '""') + '"' if (v is not None and ("," in str(v) or '"' in str(v) or "\n" in str(v))) else (str(v) if v is not None else "") for v in vals])
-
-                    for batch, _ in reader.scan():
-                        transformed = [transformers[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
-                        lines = [format_row(*r) for r in zip(*transformed)]
-                        yield "".join(lines).encode("utf-8")
+                for batch, _ in reader.scan(parallel=False):
+                    if batch.row_count == 0:
+                        continue
+                    transformed = [transformers[idx](batch.columns[col_name]) for idx, col_name in enumerate(cols)]
+                    lines = [",".join(r) + "\n" for r in zip(*transformed)]
+                    yield "".join(lines).encode("utf-8")
 
             elif fmt == "json":
                 yield b"[\n"

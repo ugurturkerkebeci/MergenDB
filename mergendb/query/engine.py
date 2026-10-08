@@ -218,6 +218,10 @@ class ExpressionEvaluator:
                 if not any(left_vals):
                     return left_vals
                 right_vals = cls.evaluate(expr.right, cols, row_count)
+                if isinstance(left_vals, (bytes, bytearray)) and isinstance(right_vals, (bytes, bytearray)):
+                    i1 = int.from_bytes(left_vals, "big")
+                    i2 = int.from_bytes(right_vals, "big")
+                    return (i1 & i2).to_bytes(row_count, "big")
                 return [bool(l and r) for l, r in zip(left_vals, right_vals)]
 
             if op == "OR":
@@ -225,6 +229,10 @@ class ExpressionEvaluator:
                 if all(left_vals):
                     return left_vals
                 right_vals = cls.evaluate(expr.right, cols, row_count)
+                if isinstance(left_vals, (bytes, bytearray)) and isinstance(right_vals, (bytes, bytearray)):
+                    i1 = int.from_bytes(left_vals, "big")
+                    i2 = int.from_bytes(right_vals, "big")
+                    return (i1 | i2).to_bytes(row_count, "big")
                 return [bool(l or r) for l, r in zip(left_vals, right_vals)]
 
             left_vals = cls.evaluate(expr.left, cols, row_count)
