@@ -4,7 +4,7 @@
 
 # MergenDB Node.js & TypeScript SDK
 
-[![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/mergendb)
+[![npm version](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&logo=npm&logoColor=white&cacheSeconds=300)](https://www.npmjs.com/package/mergendb)
 [![Socket npm Security Badge](https://badge.socket.dev/npm/package/mergendb)](https://badge.socket.dev/npm/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
 [![Dependencies](https://img.shields.io/badge/dependencies-0%20(Zero)-success.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB)

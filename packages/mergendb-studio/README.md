@@ -6,7 +6,7 @@
 
 > **Official Interactive Web Management Dashboard Extension for the MergenDB Columnar Database**
 
-[![PyPI version](https://img.shields.io/pypi/v/mergendb-studio.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/mergendb-studio/)
+[![PyPI version](https://img.shields.io/pypi/v/mergendb-studio.svg?style=flat-square&logo=pypi&logoColor=white&cacheSeconds=300)](https://pypi.org/project/mergendb-studio/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/mergendb-studio.svg?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb-studio/)
 [![Socket PyPI Security Badge](https://badge.socket.dev/pypi/package/mergendb)](https://socket.dev/pypi/package/mergendb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/ugurturkerkebeci/MergenDB/blob/main/LICENSE)
