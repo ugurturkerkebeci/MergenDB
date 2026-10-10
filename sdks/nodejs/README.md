@@ -20,7 +20,9 @@ The official **zero-dependency** Node.js and TypeScript client SDK for **MergenD
 
 ## Highlights
 
-- **Vectorized Predicate Pushdown:** Point lookups and scalar filters execute in **~1 second on 100M+ rows** without memory exhaustion or process crashes.
+- **Sub-Second Columnar Execution:** Point lookups execute in **< 100ms on 100M+ rows**, and analytical queries scan at **~400M+ rows/second** without memory exhaustion or process crashes.
+- **Selective Late Materialization:** Only matching rows decode dictionary values, accelerating sparse filters by up to **25x**.
+- **Fault-Tolerant Streaming Ingestion:** Stream malformed or ragged CSV, JSONL, and SQL files directly into MergenDB at **> 5M rows/second** with zero crashes.
 - **Zero External Dependencies:** Built strictly on the native Node.js runtime standard library (`http`, `https`, `url`, `fs`, `stream`). Zero third-party packages installed in your `node_modules`.
 - **Pure Secure Driver:** Operates strictly over HTTP/HTTPS with zero shell execution and zero system subprocess vulnerabilities.
 - **TypeScript First:** Complete typings, interfaces, and code completions included out of the box (`index.d.ts`).

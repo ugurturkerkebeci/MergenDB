@@ -10,6 +10,7 @@ from mergendb.compression.encodings import (
     decode_rle,
     encode_dict,
     decode_dict,
+    decode_dict_indices,
     dict_predicate_pushdown,
     raw_predicate_pushdown,
     delta_predicate_pushdown,
@@ -168,6 +169,52 @@ class ColumnCompressor:
                 return decode_rle(payload, dtype)
             elif enc_type == EncodingType.DICTIONARY:
                 return decode_dict(payload, dtype)
+            else:
+                raise ValueError(f"Unknown encoding type: {enc_type}")
+        finally:
+            if hasattr(payload, "release"):
+                try:
+                    payload.release()
+                except Exception:
+                    pass
+            if hasattr(data, "release"):
+                try:
+                    data.release()
+                except Exception:
+                    pass
+
+    @classmethod
+    def decompress_indices(
+        cls,
+        data: Union[bytes, memoryview],
+        enc_type: EncodingType,
+        dtype: DataType,
+        indices: List[int]
+    ) -> List[Any]:
+        if not data or not indices:
+            return []
+
+        is_zlib = (data[0] == 1)
+        payload = data[1:]
+
+        try:
+            if is_zlib:
+                payload = zlib.decompress(payload)
+
+            if enc_type == EncodingType.DICTIONARY:
+                return decode_dict_indices(payload, dtype, indices)
+            elif enc_type == EncodingType.RAW:
+                full = decode_raw(payload, dtype)
+                return [full[i] for i in indices]
+            elif enc_type == EncodingType.BIT_PACKED_BOOL:
+                full = decode_bitpacked_bool(payload)
+                return [full[i] for i in indices]
+            elif enc_type == EncodingType.DELTA:
+                full = decode_delta(payload, dtype)
+                return [full[i] for i in indices]
+            elif enc_type == EncodingType.RLE:
+                full = decode_rle(payload, dtype)
+                return [full[i] for i in indices]
             else:
                 raise ValueError(f"Unknown encoding type: {enc_type}")
         finally:

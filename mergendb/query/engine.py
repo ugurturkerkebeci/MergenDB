@@ -509,13 +509,14 @@ class QueryEngine:
             is_aggregate = plan.aggregate is not None
             agg_state: Dict[Tuple, Dict[str, Any]] = {}
 
-            # Columns needed for scanning the left reader
-            if plan.select_columns is not None or plan.join is not None:
+            # Columns needed for scanning the left reader (with strict column pruning)
+            if needed_columns is not None:
                 scan_reader_cols = [c.split(".")[-1] for c in needed_columns if reader.schema.has_column(c.split(".")[-1])]
                 if plan.join and l_key not in scan_reader_cols:
                     scan_reader_cols.append(l_key)
                 if not scan_reader_cols:
-                    scan_reader_cols = None
+                    # For COUNT(*) with no columns referenced, only load the first column for row counts
+                    scan_reader_cols = [reader.schema.column_names()[0]]
             else:
                 scan_reader_cols = None
 
@@ -747,11 +748,46 @@ class QueryEngine:
     ):
         group_cols = agg_node.group_by
 
+        if not group_cols:
+            key = ()
+            if key not in state:
+                state[key] = {
+                    "count": 0,
+                    "sums": {},
+                    "mins": {},
+                    "maxs": {},
+                    "values": {},
+                }
+            entry = state[key]
+            entry["count"] += count
+
+            for func_node in agg_node.aggregations:
+                alias = func_node.alias
+                fn = func_node.func
+                c_name = func_node.column
+                if c_name and c_name != "*":
+                    vals = cols.get(c_name) or cols.get(c_name.split(".")[-1])
+                    if vals is not None:
+                        clean_vals = [v for v in vals if v is not None]
+                        if clean_vals:
+                            if fn in ("sum", "avg"):
+                                entry["sums"][alias] = entry["sums"].get(alias, 0.0) + sum(float(v) for v in clean_vals)
+                            elif fn == "min":
+                                cur_min = min(clean_vals)
+                                if alias not in entry["mins"] or cur_min < entry["mins"][alias]:
+                                    entry["mins"][alias] = cur_min
+                            elif fn == "max":
+                                cur_max = max(clean_vals)
+                                if alias not in entry["maxs"] or cur_max > entry["maxs"][alias]:
+                                    entry["maxs"][alias] = cur_max
+                            elif fn in ("median", "stddev"):
+                                if alias not in entry["values"]:
+                                    entry["values"][alias] = []
+                                entry["values"][alias].extend(float(v) for v in clean_vals)
+            return
+
         for i in range(count):
-            if group_cols:
-                key = tuple(cls._get_col_value(cols, g, i) for g in group_cols)
-            else:
-                key = ()
+            key = tuple(cls._get_col_value(cols, g, i) for g in group_cols)
 
             if key not in state:
                 state[key] = {

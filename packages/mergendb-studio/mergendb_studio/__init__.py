@@ -2,7 +2,7 @@
 Mergen Studio: Interactive Web Management Dashboard extension for MergenDB.
 """
 
-__version__ = "0.8.9"
+__version__ = "0.9.0"
 
 def get_studio_html() -> str:
     try:

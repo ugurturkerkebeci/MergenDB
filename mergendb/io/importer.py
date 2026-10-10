@@ -240,6 +240,8 @@ def _csv_slice_worker(args: Tuple[str, int, int, str, List[Tuple[str, int]], str
             def _ci(v):
                 if v is None or v == "" or v == "NULL":
                     return None
+                if isinstance(v, str):
+                    v = v.strip().strip("'\"")
                 try:
                     return int(v)
                 except Exception:
@@ -249,6 +251,8 @@ def _csv_slice_worker(args: Tuple[str, int, int, str, List[Tuple[str, int]], str
             def _cf(v):
                 if v is None or v == "" or v == "NULL":
                     return None
+                if isinstance(v, str):
+                    v = v.strip().strip("'\"")
                 try:
                     return float(v)
                 except Exception:
@@ -258,11 +262,16 @@ def _csv_slice_worker(args: Tuple[str, int, int, str, List[Tuple[str, int]], str
             def _cb(v):
                 if v is None or v == "" or v == "NULL":
                     return None
-                return str(v).strip().lower() in ("true", "1", "t")
+                return str(v).strip().strip("'\"").lower() in ("true", "1", "t")
             cast_funcs.append(_cb)
         else:
             def _cs(v):
-                return str(v) if (v is not None and v != "NULL") else None
+                if v is None or v == "NULL":
+                    return None
+                s = str(v)
+                if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+                    return s[1:-1]
+                return s
             cast_funcs.append(_cs)
 
     total_rows = 0
@@ -294,9 +303,9 @@ def _csv_slice_worker(args: Tuple[str, int, int, str, List[Tuple[str, int]], str
                     break
                 curr_pos = f.tell()
 
-                # Fast line decoding and field splitting
-                line = line_bytes.decode(encoding, errors="replace").rstrip("\r\n")
-                if not line or "\x00" in line:
+                # Fast line decoding and field splitting with full fault tolerance
+                line = line_bytes.decode(encoding, errors="replace").replace("\x00", "").rstrip("\r\n")
+                if not line:
                     continue
 
                 if delimiter in line:
@@ -960,6 +969,8 @@ class DataImporter:
                 def _ci(v):
                     if v is None or v == "" or v == "NULL":
                         return None
+                    if isinstance(v, str):
+                        v = v.strip().strip("'\"")
                     try:
                         return int(v)
                     except Exception:
@@ -969,6 +980,8 @@ class DataImporter:
                 def _cf(v):
                     if v is None or v == "" or v == "NULL":
                         return None
+                    if isinstance(v, str):
+                        v = v.strip().strip("'\"")
                     try:
                         return float(v)
                     except Exception:
@@ -978,11 +991,16 @@ class DataImporter:
                 def _cb(v):
                     if v is None or v == "" or v == "NULL":
                         return None
-                    return str(v).strip().lower() in ("true", "1", "t")
+                    return str(v).strip().strip("'\"").lower() in ("true", "1", "t")
                 cast_funcs.append(_cb)
             else:
                 def _cs(v):
-                    return str(v) if (v is not None and v != "NULL") else None
+                    if v is None or v == "NULL":
+                        return None
+                    s = str(v)
+                    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+                        return s[1:-1]
+                    return s
                 cast_funcs.append(_cs)
 
         with open(csv_path, "r", encoding=encoding, errors="replace") as f:

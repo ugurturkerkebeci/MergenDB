@@ -15,7 +15,7 @@ class FileWriter:
     Writes data in a columnar, compressed, block-indexed format (.mgdb).
     """
 
-    def __init__(self, filepath: str, schema: Schema, block_size: int = 1024, auto_zlib: bool = True):
+    def __init__(self, filepath: str, schema: Schema, block_size: int = 16384, auto_zlib: bool = True):
         self.filepath = filepath
         self.schema = schema
         self.block_size = block_size

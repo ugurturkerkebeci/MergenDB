@@ -247,6 +247,53 @@ def decode_dict(data: bytes, dtype: DataType) -> List[Any]:
         codes.frombytes(data[offset : offset + total_items * 4])
         return [unique_vals[c] for c in codes]
 
+def decode_dict_indices(data: bytes, dtype: DataType, indices: List[int]) -> List[Any]:
+    """
+    Decodes ONLY specified row indices from dictionary-encoded column chunk.
+    Enables selective late materialization, bypassing decompression of thousands of unneeded rows.
+    """
+    if len(data) < 8 or not indices:
+        return []
+    total_items, dict_size = struct.unpack_from("<II", data, 0)
+    offset = 8
+
+    # Read dictionary
+    unique_vals = []
+    if dtype == DataType.STRING:
+        for _ in range(dict_size):
+            str_len = struct.unpack_from("<i", data, offset)[0]
+            offset += 4
+            if str_len == -1:
+                unique_vals.append(None)
+            else:
+                val = bytes(data[offset : offset + str_len]).decode("utf-8")
+                offset += str_len
+                unique_vals.append(val)
+    else:
+        fmt = TYPE_STRUCT_FORMAT[dtype]
+        val_size = struct.calcsize(fmt)
+        for _ in range(dict_size):
+            val = struct.unpack_from(fmt, data, offset)[0]
+            offset += val_size
+            unique_vals.append(val)
+
+    # Read codes for specified indices
+    code_size = struct.unpack_from("<B", data, offset)[0]
+    offset += 1
+
+    if code_size == 1:
+        raw_codes = data[offset : offset + total_items]
+        return [unique_vals[raw_codes[idx]] for idx in indices]
+    elif code_size == 2:
+        codes = array.array("H")
+        codes.frombytes(data[offset : offset + total_items * 2])
+        return [unique_vals[codes[idx]] for idx in indices]
+    else:
+        codes = array.array("I")
+        codes.frombytes(data[offset : offset + total_items * 4])
+        return [unique_vals[codes[idx]] for idx in indices]
+
+
 def raw_predicate_pushdown(
     data: Union[bytes, memoryview],
     dtype: DataType,
