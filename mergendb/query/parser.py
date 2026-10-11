@@ -22,6 +22,8 @@ TYPE_MAP = {
     "bool": DataType.BOOL,
     "boolean": DataType.BOOL,
     "timestamp": DataType.TIMESTAMP,
+    "vector": DataType.VECTOR,
+    "embedding": DataType.VECTOR,
 }
 
 class Parser:
@@ -282,8 +284,42 @@ class Parser:
             self.pos += 1
             return LiteralNode(value=curr.value)
         elif curr.type == TokenType.IDENTIFIER:
-            self.pos += 1
-            return ColumnRefNode(name=curr.value)
+            # Check if this is a function call like cosine_similarity(...)
+            if self._peek_next() and self._peek_next().type == TokenType.LPAREN:
+                func_name = curr.value
+                self.pos += 2  # consume identifier and LPAREN
+                args: List[ExprNode] = []
+                if self._current().type != TokenType.RPAREN:
+                    while True:
+                        args.append(self._parse_expression())
+                        if not self._match(TokenType.COMMA):
+                            break
+                self._expect(TokenType.RPAREN)
+                from mergendb.query.ast_nodes import FunctionCallNode
+                return FunctionCallNode(name=func_name, args=args)
+            else:
+                self.pos += 1
+                return ColumnRefNode(name=curr.value)
+        elif self._match(TokenType.LBRACKET):
+            # Parse array / vector literal: [0.1, 0.2, -0.3]
+            elements = []
+            if self._current().type != TokenType.RBRACKET:
+                while True:
+                    sign = 1.0
+                    if self._match(TokenType.MINUS):
+                        sign = -1.0
+                    elif self._match(TokenType.PLUS):
+                        sign = 1.0
+                    elem_tok = self._current()
+                    if elem_tok.type in (TokenType.INT_LITERAL, TokenType.FLOAT_LITERAL):
+                        self.pos += 1
+                        elements.append(sign * float(elem_tok.value))
+                    else:
+                        raise SyntaxError(f"Expected numeric literal in vector, got {elem_tok.type.name}")
+                    if not self._match(TokenType.COMMA):
+                        break
+            self._expect(TokenType.RBRACKET)
+            return LiteralNode(value=elements)
         elif self._match(TokenType.LPAREN):
             expr = self._parse_expression()
             self._expect(TokenType.RPAREN)

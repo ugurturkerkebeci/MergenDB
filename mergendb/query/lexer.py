@@ -9,6 +9,8 @@ class TokenType(Enum):
     COMMA = auto()
     LPAREN = auto()
     RPAREN = auto()
+    LBRACKET = auto()
+    RBRACKET = auto()
 
     # Keywords
     FROM = auto()
@@ -152,6 +154,12 @@ class Lexer:
             elif ch == ')':
                 self._advance()
                 tokens.append(Token(TokenType.RPAREN, ')', start_line, start_col))
+            elif ch == '[':
+                self._advance()
+                tokens.append(Token(TokenType.LBRACKET, '[', start_line, start_col))
+            elif ch == ']':
+                self._advance()
+                tokens.append(Token(TokenType.RBRACKET, ']', start_line, start_col))
             elif ch == ',':
                 self._advance()
                 tokens.append(Token(TokenType.COMMA, ',', start_line, start_col))

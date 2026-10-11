@@ -57,6 +57,11 @@ class QueryPlanner:
             elif isinstance(e, BinaryOpNode):
                 collect_from_expr(e.left)
                 collect_from_expr(e.right)
+            else:
+                from mergendb.query.ast_nodes import FunctionCallNode
+                if isinstance(e, FunctionCallNode):
+                    for arg in e.args:
+                        collect_from_expr(arg)
 
         collect_from_expr(plan.where_expr)
 
@@ -108,6 +113,11 @@ class QueryPlanner:
             elif isinstance(e, BinaryOpNode):
                 collect(e.left)
                 collect(e.right)
+            else:
+                from mergendb.query.ast_nodes import FunctionCallNode
+                if isinstance(e, FunctionCallNode):
+                    for arg in e.args:
+                        collect(arg)
 
         collect(expr)
         return list(cols)

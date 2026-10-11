@@ -620,6 +620,54 @@ class TableHandle {
   }
 
   /**
+   * High-performance vector similarity search over an embedding column (v1.0.0 AI-Native).
+   * @param {string} column Column name containing embeddings (VECTOR)
+   * @param {Array<number>|Float32Array} queryVector Target vector
+   * @param {Object} [options]
+   * @param {number} [options.topK=10] Number of nearest neighbors to return
+   * @param {string} [options.filter=null] Optional SQL filter (e.g. "category = 'AI'")
+   * @param {string} [options.metric='cosine'] 'cosine', 'l2', 'dot', 'manhattan'
+   */
+  async vectorSearch(column, queryVector, options = {}) {
+    const topK = options.topK || options.limit || 10;
+    const filter = options.filter || null;
+    const metric = (options.metric || 'cosine').toLowerCase();
+
+    let fn = 'cosine_similarity';
+    let dir = 'DESC';
+    if (metric === 'l2' || metric === 'euclidean') {
+      fn = 'l2_distance';
+      dir = 'ASC';
+    } else if (metric === 'dot' || metric === 'dot_product') {
+      fn = 'dot_product';
+      dir = 'DESC';
+    } else if (metric === 'manhattan' || metric === 'l1') {
+      fn = 'manhattan_distance';
+      dir = 'ASC';
+    }
+
+    const vecArr = Array.from(queryVector).map(Number);
+    const vecStr = `[${vecArr.join(', ')}]`;
+
+    let sql = `SELECT *, ${fn}(${column}, ${vecStr}) AS score FROM ${this.pureName}`;
+    if (filter) {
+      sql += ` WHERE ${filter}`;
+    }
+    sql += ` ORDER BY score ${dir} LIMIT ${topK}`;
+
+    const res = await this.client.query(sql, { activeTable: this.name, database: this.database });
+    if (!res || !res.columns || !res.rows) return [];
+    const colNames = res.columns;
+    return res.rows.map(row => {
+      const obj = {};
+      colNames.forEach((col, idx) => {
+        obj[col] = row[idx];
+      });
+      return obj;
+    });
+  }
+
+  /**
    * Start a fluent, chainable query builder
    * @returns {TableQueryBuilder}
    */

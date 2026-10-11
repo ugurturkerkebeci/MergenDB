@@ -142,6 +142,7 @@ export class TableHandle {
   min<V = any>(column: string, where?: string): Promise<V | null>;
   max<V = any>(column: string, where?: string): Promise<V | null>;
   search<T = Record<string, any>>(term: string): Promise<T[]>;
+  vectorSearch<T = Record<string, any>>(column: string, queryVector: number[] | Float32Array, options?: { topK?: number; limit?: number; filter?: string; metric?: 'cosine' | 'l2' | 'dot' | 'manhattan' }): Promise<T[]>;
   count(filters?: Record<string, any>): Promise<number>;
   insert(records: Record<string, any> | Record<string, any>[]): Promise<{ status: string; message: string }>;
   update(updates: Record<string, any>, where: string): Promise<QueryResult>;

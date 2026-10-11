@@ -2,9 +2,9 @@
   <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/logo.png" alt="MergenDB Logo" width="280" />
 </p>
 
-# MergenDB
+# MergenDB (v1.0.0 Production Release)
 
-> **The Ultra-Compact, High-Performance Embedded Columnar Database Engine & Vectorized SQL Processor for Python and Node.js**
+> **The Ultra-Compact, Zero-Dependency Embedded Columnar & Vector Database Engine for Python and Node.js**
 
 [![PyPI version](https://img.shields.io/pypi/v/mergendb.svg?style=flat-square&logo=pypi&logoColor=white&cacheSeconds=300)](https://pypi.org/project/mergendb/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/mergendb.svg?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mergendb/)
@@ -22,353 +22,139 @@
   <img src="https://raw.githubusercontent.com/ugurturkerkebeci/MergenDB/main/docs/images/banner.jpg" alt="MergenDB Banner" width="100%" />
 </p>
 
-**MergenDB** is an ultra-compact, high-performance embedded columnar database engine engineered to process massive analytical workloads and multi-million row table scans on resource-constrained hardware. It delivers **strict zero external runtime dependencies** -- requiring no C compilers, no native C++ binaries, and no bulky runtimes across both Python and Node.js.
+## The v1.0.0 Milestone: AI-Native Analytical Evolution
 
-Whether scanning a 100-million row table on a 500 MB RAM VPS, streaming telemetry on an edge device, running real-time analytics in Node.js/TypeScript, or managing hierarchical databases through **Mergen Studio**, MergenDB provides columnar speed with bounded memory guarantees (< 20 MB peak RAM).
+MergenDB v1.0.0 marks a monumental milestone in embedded data engineering. Traditionally, developers have had to deploy separate databases for columnar analytics (e.g. DuckDB, ClickHouse) and separate engines for vector similarity search (e.g. Chroma, LanceDB, Pinecone). Furthermore, these engines rely on complex C++ compilation toolchains, LLVM, or massive multi-megabyte wheel packages.
+
+**MergenDB v1.0.0 eliminates this complexity entirely.** It provides a **single-file (`.mgdb`), zero-external-dependency columnar database** that natively executes both **ultra-fast analytical SQL (GROUP BY, JOIN, AGGREGATE)** and **AI-driven vector embedding similarity search** in both Python and Node.js.
 
 ---
 
-## Key Highlights
+## Key Breakthroughs in v1.0.0
 
-- **Sub-Second 100M+ Row Columnar Scans:** Point lookups and scalar filters (e.g. `WHERE phone = '0532...'` or `WHERE device_id = 5821049`) execute in **< 100 milliseconds on 100M+ row tables**, directly evaluating binary byte streams at C level (`bytes.translate`, `mmap`) with zero Python object allocation overhead.
-- **Lazy Metadata Initialization (`LazyBlockList`):** Table opening overhead on multi-million row tables dropped from 3.5s to **0.0001 seconds**, deferring block parsing until individual blocks are accessed.
-- **Selective Late Materialization:** Only matching rows decode dictionary values (`decode_dict_indices`), bypassing decompression of thousands of unneeded rows and speeding up sparse queries by up to **25x**.
-- **Fault-Tolerant Streaming Ingestion (> 5M rows/s):** Robust parallel byte-range parser seamlessly processes ragged rows, escaped quotes, missing fields, null bytes (`\x00`), and diverse encodings without dropping tables or crashing.
-- **Zero External Dependencies:** Built purely on standard library primitives (`zlib`, `struct`, `mmap`, `json`, `http`). Zero third-party runtime bloat in production environments.
+- **AI-Native `VECTOR` Type & SIMD Math:** Native storage and computing of float embeddings (128, 384, 768, 1536+ dimensions) with zero external libraries. Supports `COSINE_SIMILARITY`, `L2_DISTANCE` (Euclidean), `DOT_PRODUCT`, and `MANHATTAN_DISTANCE`.
+- **Hybrid Relational + Vector Search:** Execute high-performance hybrid queries that combine SQL metadata filters with vector nearest-neighbor search in sub-milliseconds.
+- **Sub-Second 100M+ Row Columnar Scans:** Point lookups execute in **< 100ms**, and analytical scans achieve **~400M+ rows/second** directly evaluating binary byte streams with zero-copy `mmap`.
+- **Selective Late Materialization:** Only matching rows decode dictionary values (`decode_dict_indices`), bypassing decompression of thousands of unneeded rows.
+- **Lazy Metadata Initialization (`LazyBlockList`):** Instant table opening (0.0001s) on multi-million row tables by deferring block metadata instantiation until requested.
+- **Fault-Tolerant Streaming Ingestion (> 5M rows/s):** Robust parallel byte-range parser seamlessly processes ragged rows, escaped quotes, missing fields, null bytes (`\x00`), and diverse encodings.
 - **Strictly Bounded Memory (< 20 MB RAM):** Data streams in configurable column blocks (1,024 to 65,536 rows). Peak memory never grows with database file size.
-- **Hierarchical Database Architecture:** Organize data natively: `Databases -> Tables -> Nested Sub-tables` (e.g. `enterprise.orders.shipments`) with dot-notation SQL queries.
-- **Zero-Memory Streaming Engine:** Stream multi-gigabyte CSV, JSON, JSONL, and SQL dumps directly to disk or HTTP sockets in 64 KB chunks without buffering datasets into memory.
-- **Dual Query Paradigm:** Full standard SQL engine (joins, multi-column `GROUP BY`, `HAVING`, aggregations) alongside Pythonic and JavaScript document-style APIs (`find`, `find_one`, `search`, `insert`, `update`, `delete`, `upsert`).
-- **Adaptive Columnar Compression:** Automatic per-column encoding pipeline (Bit-packed booleans, Delta/FoR integers, Block Dictionary, Run-Length Encoding, and secondary Zlib compaction) delivering up to **50:1 compression ratio**.
-- **Dynamic Block Bloom Filters & ZoneMaps:** Skips irrelevant blocks during point lookups with zero disk reads.
-- **Fine-Grained Concurrency (RWLock):** Concurrent lock-free readers execute simultaneously while atomic writers stage changes with automatic rollback safety.
-- **Mergen Studio Web UI:** Visual database explorer, interactive SQL console, schema inspector, and streaming transfer manager.
+- **Hierarchical Database Architecture:** Manage databases, tables, and nested sub-tables (`database.table.subtable`) with isolated namespaces.
+- **Zero External Dependencies:** Built purely on standard library primitives (`zlib`, `struct`, `mmap`, `json`, `sqlite3`, `http`).
 - **Strict Zero-Emoji Policy:** Clean, professional interface built with deterministic status tags (`[+]`, `[-]`, `[*]`, `[!]`).
 
 ---
 
-## Installation
+## SDKs & Extensions
 
-### Python SDK & Core Engine
-
-```bash
-pip install --upgrade mergendb
-```
-
-To include the optional web dashboard extension:
-
-```bash
-pip install --upgrade "mergendb[studio]"
-```
-
-### Node.js & TypeScript SDK
-
-```bash
-npm install mergendb
-```
+| Package | Language / Environment | Registry | Description |
+| :--- | :--- | :--- | :--- |
+| **mergendb** | Python 3.8+ | [![PyPI](https://img.shields.io/pypi/v/mergendb.svg?style=flat-square&cacheSeconds=300)](https://pypi.org/project/mergendb/) | Embedded columnar engine, SQL executor, vector search & CLI |
+| **mergendb** | Node.js / TypeScript | [![npm](https://img.shields.io/npm/v/mergendb.svg?style=flat-square&cacheSeconds=300)](https://www.npmjs.com/package/mergendb) | Zero-dependency Node.js client SDK with tagged template SQL |
+| **mergendb-studio** | Web GUI Extension | [![PyPI](https://img.shields.io/pypi/v/mergendb-studio.svg?style=flat-square&cacheSeconds=300)](https://pypi.org/project/mergendb-studio/) | Interactive web management dashboard with purple theme |
 
 ---
 
-## Quickstart
+## Comprehensive MergenQL & Usage Guide
 
-### Python Quickstart (Universal IoT Telemetry Example)
+### 1. Python: Embedded Analytics & Hybrid Vector Search
 
 ```python
 import mergendb
+from mergendb import Schema, ColumnDef, DataType, Table
 
-# 1. Connect to local table (auto-created if absent)
-telemetry = mergendb.connect("iot_telemetry.mgdb")
-
-# 2. Define schema if empty
-if telemetry.row_count == 0:
-    telemetry.create_schema([
-        ("device_id", "INT64"),
-        ("station_code", "STRING"),
-        ("temperature", "DOUBLE"),
-        ("humidity", "DOUBLE"),
-        ("is_active", "BOOLEAN")
-    ])
-
-# 3. Insert universal records
-telemetry.insert([
-    {"device_id": 101, "station_code": "US-EAST-01", "temperature": 21.4, "humidity": 48.2, "is_active": True},
-    {"device_id": 102, "station_code": "EU-WEST-02", "temperature": 18.9, "humidity": 55.0, "is_active": True},
-    {"device_id": 103, "station_code": "AP-SOUTH-01", "temperature": 31.2, "humidity": 72.1, "is_active": False}
+# 1. Define schema with relational attributes and an AI embedding vector
+schema = Schema([
+    ColumnDef("doc_id", DataType.INT32),
+    ColumnDef("title", DataType.STRING),
+    ColumnDef("category", DataType.STRING),
+    ColumnDef("embedding", DataType.VECTOR)
 ])
 
-# 4. Analytical SQL aggregation
-res = telemetry.sql("""
-    SELECT station_code, AVG(temperature) AS avg_temp, MAX(humidity) AS max_hum
-    FROM iot_telemetry
-    WHERE is_active = true
-    GROUP BY station_code
-    ORDER BY avg_temp DESC;
-""")
-print(res.display())
+table = Table.create("knowledge_base.mgdb", schema)
 
-# 5. Fluent Query Builder
-active_stations = (
-    telemetry.query()
-             .select("station_code", "temperature")
-             .where("temperature > 20.0")
-             .order_by("temperature", desc=True)
-             .limit(10)
-             .to_dicts()
+# 2. Insert records
+table.insert([
+    {"doc_id": 1, "title": "Attention Is All You Need", "category": "AI", "embedding": [0.95, 0.1, 0.05]},
+    {"doc_id": 2, "title": "General Relativity", "category": "Physics", "embedding": [0.82, 0.2, 0.15]},
+    {"doc_id": 3, "title": "French Culinary Arts", "category": "Cooking", "embedding": [0.05, 0.9, 0.1]}
+])
+
+# 3. Hybrid Vector Search (Filter + Top-K Cosine Similarity)
+results = table.vector_search(
+    column="embedding",
+    query_vector=[1.0, 0.0, 0.0],
+    top_k=2,
+    filter="category == 'AI'",
+    metric="cosine"
 )
-print("Active Stations:", active_stations)
+
+results.show()
 ```
 
----
-
-### Node.js & TypeScript Quickstart
-
-```javascript
-import { connect } from 'mergendb';
-
-const db = connect({
-  host: '127.0.0.1',
-  port: 8765,
-  user: 'root',
-  password: ''
-});
-
-async function main() {
-  // 1. Create table
-  const telemetry = await db.createTable('iot_telemetry', [
-    { name: 'device_id', type: 'INT64' },
-    { name: 'station_code', type: 'STRING' },
-    { name: 'temperature', type: 'DOUBLE' },
-    { name: 'humidity', type: 'DOUBLE' },
-    { name: 'is_active', type: 'BOOLEAN' }
-  ]);
-
-  // 2. Insert records
-  await telemetry.insert([
-    { device_id: 101, station_code: 'US-EAST-01', temperature: 21.4, humidity: 48.2, is_active: true },
-    { device_id: 102, station_code: 'EU-WEST-02', temperature: 18.9, humidity: 55.0, is_active: true }
-  ]);
-
-  // 3. Safe parameterized SQL via tagged template literal
-  const minTemp = 20.0;
-  const results = await db.sql`
-    SELECT station_code, AVG(temperature) AS avg_temp
-    FROM iot_telemetry
-    WHERE temperature >= ${minTemp} AND is_active = true
-    GROUP BY station_code;
-  `;
-  console.table(results.toObjects());
-
-  // 4. Fluent Query Builder
-  const highTemp = await telemetry.query()
-    .select('device_id', 'station_code', 'temperature')
-    .where('temperature > 20.0')
-    .orderBy('temperature', true)
-    .limit(5)
-    .toObjects();
-  console.log('High Temp Readings:', highTemp);
-}
-
-main().catch(console.error);
-```
-
----
-
-## Complete Command & API Reference (Python vs JavaScript / TypeScript)
-
-MergenDB maintains 100% feature symmetry across Python and Node.js/TypeScript:
-
-### 1. Connection & Server Management
-
-| Operation | Python | JavaScript / TypeScript (Node.js) | Description |
-| :--- | :--- | :--- | :--- |
-| **Embedded Connection** | `db = mergendb.connect("data.mgdb")` | *(Runs via HTTP server / REST)* | Connects or auto-creates a local embedded database table. |
-| **Remote Client** | `client = mergendb.connect("http://127.0.0.1:8765")` | `const client = connect({ host: "127.0.0.1", port: 8765 })` | Connects to a running MergenDB instance over HTTP/REST. |
-| **Server Diagnostics** | `client.status()` | `await client.status()` | Retrieves hardware diagnostics, CPU info, and database metrics. |
-| **Scan Benchmark** | `client.benchmark()` | `await client.benchmark()` | Measures device columnar scan throughput (rows/sec). |
-
----
-
-### 2. Database Containers & Schema Management
-
-| Operation | Python | JavaScript / TypeScript (Node.js) | Description |
-| :--- | :--- | :--- | :--- |
-| **List Databases** | `mergendb.list_databases()` | `await client.listDatabases()` | Discovers all database container directories. |
-| **Create Database** | `mergendb.create_database("finance")` | `await client.createDatabase("finance")` | Creates an isolated database container directory. |
-| **Drop Database** | `mergendb.drop_database("finance")` | `await client.dropDatabase("finance")` | Permanently deletes a database container. |
-| **Create Table** | `db.create_table("orders", [("id", "INT64")])` | `await db.createTable("orders", [{ name: "id", type: "INT64" }])` | Creates a new columnar table. |
-| **List Tables** | `db.list_tables()` | `await db.listTables()` | Lists tables in workspace or active database. |
-| **Drop Table** | `db.drop_table("orders")` | `await db.dropTable("orders")` | Permanently drops a table. |
-| **Truncate Table** | `table.truncate()` | `await table.truncate()` | Empties all rows while preserving schema. |
-| **Add Column** | `table.add_column("tax", "DOUBLE", default=0.0)` | `await table.addColumn("tax", "DOUBLE", 0.0)` | Adds new column without data rewrite. |
-| **Drop Column** | `table.drop_column("tax")` | `await table.dropColumn("tax")` | Prunes column definition from table. |
-| **Rename Column** | `table.rename_column("old_col", "new_col")` | `await table.renameColumn("old_col", "new_col")` | Renames column identifier without data loss. |
-
----
-
-### 3. Data Mutation (CRUD & Optimization)
-
-| Operation | Python | JavaScript / TypeScript (Node.js) | Description |
-| :--- | :--- | :--- | :--- |
-| **Single / Batch Insert** | `table.insert([{"id": 1, "sku": "A1"}])` | `await table.insert([{ id: 1, sku: "A1" }])` | Ingests dictionary/object records into column blocks. |
-| **Chunked Batch Insert** | `table.batch_insert(rows, batch_size=5000)` | `await table.batchInsert(rows, 5000)` | Memory-safe chunked insertion for massive datasets. |
-| **Atomic Upsert** | `table.upsert({"id": 1, "status": "shipped"}, key_column="id")` | `await table.upsert({ id: 1, status: "shipped" }, "id")` | Updates row if primary key exists; inserts if absent. |
-| **Update Rows** | `table.update({"status": "archived"}, where="id > 100")` | `await table.update({ status: "archived" }, "id > 100")` | Updates matching records. |
-| **Delete Rows** | `table.delete(where="status = 'cancelled'")` | `await table.delete("status = 'cancelled'")` | Deletes matching records. |
-
----
-
-### 4. Querying & Analytics
-
-| Operation | Python | JavaScript / TypeScript (Node.js) | Description |
-| :--- | :--- | :--- | :--- |
-| **Standard SQL** | `res = table.sql("SELECT * WHERE price > 50")` | `const res = await table.sql("SELECT * WHERE price > 50")` | Executes SQL on table. |
-| **Find (Document Style)**| `rows = table.find(category="electronics", limit=10)` | `const rows = await table.find({ category: "electronics" }, { limit: 10 })` | Key-value matching filter. |
-| **Find One** | `record = table.find_one(sku="SKU-001")` | `const record = await table.findOne({ sku: "SKU-001" })` | Retrieves first matching record. |
-| **First Record** | `record = table.first(where="active = True")` | `const record = await table.first("active = true")` | Retrieves first matching record. |
-| **Last Record** | `record = table.last(where="active = True")` | `const record = await table.last("active = true")` | Retrieves last matching record. |
-| **Take N Rows** | `sample = table.take(5)` | `const sample = await table.take(5)` | Retrieves the first N rows as dictionary list. |
-| **All Rows** | `all_rows = table.all(limit=100)` | `const all_rows = await table.all(100)` | Retrieves all rows up to limit. |
-| **Check Exists (O(1))**| `has_admin = table.exists(role="admin")` | `const hasAdmin = await table.exists({ role: "admin" })` | Fast early-exit boolean check. |
-| **Full-Text Search** | `matches = table.search("New York")` | `const matches = await table.search("New York")` | Substring search across all `STRING` columns. |
-| **Pluck Columns** | `emails = table.pluck("email")` | `const emails = await table.pluck("email")` | Extracts single column as flat array without overhead. |
-| **Distinct Values** | `regions = table.distinct("region")` | `const regions = await table.distinct("region")` | Returns unique column values as set-based list. |
-| **Sum** | `table.sum("revenue", where="active = True")` | `await table.sum("revenue", "active = true")` | Sums numeric column. |
-| **Average (Avg)** | `table.avg("latency")` | `await table.avg("latency")` | Computes column arithmetic mean. |
-| **Min / Max** | `table.min("price")` / `table.max("price")` | `await table.min("price")` / `await table.max("price")` | Computes minimum or maximum value. |
-
----
-
-### 5. Fluent Query Builder (`query()` / `builder()`)
-
-Method-chaining syntax for readable analytical queries:
-
-```python
-# Python
-orders = (
-    table.query()
-         .select("order_id", "customer_id", "total_amount", "status")
-         .where("total_amount >= 150.00")
-         .filter(status="completed")
-         .order_by("total_amount", desc=True)
-         .limit(20)
-         .offset(40)
-         .to_dicts()
-)
-```
-
-```javascript
-// JavaScript / TypeScript
-const orders = await table.query()
-  .select('order_id', 'customer_id', 'total_amount', 'status')
-  .where('total_amount >= 150.00')
-  .filter({ status: 'completed' })
-  .orderBy('total_amount', true)
-  .limit(20)
-  .offset(40)
-  .toObjects();
-```
-
----
-
-### 6. Zero-Memory Streaming File Transfers
-
-Stream multi-gigabyte files directly to disk or network sockets without memory buffering:
-
-| Operation | Python | JavaScript / TypeScript (Node.js) |
-| :--- | :--- | :--- |
-| **Export to CSV** | `table.export_csv("backup.csv")` | `await table.exportToFile("backup.csv", "csv")` |
-| **Export to JSON** | `table.export_json("backup.json")` | `await table.exportToFile("backup.json", "json")` |
-| **Export to JSON Lines** | `table.export_jsonl("backup.jsonl")` | `await table.exportToFile("backup.jsonl", "jsonl")` |
-| **Export to SQL Dump** | `table.export_sql("backup.sql")` | `await table.exportToFile("backup.sql", "sql")` |
-| **Import from CSV** | `table.import_csv("data.csv")` | `await table.importFile("data.csv", "csv")` |
-| **Import from SQL Dump**| `table.import_sql("dump.sql")` | `await table.importFile("dump.sql", "sql")` |
-
----
-
-## Interactive CLI REPL
-
-Launch the interactive terminal shell:
-
-```bash
-mergen
-```
+### 2. Analytical SQL with Vector Functions
 
 ```sql
-mergen> SHOW TABLES;
-mergen> USE iot_telemetry;                      -- Smart context: selects table 'iot_telemetry.mgdb'
-mergen[iot_telemetry.mgdb]> WHERE device_id = 101;  -- Direct filter query on active table (ZoneMap pruned)
-mergen[iot_telemetry.mgdb]> USE DATABASE analytics; -- Explicitly switch database container
-mergen(analytics)> SHOW TABLES;
-mergen(analytics)> USE TABLE metrics;          -- Explicitly select table inside database
-mergen(analytics)[metrics.mgdb]> SELECT host, AVG(latency) FROM metrics GROUP BY host;
-mergen(analytics)[metrics.mgdb]> EXPORT metrics TO CSV;
+SELECT title, category, cosine_similarity(embedding, [1.0, 0.0, 0.0]) AS score
+FROM knowledge_base
+WHERE category = 'AI'
+ORDER BY score DESC
+LIMIT 5;
 ```
 
----
-
-## Mergen Studio Web Management Dashboard
-
-Mergen Studio provides an interactive web-based graphical interface for database administration, visual table inspection, real-time query execution, and streaming file transfers.
-
-```bash
-# Launch server and access Studio
-mergen serve 8765
+In Python:
+```python
+res = mergendb.query("""
+    SELECT title, cosine_similarity(embedding, [1.0, 0.0, 0.0]) AS score
+    FROM knowledge_base
+    ORDER BY score DESC
+    LIMIT 3;
+""")
+res.show()
 ```
 
-Navigate to `http://localhost:8765/studio` in any browser:
-- **Hierarchical Sidebar:** Expand and inspect databases, tables, and nested sub-tables.
-- **SQL Console:** Syntax highlighting, query history, and execution benchmarks.
-- **Data & Structure Browser:** Dynamic grid rendering column data types even for empty tables.
-- **Streaming Transfer Hub:** Real-time upload/download progress counters with chunked memory safety.
-- **Authentication:** Role-based access control (default credentials: `root:`).
+### 3. Node.js & TypeScript SDK
 
----
+```typescript
+import { MergenDB } from 'mergendb';
 
-## Adaptive Columnar Compression
+const db = new MergenDB({ host: '127.0.0.1', port: 8765, autoStart: true });
+const table = db.table('knowledge_base');
 
-When persisting column blocks, MergenDB inspects data distributions and dynamically selects the optimal hardware encoding:
+// Native top-K vector search
+const matches = await table.vectorSearch('embedding', [1.0, 0.0, 0.0], {
+  topK: 2,
+  filter: "category = 'AI'",
+  metric: 'cosine'
+});
 
-| Encoding | Targeted Data Type | Mechanics |
-| :--- | :--- | :--- |
-| **Bit-Packed Booleans** | Booleans | 1 bit per value (8 rows per byte) |
-| **Delta / FoR** | Sequential & clustered integers | Frame-of-Reference offsets from block minimum |
-| **Block Dictionary** | Low-cardinality text (status, category, country) | Stores unique values once; rows encoded as 1-byte indices |
-| **Run-Length (RLE)** | Repeated consecutive values | Collapses sequences into `(count, value)` pairs |
-| **Secondary Zlib** | Compressed payloads | Byte-level stream compaction |
+for (const doc of matches) {
+  console.log(`[+] Document: ${doc.title} (Score: ${doc.score.toFixed(4)})`);
+}
+```
 
----
+### 4. CLI Command-Line Reference
 
-## Performance Benchmarks
-
-Measured on standard hardware with 100,000 mixed records (12 columns: integers, floats, timestamps, statuses, long strings):
-
-| Storage Format | Disk Size | Space Saved | 2-Column Query Disk Read | Peak RAM |
-| :--- | :--- | :--- | :--- | :--- |
-| **JSON Lines (`.jsonl`)** | 19.5 MB | 0% (Baseline) | 19.5 MB | Unbounded |
-| **SQLite 3 (`.db`)** | 8.1 MB | 58.4% | 8.1 MB (reads full row) | ~30 MB |
-| **MergenDB (`.mgdb`)** | **1.6 MB** | **91.5%** | **0.29 MB (pruned)** | **< 15 MB RAM** |
-
-- **Sub-Second Columnar Scan (100M+ Rows):** < 100ms point lookups, ~400,000,000 - 500,000,000 rows/second analytical scan.
-- **Selective Late Materialization:** ~30,000,000 - 50,000,000 rows/second on complex multi-column filters.
-- **Fault-Tolerant Parallel Import:** ~5,300,000+ rows/second on standard NVMe SSDs.
-- **Streaming Table Export Speed:** ~5,600,000+ rows/second directly to disk or network sockets.
-
----
-
-## Test Suite & Verification
-
-MergenDB is verified with **over 4,600 automated tests** (2,600+ Python tests and 2,000+ Node.js tests) covering:
-- Storage, block encoding, and adaptive compression roundtrips.
-- Fault tolerance against ragged rows, corrupt headers, escaped SQL quotes, and zero-byte boundaries.
-- Concurrency, thread safety, and RWLock staging verification.
-- 100% pass rate across Windows, macOS, Linux, and Docker.
+The unified `mergendb` CLI provides comprehensive table inspection, query execution, and ingestion:
 
 ```bash
-# Run Python test suite
-python -m unittest discover -s tests
+# Display table schema, row count, compression ratio, and block metadata
+mergendb info knowledge_base.mgdb
 
-# Run Node.js SDK test suite
-node sdks/nodejs/test.js
+# Execute analytical SQL directly from the terminal
+mergendb sql "SELECT title, score FROM knowledge_base.mgdb WHERE score > 0.8"
+
+# High-speed streaming CSV import (> 5M rows/second)
+mergendb import knowledge_base.mgdb data.csv --delimiter "," --parallel
+
+# Stream table export to JSON or CSV
+mergendb export knowledge_base.mgdb --format json --output docs.json
+
+# Launch the headless HTTP server with the new purple Studio Web UI
+mergendb server --port 8765 --ui
+
+# Run hardware profiler and memory benchmark
+mergendb benchmark
 ```
 
 ---

@@ -9,7 +9,7 @@ from mergendb.core.types import DataType
 from mergendb.io.progress import ProgressBar
 from mergendb.query.ast_nodes import (
     QueryPlan, ExprNode, BinaryOpNode, ColumnRefNode, LiteralNode,
-    ComputeNode, AggregateNode, SortNode
+    ComputeNode, AggregateNode, SortNode, FunctionCallNode
 )
 from mergendb.query.planner import QueryPlanner
 
@@ -351,6 +351,102 @@ class ExpressionEvaluator:
                 raise ValueError(f"Unsupported binary operator: {op}")
 
             return res
+
+        elif isinstance(expr, FunctionCallNode):
+            fname = expr.name.lower()
+            evaluated_args = [cls.evaluate(arg, cols, row_count) for arg in expr.args]
+
+            from mergendb.core.vector_ops import (
+                cosine_similarity, cosine_distance, l2_distance, manhattan_distance, dot_product, parse_vector
+            )
+
+            res = []
+            if fname in ("cosine_similarity", "cos_sim", "similarity"):
+                if len(evaluated_args) != 2:
+                    raise ValueError(f"{fname} requires exactly 2 arguments")
+                arg1_list, arg2_list = evaluated_args[0], evaluated_args[1]
+                for v1, v2 in zip(arg1_list, arg2_list):
+                    if v1 is None or v2 is None:
+                        res.append(None)
+                    else:
+                        vec1 = parse_vector(v1) if not isinstance(v1, list) else v1
+                        vec2 = parse_vector(v2) if not isinstance(v2, list) else v2
+                        res.append(cosine_similarity(vec1, vec2))
+                return res
+
+            elif fname in ("cosine_distance", "cos_dist"):
+                if len(evaluated_args) != 2:
+                    raise ValueError(f"{fname} requires exactly 2 arguments")
+                arg1_list, arg2_list = evaluated_args[0], evaluated_args[1]
+                for v1, v2 in zip(arg1_list, arg2_list):
+                    if v1 is None or v2 is None:
+                        res.append(None)
+                    else:
+                        vec1 = parse_vector(v1) if not isinstance(v1, list) else v1
+                        vec2 = parse_vector(v2) if not isinstance(v2, list) else v2
+                        res.append(cosine_distance(vec1, vec2))
+                return res
+
+            elif fname in ("l2_distance", "euclidean_distance", "vector_distance"):
+                if len(evaluated_args) != 2:
+                    raise ValueError(f"{fname} requires exactly 2 arguments")
+                arg1_list, arg2_list = evaluated_args[0], evaluated_args[1]
+                for v1, v2 in zip(arg1_list, arg2_list):
+                    if v1 is None or v2 is None:
+                        res.append(None)
+                    else:
+                        vec1 = parse_vector(v1) if not isinstance(v1, list) else v1
+                        vec2 = parse_vector(v2) if not isinstance(v2, list) else v2
+                        res.append(l2_distance(vec1, vec2))
+                return res
+
+            elif fname in ("dot_product", "inner_product"):
+                if len(evaluated_args) != 2:
+                    raise ValueError(f"{fname} requires exactly 2 arguments")
+                arg1_list, arg2_list = evaluated_args[0], evaluated_args[1]
+                for v1, v2 in zip(arg1_list, arg2_list):
+                    if v1 is None or v2 is None:
+                        res.append(None)
+                    else:
+                        vec1 = parse_vector(v1) if not isinstance(v1, list) else v1
+                        vec2 = parse_vector(v2) if not isinstance(v2, list) else v2
+                        res.append(dot_product(vec1, vec2))
+                return res
+
+            elif fname in ("manhattan_distance", "l1_distance"):
+                if len(evaluated_args) != 2:
+                    raise ValueError(f"{fname} requires exactly 2 arguments")
+                arg1_list, arg2_list = evaluated_args[0], evaluated_args[1]
+                for v1, v2 in zip(arg1_list, arg2_list):
+                    if v1 is None or v2 is None:
+                        res.append(None)
+                    else:
+                        vec1 = parse_vector(v1) if not isinstance(v1, list) else v1
+                        vec2 = parse_vector(v2) if not isinstance(v2, list) else v2
+                        res.append(manhattan_distance(vec1, vec2))
+                return res
+
+            elif fname == "abs":
+                arg = evaluated_args[0]
+                return [None if x is None else abs(x) for x in arg]
+
+            elif fname == "round":
+                arg = evaluated_args[0]
+                digits = evaluated_args[1][0] if len(evaluated_args) > 1 else 0
+                return [None if x is None else round(x, digits) for x in arg]
+
+            elif fname in ("upper", "lower", "trim", "length", "len"):
+                arg = evaluated_args[0]
+                if fname == "upper":
+                    return [None if x is None else str(x).upper() for x in arg]
+                elif fname == "lower":
+                    return [None if x is None else str(x).lower() for x in arg]
+                elif fname == "trim":
+                    return [None if x is None else str(x).strip() for x in arg]
+                else:
+                    return [None if x is None else len(str(x)) for x in arg]
+
+            raise ValueError(f"Unknown function: '{fname}'")
 
         raise TypeError(f"Unknown ExprNode: {type(expr)}")
 

@@ -10,6 +10,7 @@ class DataType(IntEnum):
     BOOL = 5
     STRING = 6
     TIMESTAMP = 7
+    VECTOR = 8
 
 # Byte representations and format codes for fixed-width types
 TYPE_STRUCT_FORMAT = {
@@ -92,6 +93,10 @@ def cast_value(val: Any, dtype: DataType, safe: bool = True) -> Any:
                 except Exception:
                     return str(val)
             return str(val)
+
+        elif dtype == DataType.VECTOR:
+            from mergendb.core.vector_ops import parse_vector
+            return parse_vector(val)
 
         return val
     except Exception as e:

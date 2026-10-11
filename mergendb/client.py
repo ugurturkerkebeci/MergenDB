@@ -9,7 +9,7 @@ import threading
 import urllib.request
 import urllib.error
 import urllib.parse
-from typing import List, Dict, Any, Union, Optional
+from typing import List, Dict, Any, Union, Optional, Sequence
 from mergendb.core.schema import Schema, ColumnDef
 from mergendb.core.types import DataType, cast_value
 from mergendb.storage.writer import FileWriter
@@ -644,6 +644,8 @@ class Table:
                     dt = DataType.INT64
                 elif isinstance(v, float):
                     dt = DataType.FLOAT64
+                elif isinstance(v, (list, tuple)) and v and all(isinstance(x, (int, float)) for x in v):
+                    dt = DataType.VECTOR
                 else:
                     dt = DataType.STRING
                 cols.append(ColumnDef(k, dt))
@@ -1099,6 +1101,50 @@ class Table:
         esc = str(text).replace("'", "''")
         where_expr = " OR ".join(f"{c} LIKE '%{esc}%'" for c in str_cols)
         return self.where(where_expr, limit=limit, show_progress=show_progress)
+
+    def vector_search(
+        self,
+        column: str,
+        query_vector: Sequence[float],
+        top_k: int = 10,
+        filter: Optional[str] = None,
+        metric: str = "cosine",
+        show_progress: bool = False
+    ) -> QueryResult:
+        """
+        Performs high-performance vector similarity search over an embedding column.
+        metric: 'cosine' (default), 'l2' (euclidean), 'dot' (dot product), 'manhattan'
+        Example:
+            results = table.vector_search("embedding", [0.1, 0.2, -0.5], top_k=5, filter="category = 'AI'")
+        """
+        metric_lower = metric.lower()
+        if metric_lower in ("cosine", "cos"):
+            fn = "cosine_similarity"
+            desc = "DESC"
+        elif metric_lower in ("l2", "euclidean"):
+            fn = "l2_distance"
+            desc = "ASC"
+        elif metric_lower in ("dot", "dot_product"):
+            fn = "dot_product"
+            desc = "DESC"
+        elif metric_lower in ("manhattan", "l1"):
+            fn = "manhattan_distance"
+            desc = "ASC"
+        else:
+            raise ValueError(f"Unknown metric '{metric}'. Choose from 'cosine', 'l2', 'dot', 'manhattan'.")
+
+        from mergendb.core.vector_ops import parse_vector
+        clean_vec = parse_vector(query_vector)
+        vec_literal = "[" + ", ".join(f"{x:.6f}" for x in clean_vec) + "]"
+
+        pipe = []
+        if filter:
+            pipe.append(f"| WHERE {filter.strip()}")
+        pipe.append(f"| COMPUTE score = {fn}({column}, {vec_literal})")
+        pipe.append(f"| SORT score {desc}")
+        pipe.append(f"| LIMIT {top_k}")
+
+        return self.query("\n".join(pipe), show_progress=show_progress)
 
     def builder(self) -> 'TableQuery':
         """Starts a fluent, chainable query builder for this table."""
@@ -1600,8 +1646,28 @@ class MergenDB:
                             hav = re.sub(re.escape(a), alias, hav, flags=re.IGNORECASE)
                 pipe.append(f'| HAVING {hav}')
         else:
-            if d["select"].strip() != "*":
-                pipe.append(f'| SELECT {d["select"].strip()}')
+            computes = []
+            final_select = []
+            for item in select_items:
+                # check for expression with alias: expr AS alias
+                as_match = re.split(r"\s+as\s+", item, flags=re.IGNORECASE)
+                if len(as_match) == 2:
+                    expr_str, alias_str = as_match[0].strip(), as_match[1].strip()
+                    computes.append((alias_str, expr_str))
+                    final_select.append(alias_str)
+                elif "(" in item and ")" in item:
+                    # expression without explicit AS: default alias
+                    alias_str = "expr_" + str(len(computes) + 1)
+                    computes.append((alias_str, item.strip()))
+                    final_select.append(alias_str)
+                else:
+                    final_select.append(item.strip())
+
+            for target_col, expr_code in computes:
+                pipe.append(f'| COMPUTE {target_col} = {expr_code}')
+
+            if final_select and ", ".join(final_select) != "*":
+                pipe.append(f'| SELECT {", ".join(final_select)}')
 
         if d.get("order"):
             pipe.append(f'| SORT {d["order"].strip()}')

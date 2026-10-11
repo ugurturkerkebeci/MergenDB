@@ -24,6 +24,11 @@ class BinaryOpNode(ExprNode):
     right: ExprNode
 
 @dataclass
+class FunctionCallNode(ExprNode):
+    name: str
+    args: List[ExprNode]
+
+@dataclass
 class ComputeNode(ASTNode):
     target_column: str
     expr: ExprNode

@@ -36,6 +36,14 @@ def encode_raw(values: List[Any], dtype: DataType) -> bytes:
                 encoded = str(v).encode("utf-8")
                 buf.extend(struct.pack("<i", len(encoded)))
                 buf.extend(encoded)
+    elif dtype == DataType.VECTOR:
+        for v in values:
+            if v is None:
+                buf.extend(struct.pack("<i", -1))
+            else:
+                raw_bytes = struct.pack(f"<{len(v)}f", *[float(x) for x in v])
+                buf.extend(struct.pack("<i", len(v)))
+                buf.extend(raw_bytes)
     elif dtype in ARRAY_TYPECODES:
         tc = ARRAY_TYPECODES[dtype]
         clean_vals = [0 if v is None else v for v in values]
@@ -66,6 +74,17 @@ def decode_raw(data: bytes, dtype: DataType) -> List[Any]:
                 s = bytes(data[offset : offset + length]).decode("utf-8")
                 offset += length
                 values.append(s)
+    elif dtype == DataType.VECTOR:
+        for _ in range(count):
+            dim = struct.unpack_from("<i", data, offset)[0]
+            offset += 4
+            if dim == -1:
+                values.append(None)
+            else:
+                byte_len = dim * 4
+                vec = list(struct.unpack_from(f"<{dim}f", data, offset))
+                offset += byte_len
+                values.append(vec)
     elif dtype in ARRAY_TYPECODES:
         tc = ARRAY_TYPECODES[dtype]
         size = TYPE_FIXED_SIZES[dtype]
